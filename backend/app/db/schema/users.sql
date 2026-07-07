@@ -5,6 +5,6 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,   -- 로그인용 아이디, 중복 방지 기준
     password_hash TEXT NOT NULL,
-    nickname VARCHAR(50) NOT NULL,           -- 중복 허용 여부 미정 (TODO)
+    nickname VARCHAR(50) UNIQUE NOT NULL,   -- 중복 불허 확정
     created_at TIMESTAMP DEFAULT now()
 );

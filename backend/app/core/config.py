@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://user:password@localhost:5432/jeonse_chatbot"
     openai_api_key: str = ""
     jwt_secret: str = "CHANGE_ME"
+    jwt_expire_minutes: int = 60 * 24  # 1일. stateless 로그아웃이라 만료를 짧게 잡아 리스크 완화
 
     class Config:
         env_file = ".env"
