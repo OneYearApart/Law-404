@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 가상환경 (eduvenv 등 로컬 venv는 커밋 대상 아님)
+venv/
+.venv/
+env/
+eduvenv/
+
+# 환경변수 / 시크릿
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
+
+# Node (프론트엔드 연동 시)
+node_modules/
+
+# Claude Code / AI 도구 설정 (개인별 로컬 설정, 공유 대상 아님)
+.claude.md
+.claude/
+CLAUDE.md
+
+# DB 관련
+*.sqlite3
+pgdata/
+
+# 원본 데이터 (용량 이슈 시 제외, Git LFS/외부 저장소 검토)
+# docs/*/raw/*
