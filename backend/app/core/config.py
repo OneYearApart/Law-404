@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://user:password@localhost:5432/jeonse_chatbot"
+    database_url: str = "postgresql://edu:1234@localhost:5433/edudb"
     openai_api_key: str = ""
     jwt_secret: str = "CHANGE_ME"
 
