@@ -12,3 +12,27 @@ class User(BaseModel):
     password_hash: str
     nickname: str
     created_at: datetime
+
+
+class UserPublic(BaseModel):
+    """API 응답용. password_hash는 제외."""
+    id: int
+    username: str
+    nickname: str
+    created_at: datetime
+
+
+class SignupRequest(BaseModel):
+    username: str
+    nickname: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
