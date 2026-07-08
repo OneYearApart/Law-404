@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "postgresql://edu:1234@localhost:5433/edudb"
-    openai_api_key: str = ""
-    jwt_secret: str = "CHANGE_ME"
+    openai_api_key: str
+    jwt_secret: str
     jwt_expire_minutes: int = 60 * 24  # 1일. stateless 로그아웃이라 만료를 짧게 잡아 리스크 완화
 
     class Config:
