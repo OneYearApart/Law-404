@@ -7,7 +7,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.core.db import Base
-from app.auth.orm import User  # noqa: F401  # autogenerate에서 인식하려면 import 필요
+from app.auth.orm import RefreshToken, User  # noqa: F401  # autogenerate에서 인식하려면 import 필요
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
