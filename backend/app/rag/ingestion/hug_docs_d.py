@@ -133,18 +133,28 @@ def _load_qa_chunks(qa_text: str) -> list[dict]:
     return chunks
 
 
+def _is_glossary_term(text: str) -> bool:
+    """용어 표제어(공백 없는 짧은 명사)와 정의/예문(공백 포함 문장)을 구분.
+
+    정의/예문 문장이 마침표로 끝나지 않는 경우(명사형 종결 등)가 있어 마침표 유무만으로는
+    구분이 안 된다 — 표제어는 항상 공백이 없는 반면 정의/예문은 항상 공백을 포함하므로
+    공백 유무를 1차 기준으로, 마침표 없음을 2차 기준(AND)으로 사용한다.
+    """
+    return " " not in text and "\n" not in text and not text.endswith(".")
+
+
 def _load_glossary_chunks(glossary_text: str) -> list[dict]:
     quoted = list(re.finditer(r"“([^”]+)”", glossary_text))
     chunks = []
     i = 0
     while i < len(quoted):
         term = quoted[i].group(1).strip()
-        if term.endswith("."):
+        if not _is_glossary_term(term):
             i += 1
             continue  # 자음 헤더(ㄱ,ㄴ..) 등 잡음 뒤에 이어지는 조각 방지
         i += 1
         rest = []
-        while i < len(quoted) and quoted[i].group(1).strip().endswith("."):
+        while i < len(quoted) and not _is_glossary_term(quoted[i].group(1).strip()):
             rest.append(quoted[i].group(1).strip())
             i += 1
         definition = rest[0] if rest else None
