@@ -22,14 +22,14 @@ async def test_row_counts(ingested):
 
     assert counts["판례"] == 431
     assert counts["법령원문"] == 703
-    assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 178
+    assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
 
 
 @pytest.mark.asyncio
 async def test_links_loaded(ingested):
     with get_engine().connect() as conn:
         total = conn.execute(text("SELECT count(*) FROM d_reference_links")).scalar_one()
-    assert total == 3064
+    assert total == 2220
 
 
 @pytest.mark.asyncio

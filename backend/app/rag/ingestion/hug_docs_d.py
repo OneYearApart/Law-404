@@ -57,13 +57,19 @@ def load_case_book_chunks() -> list[dict]:
     chunks: list[dict] = []
     expected = 1
     current: dict | None = None
+    in_case_section = False
 
     with pdfplumber.open(CASE_BOOK_PDF) as pdf:
         for page in pdf.pages:
             w = page.width
             for crop in (page.crop((0, 0, w / 2, page.height)), page.crop((w / 2, 0, w, page.height))):
                 text = crop.extract_text() or ""
-                for line in text.split("\n"):
+                lines = text.split("\n")
+                if lines and lines[0].strip() == "주요 피해지원 상담 사례":
+                    in_case_section = True
+                if not in_case_section:
+                    continue
+                for line in lines:
                     m = _CASE_MARKER_RE.match(line.strip())
                     if m and int(m.group(1)) == expected:
                         if current is not None:
