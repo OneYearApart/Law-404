@@ -34,14 +34,6 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    """refresh_token은 바디에 담지 않고 httpOnly 쿠키로 전달한다."""
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
-class LogoutRequest(BaseModel):
-    refresh_token: str
