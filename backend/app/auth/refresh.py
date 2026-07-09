@@ -9,6 +9,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.orm import RefreshToken
@@ -19,7 +20,19 @@ def _hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
 
 
+def _delete_dead_tokens(db: Session, user_id: int) -> None:
+    """만료됐거나 이미 폐기된 토큰을 지운다. 새 토큰 발급 시점마다 호출해 테이블이 무한정 늘어나는 것을 막는다."""
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user_id,
+        or_(
+            RefreshToken.expires_at < datetime.now(timezone.utc),
+            RefreshToken.revoked_at.isnot(None),
+        ),
+    ).delete(synchronize_session=False)
+
+
 def issue_refresh_token(db: Session, user_id: int) -> str:
+    _delete_dead_tokens(db, user_id)
     raw_token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
     db.add(RefreshToken(
