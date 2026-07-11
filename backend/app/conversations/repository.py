@@ -10,6 +10,9 @@ get_session_state()/update_session_state()는 conversations.state(JSONB)를 다�
 """
 from typing import Any
 
+from app.conversations.orm import Conversation
+from app.core.db import SessionLocal
+
 
 async def save_message(user_id: int | None, part: str, role: str, content: str):
     if user_id is None:
@@ -27,9 +30,22 @@ async def load_conversation(conversation_id: int):
 
 async def get_session_state(conversation_id: int) -> dict[str, Any] | None:
     """conversations.state 원본을 로드합니다(JSONB → dict). 행이 없거나 state가 NULL이면 None."""
-    raise NotImplementedError
+    db = SessionLocal()
+    try:
+        conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        return conversation.state if conversation is not None else None
+    finally:
+        db.close()
 
 
 async def update_session_state(conversation_id: int, state: dict[str, Any]) -> None:
     """conversations.state를 통째로 덮어씁니다(부분 병합 아님). 호출부가 전체 상태를 넘겨야 합니다."""
-    raise NotImplementedError
+    db = SessionLocal()
+    try:
+        conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if conversation is None:
+            raise ValueError(f"conversation {conversation_id} not found")
+        conversation.state = state
+        db.commit()
+    finally:
+        db.close()
