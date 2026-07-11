@@ -10,22 +10,63 @@ get_session_state()/update_session_state()는 conversations.state(JSONB)를 다�
 """
 from typing import Any
 
-from app.conversations.orm import Conversation
+from sqlalchemy import func
+
+from app.conversations.models import Conversation as ConversationSchema, Message as MessageSchema
+from app.conversations.orm import Conversation, Message
 from app.core.db import SessionLocal
 
 
-async def save_message(user_id: int | None, part: str, role: str, content: str):
+async def create_conversation(user_id: int, part: str) -> ConversationSchema:
+    db = SessionLocal()
+    try:
+        conversation = Conversation(user_id=user_id, part=part)
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        return ConversationSchema.model_validate(conversation, from_attributes=True)
+    finally:
+        db.close()
+
+
+async def save_message(user_id: int | None, part: str, role: str, content: str, conversation_id: int):
     if user_id is None:
         return  # 비로그인 사용자는 저장하지 않음
-    raise NotImplementedError
+    db = SessionLocal()
+    try:
+        db.add(Message(conversation_id=conversation_id, role=role, content=content))
+        db.query(Conversation).filter(Conversation.id == conversation_id).update({"updated_at": func.now()})
+        db.commit()
+    finally:
+        db.close()
 
 
-async def list_conversations(user_id: int):
-    raise NotImplementedError
+async def list_conversations(user_id: int) -> list[ConversationSchema]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Conversation)
+            .filter(Conversation.user_id == user_id)
+            .order_by(Conversation.updated_at.desc())
+            .all()
+        )
+        return [ConversationSchema.model_validate(row, from_attributes=True) for row in rows]
+    finally:
+        db.close()
 
 
-async def load_conversation(conversation_id: int):
-    raise NotImplementedError
+async def load_conversation(conversation_id: int) -> list[MessageSchema]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Message)
+            .filter(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc())
+            .all()
+        )
+        return [MessageSchema.model_validate(row, from_attributes=True) for row in rows]
+    finally:
+        db.close()
 
 
 async def get_session_state(conversation_id: int) -> dict[str, Any] | None:

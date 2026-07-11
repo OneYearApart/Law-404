@@ -18,3 +18,13 @@ class Conversation(Base):
     title = Column(Text, nullable=True)
     state = Column(JSONB, nullable=True)  # 파트별 턴간 carryover 상태 (현재 d파트 전용)
     updated_at = Column(DateTime, server_default=func.now())
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
+    role = Column(String(16), nullable=False)  # 'user' | 'assistant'
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())

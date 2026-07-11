@@ -26,7 +26,7 @@ async def chat_d(request: dict, user=Depends(get_current_user)):
         async for chunk in final_state["response_stream"]:
             yield f"data: {StreamEvent(type=EventType.TOKEN, data=chunk).model_dump_json()}\n\n"
 
-        await save_message(user.id, "d", "assistant", final_state.get("final_answer", ""))
+        await save_message(user.id, "d", "assistant", final_state.get("final_answer", ""), request.get("conversation_id"))
 
         yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
 
