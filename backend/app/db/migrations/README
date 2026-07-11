@@ -1,0 +1,66 @@
+Generic single-database configuration.
+
+## 이 폴더는 무엇을 관리하나
+`users` 테이블 등 공통/진화하는 엔티티의 스키마를 Alembic으로 관리합니다.
+D파트 등 파트별 RAG 데이터 테이블(`d_part_embeddings` 등)은 기존처럼
+`backend/app/db/schema/*.sql` + 각 파트 코드의 raw SQL 실행 방식 그대로이며,
+이 폴더와는 무관합니다.
+
+`backend/app/db/schema/users.sql`은 참고용 스냅샷으로만 남겨뒀습니다(더 이상 실행 안 됨).
+users 스키마 변경은 이제 여기 마이그레이션이 유일한 소스입니다.
+
+## 처음 pull 받았을 때
+```bash
+cd backend
+pip install -r requirements.txt   # alembic 포함
+alembic upgrade head              # users 테이블 생성
+```
+로컬에 이미 `users.sql`로 만든 `users` 테이블이 있다면 `upgrade head` 대신:
+```bash
+alembic stamp head   # 실제 SQL 실행 없이 "이미 적용됨"으로만 표시
+```
+
+## users 스키마를 바꿀 때
+1. `backend/app/auth/orm.py`의 `User` 모델 수정
+2. `alembic revision --autogenerate -m "설명"`으로 마이그레이션 생성
+3. **생성된 파일을 반드시 확인할 것**: autogenerate는 DB의 모든 테이블과
+   `Base.metadata`를 비교합니다. D파트 raw SQL 테이블(`d_part_embeddings`,
+   `d_reference_links` 등)은 ORM에 등록돼 있지 않아서 "삭제 대상"으로
+   잘못 잡힐 수 있습니다 — 관련 `drop_table`/`drop_index`가 보이면 지우고,
+   users 관련 변경만 남길 것.
+
+   **왜 이런 일이 생기나 (`Base.metadata`란)**: `Base.metadata`는 파일이
+   아니라 SQLAlchemy가 자동으로 관리하는 런타임 객체입니다.
+   (`backend/app/core/db.py`에서 `Base = declarative_base()`로 생성.)
+   `Base`를 상속하는 ORM 클래스가 정의될 때마다(예: `backend/app/auth/orm.py`의
+   `User(Base)`) 그 테이블이 자동으로 `Base.metadata`에 등록됩니다.
+   `env.py`가 `target_metadata = Base.metadata`로 넘겨주는 게 이 객체이고,
+   `d_part_embeddings`/`d_reference_links`는 raw `.sql`로만 만들어져서
+   대응하는 `Base` 상속 클래스가 없으니 `Base.metadata`에 등록될 방법이
+   없습니다. autogenerate는 "`Base.metadata`에 선언된 것이 이 스키마의
+   전체 정답"이라고 가정하기 때문에, DB에는 있는데 metadata엔 없는
+   테이블을 보면 "지워서 맞춰야 한다"고 판단해 `drop_table`을 생성합니다.
+   (참고: 새 ORM 모델을 추가할 때도 `env.py`에서 반드시 import해줘야
+   `Base.metadata`에 등록됩니다 — import 안 하면 autogenerate가 그
+   모델의 존재 자체를 모릅니다.)
+
+   예시 (실제로 `create users table` 마이그레이션 생성 시 나왔던 내용):
+   ```python
+   def upgrade() -> None:
+       # users와 무관한 아래 4줄이 같이 생성되면 전부 지울 것
+       # (실행 시 D파트 임베딩 데이터가 통째로 삭제됨)
+       op.drop_index(op.f('idx_d_part_embeddings_case'), table_name='d_part_embeddings')
+       op.drop_table('d_part_embeddings')
+       op.drop_index(op.f('idx_d_reference_links_source'), table_name='d_reference_links')
+       op.drop_table('d_reference_links')
+
+       # 이 부분만 남기면 됨 (users 관련 변경)
+       op.alter_column('users', 'password_hash', ...)
+   ```
+4. `alembic upgrade head`로 적용
+
+## 자주 쓰는 명령어
+- `alembic current` — 지금 DB가 어느 마이그레이션까지 적용됐는지 확인
+- `alembic history` — 전체 마이그레이션 이력
+- `alembic downgrade -1` — 한 단계 되돌리기
+
