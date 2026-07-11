@@ -63,6 +63,8 @@ class DPartGraphState(TypedDict, total=False):
     victim_slots: VictimRequirementSlots                     # 요건 슬롯 누적 결과 — 이 기능의 핵심 carryover 데이터
     victim_judgment: Optional[VictimJudgment]                 # 판단 결과(높음/있음/추가확인)
     victim_fallback: bool                                       # 반복 질문에도 슬롯 미충족 시 전문가 상담 안내로 폴백했는지
+    victim_check_attempts: int                                   # 슬롯 진전 없이 머문 연속 턴 수 — fallback 판단용
+    awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     special_case_matched: Optional[str]                          # 매칭된 특수상황
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
     # TODO: app/rag 쪽에 전용 Chunk 타입이 생기면 list[Chunk]로 교체 (2026-07-11 기준 미존재)
@@ -81,4 +83,6 @@ class DPartSessionState(BaseModel):
     victim_slots: VictimRequirementSlots = Field(default_factory=VictimRequirementSlots)
     victim_judgment: Optional[VictimJudgment] = None
     victim_fallback: bool = False
+    victim_check_attempts: int = 0
+    awaiting_relief_confirmation: bool = False
     special_case_matched: Optional[str] = None
