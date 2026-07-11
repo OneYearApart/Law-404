@@ -1,0 +1,26 @@
+name: Retriever Accuracy Test
+
+on:
+  pull_request:        # PR이 생성/업데이트될 때마다
+    branches: [main]
+  push:
+    branches: [main]    # main 브랜치에 push될 때도/ 일단 main으로 하고, 나중에 develop
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4        # 코드 가져오기
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run retriever accuracy tests
+        run: pytest tests/test_retriever_accuracy.py -v
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
