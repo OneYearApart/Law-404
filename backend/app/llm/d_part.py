@@ -49,10 +49,21 @@ async def _call_llm(prompt: str) -> str:
             await asyncio.sleep(2**attempt)
 
 
+def _strip_code_fence(text: str) -> str:
+    """GPT-4o가 JSON을 ```json ... ``` 코드펜스로 감싸서 반환하는 경우가 있어 벗겨낸다
+    (실제 라이브 호출에서 확인된 동작 — monkeypatch 테스트는 순수 JSON 문자열만 흉내내
+    이 문제를 못 잡았음, 2026-07-11)."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text.removeprefix("```")
+        text = text.removesuffix("```").strip()
+    return text
+
+
 async def _call_structured(prompt_name: str, **kwargs) -> dict:
     prompt = _render_prompt(prompt_name, **kwargs)
     raw = await _call_llm(prompt)
-    return json.loads(raw)
+    return json.loads(_strip_code_fence(raw))
 
 
 async def call_stage_router(user_input: str) -> dict:

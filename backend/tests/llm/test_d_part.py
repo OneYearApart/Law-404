@@ -94,6 +94,20 @@ async def test_call_special_cases_null_category(monkeypatch):
     assert result == {"category": None}
 
 
+@pytest.mark.asyncio
+async def test_call_structured_strips_markdown_code_fence(monkeypatch):
+    """GPT-4o가 실제로 ```json ... ``` 코드펜스로 감싸서 응답하는 경우가 있음(라이브 확인, 2026-07-11)."""
+
+    async def _fake_call_llm(prompt: str) -> str:
+        return '```json\n{"stage": "전"}\n```'
+
+    monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
+
+    result = await d_part.call_stage_router("계약하려고 준비 중이에요")
+
+    assert result == {"stage": "전"}
+
+
 def test_render_prompt_loads_template_and_appends_context():
     prompt = d_part._render_prompt("stage_router", user_input="테스트 발화")
 
