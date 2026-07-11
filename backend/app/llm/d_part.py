@@ -15,6 +15,7 @@ _call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환하고, 
 import asyncio
 import json
 from pathlib import Path
+from typing import AsyncGenerator
 
 from openai import APIError, AsyncOpenAI, RateLimitError
 
@@ -68,3 +69,23 @@ async def call_victim_check(user_input: str, existing_slots: dict) -> dict:
 
 async def call_special_cases(user_input: str) -> dict:
     return await _call_structured("special_cases", user_input=user_input)
+
+
+async def call_recognition_check(user_input: str) -> dict:
+    return await _call_structured("recognition_router", user_input=user_input)
+
+
+async def generate_response(context: str) -> AsyncGenerator[str, None]:
+    """최종 응답(원문→해설→상황적용) 진짜 토큰 스트리밍 — 다른 call_*와 달리 전체를 모아
+    JSON 파싱하지 않고 그대로 흘려보낸다. 스트림 시작 후 실패하면 이미 클라이언트로
+    청크가 나간 상태라 재시도하지 않고 그대로 전파한다."""
+    prompt = _render_prompt("response", context=context)
+    stream = await _client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+    )
+    async for event in stream:
+        content = event.choices[0].delta.content
+        if content:
+            yield content

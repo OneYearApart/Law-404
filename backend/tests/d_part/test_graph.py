@@ -1,0 +1,86 @@
+"""
+graph.py 라우팅 함수 단위테스트 + 전체 그래프 종단 스모크 테스트.
+LLM/RAG 호출은 전부 monkeypatch로 흉내내고 DB 접근 없음.
+"""
+import pytest
+
+from app.graph.parts.d_part import graph as graph_module
+from app.graph.parts.d_part.nodes import response_assembly, risk_trigger
+from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimJudgment, VictimRequirementSlots
+from app.rag.retrievers.base import Chunk
+
+
+def test_route_after_risk_trigger_special_case_matched_wins():
+    state = {"special_case_matched": "신탁사기", "risk_trigger_detected": False}
+    assert graph_module._route_after_risk_trigger(state) == "special_cases"
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"victim_judgment": VictimJudgment.HIGH},
+        {"victim_fallback": True},
+        {"awaiting_relief_confirmation": True},
+        {"victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED)},
+    ],
+)
+def test_route_after_risk_trigger_continues_in_progress_victim_check(state):
+    # risk_trigger_detected가 이번 턴 False라도(재트리거 안 됨) 진행 중인 흐름은 계속돼야 함
+    assert graph_module._route_after_risk_trigger(state) == "victim_check"
+
+
+def test_route_after_risk_trigger_fresh_trigger_goes_to_recognition():
+    state = {"risk_trigger_detected": True}
+    assert graph_module._route_after_risk_trigger(state) == "recognition_router"
+
+
+def test_route_after_risk_trigger_nothing_goes_to_finalize():
+    state = {"risk_trigger_detected": False}
+    assert graph_module._route_after_risk_trigger(state) == "finalize"
+
+
+def test_route_after_recognition_recognized():
+    assert graph_module._route_after_recognition({"recognized": True}) == "special_cases"
+
+
+def test_route_after_recognition_not_recognized():
+    assert graph_module._route_after_recognition({"recognized": False}) == "victim_check"
+
+
+@pytest.mark.asyncio
+async def test_full_graph_continues_pending_relief_question_to_judgment_response(monkeypatch):
+    """진행 중이던 victim_check(구제수단 질문 대기)를 이어받아 판단 확정 + 응답 조립까지 가는 종단 경로."""
+
+    async def _fake_call_risk_trigger(user_input: str) -> dict:
+        return {"matched": False, "condition_no": None, "reason": None}
+
+    async def _fake_search_by_requirement(slots):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="제3조")], "case_law": [], "cases": []}
+
+    async def _fake_generate_response(context: str):
+        yield "판단 응답"
+
+    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger)
+    monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _fake_search_by_requirement)
+    monkeypatch.setattr(response_assembly.llm_d_part, "generate_response", _fake_generate_response)
+
+    slots = VictimRequirementSlots(
+        moved_in_and_fixed_date=SlotStatus.FILLED,
+        deposit_under_limit=SlotStatus.FILLED,
+        multiple_victims=SlotStatus.FILLED,
+        no_intent_to_return=SlotStatus.FILLED,
+    )
+    initial_state = {
+        "user_input": "아니요 없어요",
+        "stage": Stage.DURING,
+        "stage_confirmed": True,
+        "victim_slots": slots,
+        "awaiting_relief_confirmation": True,
+    }
+
+    result = await graph_module.graph.ainvoke(initial_state)
+
+    assert result["victim_judgment"] == VictimJudgment.HIGH
+    assert result["response_stream"] is not None
+    chunks = [c async for c in result["response_stream"]]
+    assert chunks == ["판단 응답"]
