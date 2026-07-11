@@ -9,3 +9,19 @@
 
 각 슬롯에 대해 [충족 / 불충족 / 불명확] 중 하나로 판정하고, 근거를 함께 제시하세요.
 단정적 판단("됩니다/안됩니다") 금지 — 높음/있음/추가확인 3단계로 표현하세요.
+
+이미 채워진 기존 슬롯 값이 함께 주어지면, 이번 발화에서 새로 확인된 내용만 갱신하고 나머지는 기존 값을 유지하세요.
+
+## 응답 형식
+
+아래 JSON 형식으로만 응답하세요. 다른 텍스트를 덧붙이지 마세요. 판정 못한 슬롯은 "unclear"로 표기하세요.
+
+```json
+{
+  "moved_in_and_fixed_date": "filled",
+  "deposit_under_limit": "unfilled",
+  "multiple_victims": "unclear",
+  "no_intent_to_return": "filled",
+  "multiple_victims_reason": "근거 텍스트 또는 null"
+}
+```

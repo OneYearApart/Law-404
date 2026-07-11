@@ -9,3 +9,17 @@
 6. 같은 집주인에게 다른 세입자도 피해를 봤다는 언급
 
 포함되어 있다면 매칭된 조건 번호(1~6)와 근거 문장을, 없다면 false를 반환하세요.
+
+## 응답 형식
+
+아래 JSON 형식으로만 응답하세요. 다른 텍스트를 덧붙이지 마세요.
+
+```json
+{"matched": true, "condition_no": 1, "reason": "근거 문장"}
+```
+
+매칭되는 조건이 없으면:
+
+```json
+{"matched": false, "condition_no": null, "reason": null}
+```
