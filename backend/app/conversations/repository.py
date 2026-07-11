@@ -79,6 +79,16 @@ async def get_session_state(conversation_id: int) -> dict[str, Any] | None:
         db.close()
 
 
+async def update_conversation_title(conversation_id: int, title: str) -> None:
+    """conversations.title만 갱신합니다. updated_at은 건드리지 않음(목록 정렬은 활동 시각 기준 유지)."""
+    db = SessionLocal()
+    try:
+        db.query(Conversation).filter(Conversation.id == conversation_id).update({"title": title})
+        db.commit()
+    finally:
+        db.close()
+
+
 async def update_session_state(conversation_id: int, state: dict[str, Any]) -> None:
     """conversations.state를 통째로 덮어씁니다(부분 병합 아님). 호출부가 전체 상태를 넘겨야 합니다."""
     db = SessionLocal()

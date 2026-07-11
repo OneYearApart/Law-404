@@ -3,12 +3,14 @@ D파트 채팅 엔드포인트.
 StreamingResponse로 응답하며, 인증된 사용자만 이용 가능하고 대화 이력을 항상 저장합니다.
 d파트 담당자만 이 파일을 수정합니다.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import get_current_user
 from app.api.events import StreamEvent, EventType
+from app.core.config import settings
 from app.conversations.repository import get_session_state, save_message, update_session_state
+from app.conversations.summarizer import maybe_summarize_conversation
 from app.graph.parts.d_part.graph import graph as d_graph
 from app.graph.parts.d_part.schemas import DPartSessionState
 
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/chat/d", tags=["d_part"])
 
 
 @router.post("/")
-async def chat_d(request: dict, user=Depends(get_current_user)):
+async def chat_d(request: dict, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     async def event_generator():
         yield f"data: {StreamEvent(type=EventType.LOADING).model_dump_json()}\n\n"
 
@@ -24,6 +26,8 @@ async def chat_d(request: dict, user=Depends(get_current_user)):
         raw_state = await get_session_state(conversation_id)
         session_state = DPartSessionState.model_validate(raw_state) if raw_state else DPartSessionState()
         graph_input = {name: getattr(session_state, name) for name in DPartSessionState.model_fields} | request
+
+        await save_message(user.id, "d", "user", request["user_input"], conversation_id)
 
         # 판단 단계(전/중/후, 위험신호 감지 등)는 내부적으로 동기 실행
         final_state = await d_graph.ainvoke(graph_input)
@@ -43,7 +47,8 @@ async def chat_d(request: dict, user=Depends(get_current_user)):
         await update_session_state(conversation_id, updated_session.model_dump(mode="json"))
 
         await save_message(user.id, "d", "assistant", final_answer, conversation_id)
+        background_tasks.add_task(maybe_summarize_conversation, conversation_id, settings.summary_trigger_turns)
 
         yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream", background=background_tasks)
