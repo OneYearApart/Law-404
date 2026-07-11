@@ -3,12 +3,18 @@ stage_router 노드 상태기계 테스트 (DB 접근 없는 순수 로직).
 """
 import pytest
 
+from app.graph.parts.d_part.nodes import stage_router
 from app.graph.parts.d_part.nodes.stage_router import route_stage
 from app.graph.parts.d_part.schemas import Stage
 
 
 @pytest.mark.asyncio
-async def test_first_turn_classifies_and_asks_confirmation():
+async def test_first_turn_classifies_and_asks_confirmation(monkeypatch):
+    async def _fake_call_stage_router(user_input: str) -> dict:
+        return {"stage": "중"}
+
+    monkeypatch.setattr(stage_router.llm_d_part, "call_stage_router", _fake_call_stage_router)
+
     state = {"user_input": "지금 전세로 살고 있는데 문제가 생겼어요"}
 
     result = await route_stage(state)

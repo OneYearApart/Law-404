@@ -3,6 +3,7 @@ special_cases 노드 4개 카테고리 매칭 테스트 (DB 접근 없는 순수
 """
 import pytest
 
+from app.graph.parts.d_part.nodes import special_cases
 from app.graph.parts.d_part.nodes.special_cases import match_special_case
 
 
@@ -26,7 +27,12 @@ async def test_each_category_is_matched(user_input, expected_category):
 
 
 @pytest.mark.asyncio
-async def test_unmatched_input_returns_none():
+async def test_unmatched_input_returns_none(monkeypatch):
+    async def _fake_call_special_cases(user_input: str) -> dict:
+        return {"category": None}
+
+    monkeypatch.setattr(special_cases.llm_d_part, "call_special_cases", _fake_call_special_cases)
+
     state = {"user_input": "전세 계약 갱신은 어떻게 하나요?"}
 
     result = await match_special_case(state)

@@ -7,6 +7,7 @@
 4. 공인중개사 허위고지
 """
 from app.graph.parts.d_part.schemas import DPartGraphState
+from app.llm import d_part as llm_d_part
 
 _SPECIAL_CASE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "임대인 사망/파산": ("임대인이 사망", "집주인이 사망", "임대인이 파산", "집주인이 파산", "상속인"),
@@ -37,8 +38,14 @@ _SPECIAL_CASE_GUIDANCE: dict[str, str] = {
 }
 
 
+async def _llm_special_case_check(user_input: str) -> str | None:
+    """1단계 키워드 스캔이 못 잡은 애매한 케이스를 LLM으로 보완 판별한다."""
+    result = await llm_d_part.call_special_cases(user_input)
+    return result.get("category")
+
+
 async def match_special_case(state: DPartGraphState) -> DPartGraphState:
-    """4개 특수상황 카테고리 중 하나에 해당하는지 단발성으로 판단한다.
+    """4개 특수상황 카테고리 중 하나에 해당하는지 판단한다(키워드 1차 스캔 + LLM 2차 보완).
     이미 매칭된 상태(special_case_matched가 값이 있음)면 재판정하지 않고 통과한다."""
     if state.get("special_case_matched"):
         return state
@@ -50,6 +57,12 @@ async def match_special_case(state: DPartGraphState) -> DPartGraphState:
             state["special_case_matched"] = category
             state["final_answer"] = _SPECIAL_CASE_GUIDANCE[category]
             return state
+
+    category = await _llm_special_case_check(user_input)
+    if category:
+        state["special_case_matched"] = category
+        state["final_answer"] = _SPECIAL_CASE_GUIDANCE[category]
+        return state
 
     state["special_case_matched"] = None
     return state

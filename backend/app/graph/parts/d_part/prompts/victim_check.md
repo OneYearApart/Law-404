@@ -12,6 +12,8 @@
 
 이미 채워진 기존 슬롯 값이 함께 주어지면, 이번 발화에서 새로 확인된 내용만 갱신하고 나머지는 기존 값을 유지하세요.
 
+경공매(공매/경매)가 이미 완료됐다는 언급이 있으면 auction_completed를 true로, 아니면 false로 판정하세요.
+
 ## 응답 형식
 
 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 덧붙이지 마세요. 판정 못한 슬롯은 "unclear"로 표기하세요.
@@ -22,6 +24,7 @@
   "deposit_under_limit": "unfilled",
   "multiple_victims": "unclear",
   "no_intent_to_return": "filled",
-  "multiple_victims_reason": "근거 텍스트 또는 null"
+  "multiple_victims_reason": "근거 텍스트 또는 null",
+  "auction_completed": false
 }
 ```

@@ -3,7 +3,12 @@ risk_trigger 노드 6개 조건 감지 테스트 (DB 접근 없는 순수 로직
 """
 import pytest
 
+from app.graph.parts.d_part.nodes import risk_trigger
 from app.graph.parts.d_part.nodes.risk_trigger import detect_risk_signal
+
+
+async def _fake_call_risk_trigger_no_match(user_input: str) -> dict:
+    return {"matched": False, "condition_no": None, "reason": None}
 
 
 @pytest.mark.asyncio
@@ -28,7 +33,9 @@ async def test_each_condition_is_detected(user_input):
 
 
 @pytest.mark.asyncio
-async def test_normal_utterance_is_not_detected():
+async def test_normal_utterance_is_not_detected(monkeypatch):
+    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger_no_match)
+
     state = {"user_input": "전세 계약할 때 확정일자는 언제 받아야 하나요?"}
 
     result = await detect_risk_signal(state)
@@ -38,8 +45,10 @@ async def test_normal_utterance_is_not_detected():
 
 
 @pytest.mark.asyncio
-async def test_single_morpheme_fraud_mention_alone_is_not_detected():
+async def test_single_morpheme_fraud_mention_alone_is_not_detected(monkeypatch):
     """'사기' 단일 형태소만으로는 트리거되지 않아야 한다 (노이즈 방지, 종합문서 3.1절)."""
+    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger_no_match)
+
     state = {"user_input": "이거 사기 아닌가요?"}
 
     result = await detect_risk_signal(state)

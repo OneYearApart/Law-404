@@ -12,6 +12,7 @@
 매 턴마다 도는 로직이라 비용/속도 개선 여지가 큼.
 """
 from app.graph.parts.d_part.schemas import DPartGraphState
+from app.llm import d_part as llm_d_part
 
 # 1단계: 구(phrase) 단위 키워드 매칭. "사기" 같은 단일 형태소는 무관한 사건을 잘못
 # 끌어올 수 있어 의도적으로 쓰지 않는다(종합문서 3.1절 노이즈 사례 참고).
@@ -25,10 +26,11 @@ _TRIGGER_CONDITIONS: list[tuple[int, str, tuple[str, ...]]] = [
 ]
 
 
-async def _mock_llm_ambiguous_check(user_input: str) -> tuple[int, str] | None:
-    """1단계 키워드 스캔이 못 잡은 애매한 케이스를 LLM으로 보완 판별하는 자리.
-    실제 GPT-4o 연동 전까지는 추가 감지를 하지 않는다(근거 없는 추측 로직을 만들지 않음) —
-    app/llm/d_part.py의 실제 LLM 레이어가 준비되면 이 함수만 교체하면 된다."""
+async def _llm_ambiguous_check(user_input: str) -> tuple[int, str] | None:
+    """1단계 키워드 스캔이 못 잡은 애매한 케이스를 LLM으로 보완 판별한다."""
+    result = await llm_d_part.call_risk_trigger(user_input)
+    if result.get("matched"):
+        return result.get("condition_no"), result.get("reason")
     return None
 
 
@@ -43,7 +45,7 @@ async def detect_risk_signal(state: DPartGraphState) -> DPartGraphState:
             state["risk_trigger_reason"] = description
             return state
 
-    ambiguous = await _mock_llm_ambiguous_check(user_input)
+    ambiguous = await _llm_ambiguous_check(user_input)
     if ambiguous is not None:
         _, reason = ambiguous
         state["risk_trigger_detected"] = True
