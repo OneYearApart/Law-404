@@ -1,0 +1,16 @@
+﻿question_id,topic,classification,recommended_action,semantic_direct_count,db_direct_count,semantic_weak_count,db_weak_count
+q01_owner_proxy,대리 계약·위임 범위·수령 권한,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,10,4,11,296
+q02_co_owner,공동소유자 동의·대리 권한,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,4,1,19,3
+q03_owner_lessor_mismatch,소유자·임대인 불일치와 임대 권한,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,2,1,26,125
+q04_broker_account_payment,제3자 계좌·계약금 수령 권한,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,0,21,300
+q05_account_change_before_contract,계약 직전 계좌 변경 확인,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,0,18,300
+q07_mortgage,근저당·채권최고액·보증금·주택가액,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,2,26,217
+q08_multiunit_priority,다가구 선순위 보증금·주택가액,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,3,14,21,275
+q09_registry_restriction_warning,등기부 압류·가압류 위험과 말소 확인,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,3,6,22,270
+q10_trust,신탁등기·신탁원부·수탁자 임대 권한,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,2,7,11,200
+q11_opposability_move_in,주택 인도·주민등록·다음 날 대항력,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,4,2,26,225
+q12_fixed_date_priority,확정일자·대항요건·우선변제권,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,11,4,17,108
+q14_special_clause_deposit_return,특약·계약금 반환 조건,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,0,26,279
+q17_household_certificate,전입세대확인서·계약 전·잔금 전·선순위,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,0,15,290
+q18_address_mismatch,계약서·등기부 주소 불일치,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,1,19,293
+q19_deposit_transfer_mismatch,계약서 보증금·이체 내역 불일치,BODY_DIRECT_IN_TOP30,검색·선택 기준 보완,1,0,13,282
