@@ -173,25 +173,61 @@ class BPartMVPGraph:
         }
 
     def _retrieve(self, question: str, categories: list[str], top_k: int) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
+        """
+        B파트 검색 전략.
 
-        for category in categories[:4]:
-            category_results = self.retriever.search_sync(
-                query=question,
-                top_k=max(2, top_k // 2),
-                category=category,
-            )
-            results.extend(result.to_dict() for result in category_results)
+        기존 방식은 source_type 구분 없이 similarity 순으로만 검색했기 때문에
+        관련성이 낮은 판례가 법령보다 먼저 들어오는 문제가 있었습니다.
 
-        if not results:
-            results = [
+        개선 방식:
+        1. 예측 카테고리별로 법령(law)을 먼저 검색합니다.
+        2. 판례(precedent)는 보조 근거로 적게 검색합니다.
+        3. 중복을 제거합니다.
+        4. 최종 결과는 법령을 먼저 배치하고, 판례는 뒤에 배치합니다.
+        """
+        if not categories:
+            return [
                 result.to_dict()
                 for result in self.retriever.search_sync(query=question, top_k=top_k)
             ]
 
-        unique_results = deduplicate_results(results)
-        unique_results.sort(key=lambda item: item.get("similarity", 0), reverse=True)
-        return unique_results[:top_k]
+        law_results: list[dict[str, Any]] = []
+        precedent_results: list[dict[str, Any]] = []
 
+        search_categories = categories[:4]
+
+        for category in search_categories:
+            laws = self.retriever.search_sync(
+                query=question,
+                top_k=2,
+                category=category,
+                source_type="law",
+            )
+            law_results.extend(result.to_dict() for result in laws)
+
+        for category in search_categories:
+            precedents = self.retriever.search_sync(
+                query=question,
+                top_k=1,
+                category=category,
+                source_type="precedent",
+            )
+            precedent_results.extend(result.to_dict() for result in precedents)
+
+        law_results = deduplicate_results(law_results)
+        precedent_results = deduplicate_results(precedent_results)
+
+        law_results.sort(key=lambda item: item.get("similarity", 0), reverse=True)
+        precedent_results.sort(key=lambda item: item.get("similarity", 0), reverse=True)
+
+        combined_results = law_results + precedent_results
+
+        if not combined_results:
+            combined_results = [
+                result.to_dict()
+                for result in self.retriever.search_sync(query=question, top_k=top_k)
+            ]
+
+        return combined_results[:top_k]
 
 graph = BPartMVPGraph()
