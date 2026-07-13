@@ -29,23 +29,48 @@ class DPartRetriever(BaseRetriever):
     def __init__(self):
         super().__init__(table_name="d_part_embeddings")
 
-    async def search(self, query: str, top_k: int = 5, grade: Optional[str] = None) -> list[Chunk]:
+    async def search(
+        self, query: str, top_k: int = 5, grade: Optional[str] = None, source_type: Optional[str] = None
+    ) -> list[Chunk]:
         query_vector = await embed(query)
         grade_filter = "AND grade = :grade" if grade else ""
+        source_type_filter = "AND source_type = :source_type" if source_type else ""
         sql = text(f"""
             SELECT {_CHUNK_COLUMNS},
                    embedding <=> CAST(:query_vector AS vector) AS distance
             FROM {self.table_name}
             WHERE embedding IS NOT NULL
             {grade_filter}
+            {source_type_filter}
             ORDER BY distance
             LIMIT :top_k
         """)
         params = {"query_vector": _vector_literal(query_vector), "top_k": top_k}
         if grade:
             params["grade"] = grade
+        if source_type:
+            params["source_type"] = source_type
         with get_engine().connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
+        return [Chunk(**dict(row)) for row in rows]
+
+    async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
+        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문(벡터검색) + 판례/HUG사례집
+        (topic_tags 직접 매칭)을 조회한다. search_by_requirement와 달리 조문↔판례 링크
+        (d_reference_links) 없이 판례/HUG 양쪽에 이미 있는 topic_tags를 각각 직접 필터링한다."""
+        statute_chunks = await self.search(query_text, top_k=3, source_type="법령원문")
+        case_law = await self._fetch_by_topic_tag(topic_key, "판례")
+        cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집")
+        return {"statute": statute_chunks, "case_law": case_law, "cases": cases}
+
+    async def _fetch_by_topic_tag(self, topic_key: str, source_type: str) -> list[Chunk]:
+        sql = text(f"""
+            SELECT {_CHUNK_COLUMNS}, NULL AS distance
+            FROM {self.table_name}
+            WHERE source_type = :source_type AND topic_tags && :tags
+        """)
+        with get_engine().connect() as conn:
+            rows = conn.execute(sql, {"source_type": source_type, "tags": [topic_key]}).mappings().all()
         return [Chunk(**dict(row)) for row in rows]
 
     async def search_by_requirement(self, slot_result: dict) -> dict:

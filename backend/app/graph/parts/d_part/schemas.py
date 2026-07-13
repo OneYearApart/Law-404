@@ -66,6 +66,7 @@ class DPartGraphState(TypedDict, total=False):
     victim_check_attempts: int                                   # 슬롯 진전 없이 머문 연속 턴 수 — fallback 판단용
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     special_case_matched: Optional[str]                          # 매칭된 특수상황
+    general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(전/중/후 13개 항목 키) — 매 턴 재분류, carryover 아님
     recognized: Optional[bool]                                     # risk_trigger 최초 감지 시 인지형/미인지형 라우팅 판별 — 이번 턴 라우팅 전용, carryover 아님
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
     # TODO: app/rag 쪽에 전용 Chunk 타입이 생기면 list[Chunk]로 교체 (2026-07-11 기준 미존재)

@@ -86,6 +86,12 @@ async def call_recognition_check(user_input: str) -> dict:
     return await _call_structured("recognition_router", user_input=user_input)
 
 
+async def call_general_scenario(user_input: str, stage: str, topic_choices: list[str]) -> dict:
+    return await _call_structured(
+        "general_scenario", user_input=user_input, stage=stage, topic_choices=topic_choices
+    )
+
+
 async def generate_response(context: str) -> AsyncGenerator[str, None]:
     """최종 응답(원문→해설→상황적용) 진짜 토큰 스트리밍 — 다른 call_*와 달리 전체를 모아
     JSON 파싱하지 않고 그대로 흘려보낸다. 스트림 시작 후 실패하면 이미 클라이언트로

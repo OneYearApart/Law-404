@@ -5,7 +5,7 @@ LLM/RAG 호출은 전부 monkeypatch로 흉내내고 DB 접근 없음.
 import pytest
 
 from app.graph.parts.d_part import graph as graph_module
-from app.graph.parts.d_part.nodes import response_assembly, risk_trigger
+from app.graph.parts.d_part.nodes import general_scenario, response_assembly, risk_trigger
 from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimJudgment, VictimRequirementSlots
 from app.rag.retrievers.base import Chunk
 
@@ -34,9 +34,9 @@ def test_route_after_risk_trigger_fresh_trigger_goes_to_recognition():
     assert graph_module._route_after_risk_trigger(state) == "recognition_router"
 
 
-def test_route_after_risk_trigger_nothing_goes_to_finalize():
+def test_route_after_risk_trigger_nothing_goes_to_general_scenario():
     state = {"risk_trigger_detected": False}
-    assert graph_module._route_after_risk_trigger(state) == "finalize"
+    assert graph_module._route_after_risk_trigger(state) == "general_scenario"
 
 
 def test_route_after_recognition_recognized():
@@ -84,3 +84,34 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
     assert result["response_stream"] is not None
     chunks = [c async for c in result["response_stream"]]
     assert chunks == ["판단 응답"]
+
+
+@pytest.mark.asyncio
+async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch):
+    """위험신호도 없고 진행 중인 흐름도 없는 턴은 general_scenario에서 항목 매칭+응답 조립까지 간다."""
+
+    async def _fake_call_risk_trigger(user_input: str) -> dict:
+        return {"matched": False, "condition_no": None, "reason": None}
+
+    async def _fake_search_by_topic(topic_key, query_text):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": []}
+
+    async def _fake_generate_response(context: str):
+        yield "일반 시나리오 응답"
+
+    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger)
+    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+
+    initial_state = {
+        "user_input": "등기부등본에 근저당이 많이 잡혀있어서 불안해요",
+        "stage": Stage.PRE,
+        "stage_confirmed": True,
+    }
+
+    result = await graph_module.graph.ainvoke(initial_state)
+
+    assert result["general_topic_matched"] == "전-①등기부등본_위험신호"
+    assert result["response_stream"] is not None
+    chunks = [c async for c in result["response_stream"]]
+    assert chunks == ["일반 시나리오 응답"]
