@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_expire_minutes: int = 30  # access token은 여전히 stateless라 짧게 잡아 탈취 리스크 완화, 대신 refresh token으로 로그인 유지
     refresh_token_expire_days: int = 14
+    law_api_key: str = None
 
     class Config:
         env_file = ".env"
