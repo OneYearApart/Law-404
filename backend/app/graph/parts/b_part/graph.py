@@ -12,6 +12,8 @@ import re
 from typing import Any
 
 from app.llm.b_part import generate_b_part_answer, stream_text
+from app.llm.b_part_intent import analyze_b_part_intent
+from app.llm.b_part_scope import analyze_b_part_scope
 from app.rag.retrievers.b_part import BPartRetriever
 from app.graph.parts.b_part.calendar_events import (
     build_calendar_event_candidates,
@@ -22,6 +24,8 @@ from app.graph.parts.b_part.calendar_events import (
 )
 from app.graph.parts.b_part.rules import parse_money_values_from_text, run_b_part_rules
 
+
+RETRIEVAL_MIN_TOP_SIMILARITY = 0.27
 
 B_PART_CATEGORIES = [
     "계약갱신",
@@ -82,7 +86,7 @@ def extract_user_question(request: dict[str, Any]) -> str:
                 if isinstance(content, str) and content.strip():
                     return content.strip()
 
-    raise ValueError("B파트 질문을 찾지 못했습니다. message 또는 query 값을 보내주세요.")
+    raise ValueError("계약 중에 관련된 질문을 찾지 못했습니다. message 또는 query 값을 보내주세요.")
 
 
 def detect_categories(question: str) -> list[str]:
@@ -105,6 +109,115 @@ def detect_categories(question: str) -> list[str]:
             categories.append(category)
 
     return [category for category in categories if category in B_PART_CATEGORIES]
+
+
+def has_schedule_signal(question: str) -> bool:
+    """
+    갱신 일정/캘린더 계산 의도가 있는지 가볍게 감지합니다.
+
+    이 함수는 최종 분류기가 아니라 LLM Intent Analyzer를 보조 호출할지
+    판단하기 위한 신호 감지용입니다.
+    """
+    has_date = bool(
+        re.search(
+            r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{4}년\s*\d{1,2}월\s*\d{1,2}일",
+            question,
+        )
+    )
+    has_schedule_word = any(
+        keyword in question
+        for keyword in [
+            "계약 종료일",
+            "계약 만료일",
+            "종료일",
+            "만료일",
+            "갱신",
+            "언제부터",
+            "일정",
+            "캘린더",
+            "등록",
+        ]
+    )
+    return has_date and has_schedule_word
+
+
+def detect_out_of_scope_reason(question: str) -> dict[str, Any] | None:
+    """B파트 담당 범위를 벗어난 질문인지 먼저 확인합니다."""
+    out_of_scope_keywords = {
+        "계약 전/전세사기 위험 분석": [
+            "전세사기",
+            "깡통전세",
+            "등기부등본",
+            "신탁",
+            "선순위",
+            "근저당",
+            "전입신고 전",
+            "계약 전",
+        ],
+        "계약 종료 후/보증금 반환": [
+            "보증금 반환",
+            "보증금을 안 돌려",
+            "보증금 안 돌려",
+            "보증금을 못 받",
+            "임차권등기명령",
+            "임차권 등기",
+        ],
+        "권리분석/경매·배당": [
+            "대항력",
+            "우선변제권",
+            "최우선변제권",
+            "경매",
+            "배당",
+            "확정일자 순위",
+        ],
+        "계약 종료 후/명도·원상회복": [
+            "명도",
+            "원상회복",
+            "퇴거 후",
+            "이사 후",
+        ],
+        "비주택 임대차": [
+            "상가",
+            "점포",
+            "사무실",
+            "공장",
+            "토지 임대차",
+        ],
+    }
+
+    for reason, keywords in out_of_scope_keywords.items():
+        if any(keyword in question for keyword in keywords):
+            return {
+                "is_out_of_scope": True,
+                "reason": reason,
+            }
+
+    return None
+
+
+def should_call_llm_intent(
+    question: str,
+    categories: list[str],
+    rule_results: list[dict[str, Any]],
+) -> bool:
+    """
+    키워드 기반 분류가 비었거나, 일정 신호가 있는데 계산 결과가 없을 때만
+    LLM Intent Analyzer를 보조 호출합니다.
+    """
+    if not categories:
+        return True
+    if has_schedule_signal(question) and not rule_results:
+        return True
+    return False
+
+
+def merge_categories(base_categories: list[str], new_categories: list[str]) -> list[str]:
+    """기존 카테고리 순서를 유지하면서 LLM 카테고리를 뒤에 보강합니다."""
+    merged = list(base_categories)
+    for category in new_categories:
+        if category in B_PART_CATEGORIES and category not in merged:
+            merged.append(category)
+    return merged
 
 
 def find_missing_questions(question: str, categories: list[str]) -> list[str]:
@@ -148,6 +261,98 @@ def deduplicate_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return unique_results
 
 
+def evaluate_retrieval_quality(retrieved: list[dict[str, Any]]) -> dict[str, Any]:
+    """검색 결과가 답변 생성에 충분한지 가볍게 판단합니다."""
+    similarities = [
+        float(result.get("similarity", 0) or 0)
+        for result in retrieved
+    ]
+    max_similarity = max(similarities, default=0.0)
+    average_similarity = (
+        round(sum(similarities) / len(similarities), 4)
+        if similarities
+        else 0.0
+    )
+
+    if not retrieved:
+        return {
+            "is_weak": True,
+            "reason": "검색 결과가 없습니다.",
+            "max_similarity": 0.0,
+            "average_similarity": 0.0,
+            "threshold": RETRIEVAL_MIN_TOP_SIMILARITY,
+        }
+
+    is_weak = max_similarity < RETRIEVAL_MIN_TOP_SIMILARITY
+    reason = (
+        "Top-1 similarity가 기준보다 낮습니다."
+        if is_weak
+        else "검색 결과가 기준을 통과했습니다."
+    )
+
+    return {
+        "is_weak": is_weak,
+        "reason": reason,
+        "max_similarity": round(max_similarity, 4),
+        "average_similarity": average_similarity,
+        "threshold": RETRIEVAL_MIN_TOP_SIMILARITY,
+    }
+
+
+def should_refine_intent_after_retrieval(
+    retrieval_quality: dict[str, Any],
+    intent_result: dict[str, Any] | None,
+) -> bool:
+    """검색 결과가 약하고 아직 LLM 보완을 하지 않았을 때 재분류를 시도합니다."""
+    if not retrieval_quality.get("is_weak"):
+        return False
+    if intent_result and intent_result.get("source") == "llm":
+        return False
+    return True
+
+
+def should_call_scope_analyzer(question: str, categories: list[str]) -> bool:
+    """카테고리가 잡히지 않는 질문은 B파트 범위인지 먼저 확인합니다."""
+    if categories:
+        return False
+    if has_schedule_signal(question):
+        return False
+    return True
+
+
+def build_scope_guidance_answer(scope_result: dict[str, Any]) -> str:
+    """범위 밖 또는 애매한 질문에 대한 안내 답변을 만듭니다."""
+    scope = scope_result.get("scope")
+    reason = scope_result.get("reason") or "질문만으로는 B파트 범위인지 판단하기 어렵습니다."
+    clarification_question = (
+        scope_result.get("clarification_question")
+        or "주택임대차 계약 중 어떤 문제인지 조금 더 구체적으로 알려주세요."
+    )
+
+    if scope == "out_of_scope":
+        return (
+            "이 질문은 현재 계약 중 범위인 '주택임대차 계약 중 분쟁'에는 포함되지 않을 가능성이 큽니다.\n\n"
+            f"판단 이유: {reason}\n\n"
+            "계약 중 범위에서는 실제 거주 중 발생하는 계약갱신, 계약갱신요구권, 묵시적 갱신, "
+            "월세·보증금 증감, 전월세전환, 임대인의무, 수선의무, 계약 중도해지, "
+            "계약 중 손해배상 문제를 다룹니다."
+        )
+
+    return (
+        "현재 질문만으로는 계약 중 범위인 '주택임대차 계약 중 분쟁'에 해당하는지 판단하기 어렵습니다.\n\n"
+        f"판단 이유: {reason}\n\n"
+        "계약 중 범위에서는 다음 문제를 다룹니다.\n"
+        "- 계약갱신 또는 계약갱신요구권\n"
+        "- 묵시적 갱신\n"
+        "- 월세·보증금 인상 또는 감액\n"
+        "- 전월세전환\n"
+        "- 임대인의 수선의무\n"
+        "- 계약 중도해지\n"
+        "- 계약 중 손해배상\n\n"
+        f"{clarification_question}"
+    )
+
+
 class BPartMVPGraph:
     """FastAPI 라우터와 맞추기 위한 최소 graph 인터페이스입니다."""
 
@@ -156,6 +361,41 @@ class BPartMVPGraph:
 
     async def ainvoke(self, request: dict[str, Any]) -> dict[str, Any]:
         question = extract_user_question(request)
+        out_of_scope = detect_out_of_scope_reason(question)
+        if out_of_scope:
+            answer = (
+                "이 질문은 현재 계약 중 범위인 '주택임대차 계약 중 분쟁'에는 포함되지 않습니다.\n\n"
+                f"감지된 범위 밖 주제: {out_of_scope['reason']}\n\n"
+                "계약 중 범위에서는 실제 거주 중 발생하는 계약갱신, 계약갱신요구권, 묵시적 갱신, "
+                "월세·보증금 증감, 전월세전환, 임대인의무, 수선의무, 계약 중도해지, "
+                "계약 중 손해배상 문제를 다룹니다."
+            )
+
+            return {
+                "question": question,
+                "categories": [],
+                "intent_result": None,
+                "scope_result": {
+                    "source": "keyword",
+                    "scope": "out_of_scope",
+                    "reason": out_of_scope["reason"],
+                    "suggested_categories": [],
+                    "clarification_question": "",
+                },
+                "rule_results": [],
+                "calendar_events": [],
+                "pending_action": None,
+                "calendar_registration": None,
+                "missing_questions": [],
+                "retrieved": [],
+                "retrieval_quality": {
+                    "is_out_of_scope": True,
+                    "reason": out_of_scope["reason"],
+                },
+                "final_answer": answer,
+                "response_stream": stream_text(answer),
+            }
+
         pending_action = request.get("pending_action")
         if isinstance(pending_action, dict) and is_calendar_registration_approved(question):
             calendar_registration = build_calendar_registration_ready_action(pending_action)
@@ -169,6 +409,8 @@ class BPartMVPGraph:
                 return {
                     "question": question,
                     "categories": [],
+                    "intent_result": None,
+                    "scope_result": None,
                     "rule_results": [],
                     "calendar_events": calendar_registration.get("events", []),
                     "pending_action": None,
@@ -186,10 +428,77 @@ class BPartMVPGraph:
             categories = detect_categories(question)
 
         top_k = int(request.get("top_k", 5))
+        scope_result: dict[str, Any] | None = None
+
+        if should_call_scope_analyzer(question=question, categories=categories):
+            scope_result = analyze_b_part_scope(question)
+            scope = scope_result.get("scope")
+            if scope in {"out_of_scope", "ambiguous"}:
+                answer = build_scope_guidance_answer(scope_result)
+                return {
+                    "question": question,
+                    "categories": scope_result.get("suggested_categories", []),
+                    "intent_result": None,
+                    "scope_result": scope_result,
+                    "rule_results": [],
+                    "calendar_events": [],
+                    "pending_action": None,
+                    "calendar_registration": None,
+                    "missing_questions": [scope_result.get("clarification_question", "")],
+                    "retrieved": [],
+                    "retrieval_quality": {
+                        "is_out_of_scope": scope == "out_of_scope",
+                        "is_ambiguous_scope": scope == "ambiguous",
+                        "reason": scope_result.get("reason"),
+                    },
+                    "final_answer": answer,
+                    "response_stream": stream_text(answer),
+                }
+
+            categories = merge_categories(
+                categories,
+                scope_result.get("suggested_categories", []),
+            )
+
         rule_results = run_b_part_rules(question=question, categories=categories)
+        intent_result: dict[str, Any] | None = None
+
+        if should_call_llm_intent(
+            question=question,
+            categories=categories,
+            rule_results=rule_results,
+        ):
+            intent_result = analyze_b_part_intent(question)
+            categories = merge_categories(
+                categories,
+                intent_result.get("categories", []),
+            )
+            rule_results = run_b_part_rules(question=question, categories=categories)
+
         calendar_events = build_calendar_event_candidates(rule_results)
         pending_action = build_calendar_pending_action(calendar_events)
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+        retrieval_quality = evaluate_retrieval_quality(retrieved)
+
+        if should_refine_intent_after_retrieval(
+            retrieval_quality=retrieval_quality,
+            intent_result=intent_result,
+        ):
+            intent_result = analyze_b_part_intent(question)
+            intent_result["trigger"] = "weak_retrieval"
+            categories = merge_categories(
+                categories,
+                intent_result.get("categories", []),
+            )
+            rule_results = run_b_part_rules(question=question, categories=categories)
+            calendar_events = build_calendar_event_candidates(rule_results)
+            pending_action = build_calendar_pending_action(calendar_events)
+            retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+            retrieval_quality = evaluate_retrieval_quality(retrieved)
+            retrieval_quality["refined_by_llm"] = True
+        else:
+            retrieval_quality["refined_by_llm"] = False
+
         missing_questions = find_missing_questions(question, categories)
 
         answer = generate_b_part_answer(
@@ -206,11 +515,14 @@ class BPartMVPGraph:
         return {
             "question": question,
             "categories": categories,
+            "intent_result": intent_result,
+            "scope_result": scope_result,
             "rule_results": rule_results,
             "calendar_events": calendar_events,
             "pending_action": pending_action,
             "missing_questions": missing_questions,
             "retrieved": retrieved,
+            "retrieval_quality": retrieval_quality,
             "final_answer": answer,
             "response_stream": stream_text(answer),
         }
