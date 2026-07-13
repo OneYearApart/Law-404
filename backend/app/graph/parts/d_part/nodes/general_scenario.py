@@ -9,9 +9,7 @@ from app.rag.retrievers.d_part import DPartRetriever
 
 _retriever = DPartRetriever()
 
-# 키 문자열은 app/rag/ingestion/links_d.py::TOPIC_TAG_KEYWORDS와 동일 규칙 — 기존 9개 항목은
-# 같은 값을 쓰고(있는 4개 항목만: 링크 모듈에 정의 없는 4개는 그래프 판별 전용으로 여기서 새로 정의,
-# DB topic_tags 반영은 이번 범위 밖).
+# 키 문자열/키워드는 app/rag/ingestion/links_d.py::TOPIC_TAG_KEYWORDS와 동일 규칙 및 값(13개 전항목 일치).
 _GENERAL_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "전-①등기부등본_위험신호": ("등기부등본", "말소기준권리"),
     "전-②전세가율_HUG보증보험": ("전세가율", "보증보험"),
