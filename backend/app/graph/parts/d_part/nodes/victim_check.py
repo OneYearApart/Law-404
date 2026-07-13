@@ -75,7 +75,10 @@ def _compute_judgment(slots: VictimRequirementSlots) -> VictimJudgment:
 
 async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
     """요건 슬롯 판별 + 구제수단 확인 + 최종판단 상태기계.
-    이미 종결(victim_judgment 확정 또는 victim_fallback)됐으면 재계산하지 않는다."""
+    이미 종결(victim_judgment 확정 또는 victim_fallback)됐으면 재계산하지 않는다.
+    이미 final_answer가 세팅된 턴(예: stage_router 확인질문 대기 중)도 건드리지 않고 통과한다."""
+    if state.get("final_answer") is not None:
+        return state
     if state.get("victim_judgment") is not None or state.get("victim_fallback"):
         return state
 

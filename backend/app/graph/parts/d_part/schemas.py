@@ -54,6 +54,9 @@ class DPartGraphState(TypedDict, total=False):
     다음 턴으로 넘겨야 하는 부분집합만 DPartSessionState로 골라 영속화합니다.
     """
     user_input: str                                # 이번 턴 사용자 발화 원문 — 매 턴 새로 옴, carryover 아님
+    active_query: Optional[str]                       # 확인 게이트 대기 중 스택된 "실질적 질문" 원문.
+                                                         # 게이트를 소유한 노드(현재는 stage_router)가 생애주기를
+                                                         # 관리하며, 그 외 노드는 get_active_query()로만 읽는다
     session_id: Optional[str]                        # = conversations.id. 상태를 어디서 불러올지 가리키는 키일 뿐, 값 자체는 아님
     persona: Optional[str]                             # 사용자 유형(임차인/임대인 등) — 최초 판별 후 유지
     stage: Optional[Stage]                              # 계약 단계(전/중/후) — 최초 판별+확인 후 유지
@@ -81,6 +84,7 @@ class DPartSessionState(BaseModel):
     """
     stage: Optional[Stage] = None
     stage_confirmed: bool = False
+    active_query: Optional[str] = None
     persona: Optional[str] = None
     victim_slots: VictimRequirementSlots = Field(default_factory=VictimRequirementSlots)
     victim_judgment: Optional[VictimJudgment] = None
@@ -88,3 +92,24 @@ class DPartSessionState(BaseModel):
     victim_check_attempts: int = 0
     awaiting_relief_confirmation: bool = False
     special_case_matched: Optional[str] = None
+
+
+def get_active_query(state: DPartGraphState) -> str:
+    """이번 턴 분류/매칭에 쓸 '실질적 사용자 발화'를 반환한다.
+    active_query가 채워져 있으면 그 값(확인 게이트 대기 중 이전 턴에 스택해둔 원문)을,
+    없으면 이번 턴 원문(user_input)을 그대로 반환한다.
+
+    컨벤션 (새로운 확인 게이트를 추가할 때 지켜야 할 규칙):
+      1) 게이트 질문을 처음 세팅하는 턴 — active_query를 이번 턴 user_input으로 세팅
+      2) 게이트 응답(긍정)을 받아 게이트를 통과시키는 턴 — active_query를 건드리지 않음
+         (다음 노드들이 이번 턴 raw user_input 대신 이 값을 읽어야 하므로)
+      3) 게이트 응답(부정)을 받아 리셋하는 턴 — active_query를 None으로 비움
+      4) 게이트 응답을 못 알아들어 재질문하는 턴 — active_query를 건드리지 않음
+
+    분류/매칭 로직만 있는 노드(risk_trigger, recognition_router, special_cases,
+    general_scenario)는 이 함수를 통해서만 "분류 대상 텍스트"에 접근해야 하며,
+    게이트 자체를 소유한 노드(stage_router)나 자기 완결적 게이트를 가진 노드
+    (victim_check의 awaiting_relief_confirmation)는 그대로 raw user_input을 써도 된다
+    — 그 응답이 "예/아니오"류 제어신호일 뿐 재추출할 실질 콘텐츠가 없기 때문이다.
+    """
+    return state.get("active_query") or state["user_input"]

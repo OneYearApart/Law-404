@@ -3,7 +3,7 @@
 special_cases.py(키워드+LLM 매칭)와 response_assembly.py(RAG 검색+응답 생성)를 결합한 구조.
 work-unit 17 — 노드 10~13(판별/라우팅)과 완전히 별개의 작업 범위(작업지시서 17번 참고).
 """
-from app.graph.parts.d_part.schemas import DPartGraphState, Stage
+from app.graph.parts.d_part.schemas import DPartGraphState, Stage, get_active_query
 from app.llm import d_part as llm_d_part
 from app.rag.retrievers.d_part import DPartRetriever
 
@@ -69,7 +69,7 @@ async def handle_general_scenario(state: DPartGraphState) -> DPartGraphState:
         return state
 
     stage = state["stage"]
-    user_input = state["user_input"]
+    user_input = get_active_query(state)
     topic_key = None
 
     for key, keywords in _stage_topics(stage).items():

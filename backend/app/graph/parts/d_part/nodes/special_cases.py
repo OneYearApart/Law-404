@@ -6,7 +6,7 @@
 3. 다가구주택
 4. 공인중개사 허위고지
 """
-from app.graph.parts.d_part.schemas import DPartGraphState
+from app.graph.parts.d_part.schemas import DPartGraphState, get_active_query
 from app.llm import d_part as llm_d_part
 
 _SPECIAL_CASE_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -46,11 +46,14 @@ async def _llm_special_case_check(user_input: str) -> str | None:
 
 async def match_special_case(state: DPartGraphState) -> DPartGraphState:
     """4개 특수상황 카테고리 중 하나에 해당하는지 판단한다(키워드 1차 스캔 + LLM 2차 보완).
-    이미 매칭된 상태(special_case_matched가 값이 있음)면 재판정하지 않고 통과한다."""
+    이미 매칭된 상태(special_case_matched가 값이 있음)면 재판정하지 않고 통과한다.
+    이미 final_answer가 세팅된 턴(예: stage_router 확인질문 대기 중)도 건드리지 않고 통과한다."""
+    if state.get("final_answer") is not None:
+        return state
     if state.get("special_case_matched"):
         return state
 
-    user_input = state["user_input"]
+    user_input = get_active_query(state)
 
     for category, keywords in _SPECIAL_CASE_KEYWORDS.items():
         if any(kw in user_input for kw in keywords):

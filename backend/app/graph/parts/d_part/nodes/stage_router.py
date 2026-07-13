@@ -27,25 +27,30 @@ async def route_stage(state: DPartGraphState) -> DPartGraphState:
       stage is None                 → LLM 판별 후 확인 질문 세팅
       stage 있음 + stage_confirmed=False → 이번 턴 입력을 확인 응답(긍정/부정)으로 해석
     """
-    if state.get("stage_confirmed"):
-        return state
-
     user_input = state["user_input"]
+
+    if state.get("stage_confirmed"):
+        state["active_query"] = user_input
+        return state
 
     if state.get("stage") is None:
         stage = await _classify_stage(user_input)
         state["stage"] = stage
         state["stage_confirmed"] = False
         state["final_answer"] = _confirmation_question(stage)
+        state["active_query"] = user_input
         return state
 
     if any(kw in user_input for kw in _CONFIRM_YES):
         state["stage_confirmed"] = True
         state["final_answer"] = None
+        # active_query는 건드리지 않는다 — 지난 턴에 스택해둔 실질 질문을
+        # 이번 턴의 "네" 답변으로 덮어쓰면 안 된다 (핵심 버그 수정 지점)
     elif any(kw in user_input for kw in _CONFIRM_NO):
         state["stage"] = None
         state["stage_confirmed"] = False
         state["final_answer"] = "죄송합니다, 다시 한번 현재 상황을 말씀해 주시겠어요?"
+        state["active_query"] = None
     else:
         state["final_answer"] = _confirmation_question(state["stage"])
 

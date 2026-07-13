@@ -108,3 +108,21 @@ async def test_noop_when_final_answer_already_set():
 
     assert result == state
     assert "general_topic_matched" not in result
+
+
+@pytest.mark.asyncio
+async def test_uses_active_query_over_raw_user_input_when_present(monkeypatch):
+    """stage_router 확인 게이트를 통과한 턴("네")이 아니라, 스택해둔 실질 질문(active_query)으로
+    토픽을 매칭해야 한다 (확인 게이트에서 실질 질문이 유실되는 버그의 회귀 테스트)."""
+    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+
+    state = {
+        "user_input": "네",
+        "active_query": "등기부등본에 근저당이 많이 잡혀있어서 불안해요",
+        "stage": Stage.PRE,
+    }
+
+    result = await general_scenario.handle_general_scenario(state)
+
+    assert result["general_topic_matched"] == "전-①등기부등본_위험신호"

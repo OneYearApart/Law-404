@@ -5,7 +5,7 @@ LLM/RAG 호출은 전부 monkeypatch로 흉내내고 DB 접근 없음.
 import pytest
 
 from app.graph.parts.d_part import graph as graph_module
-from app.graph.parts.d_part.nodes import general_scenario, response_assembly, risk_trigger
+from app.graph.parts.d_part.nodes import general_scenario, response_assembly, risk_trigger, stage_router
 from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimJudgment, VictimRequirementSlots
 from app.rag.retrievers.base import Chunk
 
@@ -115,3 +115,52 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
     assert result["response_stream"] is not None
     chunks = [c async for c in result["response_stream"]]
     assert chunks == ["일반 시나리오 응답"]
+
+
+@pytest.mark.asyncio
+async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypatch):
+    """턴1: 실질 질문 → 단계 확인질문. 턴2: '네' → 원래 질문에 대한 답이 나와야 하며
+    '안내드릴 내용이 없습니다' 폴백으로 떨어지면 안 된다 (재현된 버그의 회귀 테스트)."""
+
+    async def _fake_call_stage_router(user_input: str) -> dict:
+        return {"stage": "전"}
+
+    async def _fake_call_risk_trigger(user_input: str) -> dict:
+        return {"matched": False, "condition_no": None, "reason": None}
+
+    async def _fake_search_by_topic(topic_key, query_text):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="등기부 관련 조문")], "case_law": [], "cases": []}
+
+    async def _fake_generate_response(context: str):
+        yield "등기부등본 답변"
+
+    monkeypatch.setattr(stage_router.llm_d_part, "call_stage_router", _fake_call_stage_router)
+    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger)
+    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+
+    # 턴 1: 실질 질문 — 단계 판별 + 확인질문
+    turn1_input = {"user_input": "계약 전인데 등기부등본을 어떻게 봐야 하나요"}
+    turn1_result = await graph_module.graph.ainvoke(turn1_input)
+
+    assert turn1_result["stage"] == Stage.PRE
+    assert turn1_result["stage_confirmed"] is False
+    assert turn1_result["active_query"] == turn1_input["user_input"]
+    assert turn1_result["final_answer"] is not None
+
+    # 턴 2: "네" — DPartSessionState로 영속화되는 필드만 실제 라우트 핸들러와 동일하게 다음 턴 입력에 반영
+    turn2_input = {
+        "user_input": "네",
+        "stage": turn1_result["stage"],
+        "stage_confirmed": turn1_result["stage_confirmed"],
+        "active_query": turn1_result["active_query"],
+    }
+    turn2_result = await graph_module.graph.ainvoke(turn2_input)
+
+    assert turn2_result["stage_confirmed"] is True
+    assert turn2_result["general_topic_matched"] == "전-①등기부등본_위험신호"
+    assert turn2_result["response_stream"] is not None
+    chunks = [c async for c in turn2_result["response_stream"]]
+    joined = "".join(chunks)
+    assert joined == "등기부등본 답변"
+    assert "안내드릴 내용이 없습니다" not in joined

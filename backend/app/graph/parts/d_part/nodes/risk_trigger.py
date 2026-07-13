@@ -11,7 +11,7 @@
 로컬 경량 분류기 도입 후보 지점 — local_model/models/d_part/ 참고.
 매 턴마다 도는 로직이라 비용/속도 개선 여지가 큼.
 """
-from app.graph.parts.d_part.schemas import DPartGraphState
+from app.graph.parts.d_part.schemas import DPartGraphState, get_active_query
 from app.llm import d_part as llm_d_part
 
 # 1단계: 구(phrase) 단위 키워드 매칭. "사기" 같은 단일 형태소는 무관한 사건을 잘못
@@ -37,7 +37,7 @@ async def _llm_ambiguous_check(user_input: str) -> tuple[int, str] | None:
 async def detect_risk_signal(state: DPartGraphState) -> DPartGraphState:
     """6개 위험신호 조건을 스캔해 risk_trigger_detected/risk_trigger_reason을 채운다.
     stage_router와 독립적으로 동작하며, carryover 없이 매 턴 새로 판단한다."""
-    user_input = state["user_input"]
+    user_input = get_active_query(state)
 
     for condition_no, description, keywords in _TRIGGER_CONDITIONS:
         if any(kw in user_input for kw in keywords):

@@ -30,3 +30,18 @@ async def test_recognized_false(monkeypatch):
     result = await route_recognition({"user_input": "보증금을 못 받고 있어요"})
 
     assert result["recognized"] is False
+
+
+@pytest.mark.asyncio
+async def test_uses_active_query_over_raw_user_input_when_present(monkeypatch):
+    seen_input = {}
+
+    async def _fake(user_input: str) -> dict:
+        seen_input["value"] = user_input
+        return {"recognized": True}
+
+    monkeypatch.setattr(recognition_router.llm_d_part, "call_recognition_check", _fake)
+
+    await route_recognition({"user_input": "네", "active_query": "이미 피해자로 인정받았어요"})
+
+    assert seen_input["value"] == "이미 피해자로 인정받았어요"

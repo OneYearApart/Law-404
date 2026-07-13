@@ -54,3 +54,14 @@ async def test_single_morpheme_fraud_mention_alone_is_not_detected(monkeypatch):
     result = await detect_risk_signal(state)
 
     assert result["risk_trigger_detected"] is False
+
+
+@pytest.mark.asyncio
+async def test_uses_active_query_over_raw_user_input_when_present():
+    """stage_router 확인 게이트 대기 중인 턴("네")이 아니라, 스택해둔 실질 질문(active_query)으로
+    판단해야 한다 (확인 게이트에서 실질 질문이 유실되는 버그의 회귀 테스트)."""
+    state = {"user_input": "네", "active_query": "어제 경매 개시 통지를 받았어요"}
+
+    result = await detect_risk_signal(state)
+
+    assert result["risk_trigger_detected"] is True

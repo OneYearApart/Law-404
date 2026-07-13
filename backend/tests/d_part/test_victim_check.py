@@ -186,8 +186,37 @@ async def test_no_progress_repeated_turns_triggers_fallback(monkeypatch):
     # 1턴째는 슬롯이 미설정(None)에서 명시적 "unclear"로 바뀌는 것 자체가 진전으로 카운트되므로
     # (LLM은 항상 filled/unfilled/unclear 중 하나를 반환하지, None을 반환하지 않음)
     # 진전 없음이 연속으로 잡히는 건 2턴째부터 — MAX_ATTEMPTS(3)에 도달하려면 4턴 필요.
+    # final_answer는 실제 시스템에서 DPartSessionState에 없어 매 턴 자동으로 리셋되므로
+    # (routes/d_part.py가 세션 상태 필드만 다음 턴 입력으로 넘김), 턴 시뮬레이션에서도 동일하게 제거한다.
     for _ in range(4):
+        state.pop("final_answer", None)
         state = await check_victim_status(state)
 
     assert state["victim_fallback"] is True
     assert state.get("victim_judgment") is None
+
+
+@pytest.mark.asyncio
+async def test_pending_final_answer_is_not_overwritten(monkeypatch):
+    """stage_router 확인질문 대기 중(final_answer 세팅됨)인 턴은 슬롯 추출을 시도하지 않고
+    건드리지 않고 통과해야 한다 (같은 턴 안에서 하위 노드가 상위 노드의 미확정 답변을 덮어쓰는
+    잠재 버그의 회귀 테스트)."""
+    called = False
+
+    async def _fake_call_victim_check(user_input: str, existing_slots: dict) -> dict:
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(victim_check.llm_d_part, "call_victim_check", _fake_call_victim_check)
+
+    state = {
+        "user_input": "전입신고랑 확정일자는 받아뒀어요",
+        "final_answer": "말씀하신 내용을 보면 '전' 단계로 보입니다. 맞으신가요?",
+    }
+
+    result = await check_victim_status(state)
+
+    assert called is False
+    assert result["final_answer"] == "말씀하신 내용을 보면 '전' 단계로 보입니다. 맞으신가요?"
+    assert result.get("victim_judgment") is None
