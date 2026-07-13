@@ -13,7 +13,13 @@ from typing import Any
 
 from app.llm.b_part import generate_b_part_answer, stream_text
 from app.rag.retrievers.b_part import BPartRetriever
-from app.graph.parts.b_part.calendar_events import build_calendar_event_candidates
+from app.graph.parts.b_part.calendar_events import (
+    build_calendar_event_candidates,
+    build_calendar_pending_action,
+    build_calendar_registration_ready_action,
+    format_calendar_events_for_answer,
+    is_calendar_registration_approved,
+)
 from app.graph.parts.b_part.rules import parse_money_values_from_text, run_b_part_rules
 
 
@@ -150,6 +156,29 @@ class BPartMVPGraph:
 
     async def ainvoke(self, request: dict[str, Any]) -> dict[str, Any]:
         question = extract_user_question(request)
+        pending_action = request.get("pending_action")
+        if isinstance(pending_action, dict) and is_calendar_registration_approved(question):
+            calendar_registration = build_calendar_registration_ready_action(pending_action)
+            if calendar_registration:
+                answer = (
+                    "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
+                    "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
+                    "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
+                )
+
+                return {
+                    "question": question,
+                    "categories": [],
+                    "rule_results": [],
+                    "calendar_events": calendar_registration.get("events", []),
+                    "pending_action": None,
+                    "calendar_registration": calendar_registration,
+                    "missing_questions": [],
+                    "retrieved": [],
+                    "final_answer": answer,
+                    "response_stream": stream_text(answer),
+                }
+
         categories = request.get("categories") or request.get("category")
         if isinstance(categories, str):
             categories = [categories]
@@ -159,6 +188,7 @@ class BPartMVPGraph:
         top_k = int(request.get("top_k", 5))
         rule_results = run_b_part_rules(question=question, categories=categories)
         calendar_events = build_calendar_event_candidates(rule_results)
+        pending_action = build_calendar_pending_action(calendar_events)
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
         missing_questions = find_missing_questions(question, categories)
 
@@ -169,12 +199,16 @@ class BPartMVPGraph:
             missing_questions=missing_questions,
             rule_results=rule_results,
         )
+        calendar_answer_section = format_calendar_events_for_answer(calendar_events)
+        if calendar_answer_section:
+            answer = f"{answer.rstrip()}\n\n{calendar_answer_section}"
 
         return {
             "question": question,
             "categories": categories,
             "rule_results": rule_results,
             "calendar_events": calendar_events,
+            "pending_action": pending_action,
             "missing_questions": missing_questions,
             "retrieved": retrieved,
             "final_answer": answer,

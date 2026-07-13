@@ -97,6 +97,28 @@ def format_rule_results(rule_results: list[dict[str, Any]] | None) -> str:
     return "\n\n".join(blocks)
 
 
+def format_calendar_events(calendar_events: list[dict[str, Any]] | None) -> str:
+    """
+    캘린더 등록 후보 일정을 GPT 프롬프트에 넣기 좋은 문자열로 변환합니다.
+    """
+    if not calendar_events:
+        return "캘린더 등록 후보 일정이 없습니다."
+
+    blocks: list[str] = []
+
+    for index, event in enumerate(calendar_events, start=1):
+        lines = [
+            f"[일정 후보 {index}]",
+            f"- 제목: {event.get('title', '일정')}",
+            f"- 날짜: {event.get('date', '')}",
+            f"- 설명: {event.get('description', '')}",
+            f"- 일정 유형: {event.get('event_type', '')}",
+        ]
+        blocks.append("\n".join(lines))
+
+    return "\n\n".join(blocks)
+
+
 def format_retrieved_documents(retrieved_documents: list[dict[str, Any]]) -> str:
     """GPT 프롬프트에 넣기 좋게 검색 결과를 짧게 정리합니다."""
     if not retrieved_documents:
@@ -139,6 +161,7 @@ def build_b_part_answer_prompt(
     categories: list[str] | None = None,
     missing_questions: list[str] | None = None,
     rule_results: list[dict[str, Any]] | None = None,
+    calendar_events: list[dict[str, Any]] | None = None,
 ) -> str:
     """사용자 질문, 의도, 검색 결과를 하나의 프롬프트로 조립합니다."""
     category_text = ", ".join(categories or []) if categories else "분류 전"
@@ -155,6 +178,11 @@ def build_b_part_answer_prompt(
 
 [Rule Engine 계산 결과]
 {format_rule_results(rule_results)}
+
+[Calendar Event Candidates]
+{format_calendar_events(calendar_events)}
+
+Calendar Event Candidates가 있으면 답변 마지막에 "캘린더 등록 가능 일정" 섹션을 추가하고, 실제 등록 전 사용자 확인이 필요하다고 안내하세요.
 
 [부족하거나 추가 확인할 정보]
 {missing_text}
@@ -194,6 +222,7 @@ def generate_b_part_answer(
     categories: list[str] | None = None,
     missing_questions: list[str] | None = None,
     rule_results: list[dict[str, Any]] | None = None,
+    calendar_events: list[dict[str, Any]] | None = None,
     model: str = DEFAULT_MODEL,
 ) -> str:
     """Responses API로 B파트 최종 답변을 생성합니다."""
@@ -209,6 +238,7 @@ def generate_b_part_answer(
         categories=categories,
         missing_questions=missing_questions,
         rule_results=rule_results,
+        calendar_events=calendar_events,
     )
 
     response = client.responses.create(
