@@ -13,6 +13,7 @@ from typing import Any
 
 from app.llm.b_part import generate_b_part_answer, stream_text
 from app.rag.retrievers.b_part import BPartRetriever
+from app.graph.parts.b_part.calendar_events import build_calendar_event_candidates
 from app.graph.parts.b_part.rules import parse_money_values_from_text, run_b_part_rules
 
 
@@ -157,6 +158,7 @@ class BPartMVPGraph:
 
         top_k = int(request.get("top_k", 5))
         rule_results = run_b_part_rules(question=question, categories=categories)
+        calendar_events = build_calendar_event_candidates(rule_results)
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
         missing_questions = find_missing_questions(question, categories)
 
@@ -172,6 +174,7 @@ class BPartMVPGraph:
             "question": question,
             "categories": categories,
             "rule_results": rule_results,
+            "calendar_events": calendar_events,
             "missing_questions": missing_questions,
             "retrieved": retrieved,
             "final_answer": answer,
