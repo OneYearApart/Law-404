@@ -68,6 +68,35 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
+def format_rule_results(rule_results: list[dict[str, Any]] | None) -> str:
+    """
+    Rule Engine 계산 결과를 GPT 프롬프트에 넣기 좋은 문자열로 변환합니다.
+    """
+    if not rule_results:
+        return "Rule Engine 계산 결과가 없습니다."
+
+    blocks: list[str] = []
+
+    for index, result in enumerate(rule_results, start=1):
+        rule_name = result.get("rule_name", "규칙 계산")
+        rule_type = result.get("rule_type", "unknown")
+
+        lines = [
+            f"[계산 결과 {index}]",
+            f"- 규칙명: {rule_name}",
+            f"- 규칙 유형: {rule_type}",
+        ]
+
+        for key, value in result.items():
+            if key in {"rule_name", "rule_type"}:
+                continue
+            lines.append(f"- {key}: {value}")
+
+        blocks.append("\n".join(lines))
+
+    return "\n\n".join(blocks)
+
+
 def format_retrieved_documents(retrieved_documents: list[dict[str, Any]]) -> str:
     """GPT 프롬프트에 넣기 좋게 검색 결과를 짧게 정리합니다."""
     if not retrieved_documents:
@@ -109,6 +138,7 @@ def build_b_part_answer_prompt(
     retrieved_documents: list[dict[str, Any]],
     categories: list[str] | None = None,
     missing_questions: list[str] | None = None,
+    rule_results: list[dict[str, Any]] | None = None,
 ) -> str:
     """사용자 질문, 의도, 검색 결과를 하나의 프롬프트로 조립합니다."""
     category_text = ", ".join(categories or []) if categories else "분류 전"
@@ -123,6 +153,9 @@ def build_b_part_answer_prompt(
 [예상 분쟁 카테고리]
 {category_text}
 
+[Rule Engine 계산 결과]
+{format_rule_results(rule_results)}
+
 [부족하거나 추가 확인할 정보]
 {missing_text}
 
@@ -131,6 +164,9 @@ def build_b_part_answer_prompt(
 
 [작성 지시]
 - 사용자의 질문에 먼저 답하고, 필요한 경우 추가 확인 질문을 마지막에 붙이세요.
+- 날짜, 금액, 인상률, 5% 초과 여부는 Rule Engine 계산 결과가 있으면 그 값을 우선 사용하세요.
+- Rule Engine 계산 결과가 없는 날짜/금액 판단은 직접 확정하지 말고 추가 확인이 필요하다고 말하세요.
+- 차임증감 질문에서 Rule Engine 계산 결과가 없으면 현재 월세와 요구 월세가 필요하다고 반드시 안내하세요.
 - 검색 결과의 제목이나 조문명을 법적 근거에 포함하세요.
 - 관련 판례가 검색 결과에 없거나 관련성이 낮으면 "현재 검색 결과만으로는 직접 맞는 판례를 특정하기 어렵습니다"라고 말하세요.
 - 추천 행동은 사용자가 바로 할 수 있는 순서로 작성하세요.
@@ -157,6 +193,7 @@ def generate_b_part_answer(
     retrieved_documents: list[dict[str, Any]],
     categories: list[str] | None = None,
     missing_questions: list[str] | None = None,
+    rule_results: list[dict[str, Any]] | None = None,
     model: str = DEFAULT_MODEL,
 ) -> str:
     """Responses API로 B파트 최종 답변을 생성합니다."""
@@ -171,6 +208,7 @@ def generate_b_part_answer(
         retrieved_documents=retrieved_documents,
         categories=categories,
         missing_questions=missing_questions,
+        rule_results=rule_results,
     )
 
     response = client.responses.create(

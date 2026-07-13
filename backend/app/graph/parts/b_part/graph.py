@@ -13,6 +13,7 @@ from typing import Any
 
 from app.llm.b_part import generate_b_part_answer, stream_text
 from app.rag.retrievers.b_part import BPartRetriever
+from app.graph.parts.b_part.rules import parse_money_values_from_text, run_b_part_rules
 
 
 B_PART_CATEGORIES = [
@@ -103,15 +104,17 @@ def find_missing_questions(question: str, categories: list[str]) -> list[str]:
     """계산이나 판단에 필요한 핵심 정보가 빠졌을 때 추가 질문을 만듭니다."""
     missing: list[str] = []
     has_date = bool(re.search(r"\d{4}[년./-]\s*\d{1,2}|만료|종료|통보|받았", question))
-    has_amount = bool(re.search(r"\d+\s*(만\s*)?원|\d+\s*%|보증금|월세", question))
+
+    money_values = parse_money_values_from_text(question)
+    has_two_money_values = len(money_values) >= 2
 
     if any(category in categories for category in ["계약갱신", "계약갱신요구권", "묵시적갱신"]):
         if not has_date:
             missing.append("계약 종료일과 집주인 또는 세입자가 통보한 날짜가 언제인지 알려주세요.")
 
     if any(category in categories for category in ["차임증감", "전월세전환"]):
-        if not has_amount:
-            missing.append("현재 보증금/월세와 변경 요구 금액을 알려주세요.")
+        if not has_two_money_values:
+            missing.append("현재 월세와 집주인이 요구한 월세가 각각 얼마인지 알려주세요.")
         if "최근" not in question and "1년" not in question:
             missing.append("최근 1년 안에 보증금이나 월세를 올린 적이 있는지 알려주세요.")
 
@@ -153,6 +156,7 @@ class BPartMVPGraph:
             categories = detect_categories(question)
 
         top_k = int(request.get("top_k", 5))
+        rule_results = run_b_part_rules(question=question, categories=categories)
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
         missing_questions = find_missing_questions(question, categories)
 
@@ -161,11 +165,13 @@ class BPartMVPGraph:
             retrieved_documents=retrieved,
             categories=categories,
             missing_questions=missing_questions,
+            rule_results=rule_results,
         )
 
         return {
             "question": question,
             "categories": categories,
+            "rule_results": rule_results,
             "missing_questions": missing_questions,
             "retrieved": retrieved,
             "final_answer": answer,
