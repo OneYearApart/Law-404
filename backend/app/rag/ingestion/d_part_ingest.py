@@ -23,7 +23,7 @@ from sqlalchemy import text
 from app.core.config import get_engine
 from app.rag.embeddings.d_base import embed_batch
 from app.rag.ingestion.hug_docs_d import load_hug_chunks
-from app.rag.ingestion.links_d import build_links
+from app.rag.ingestion.links_d import build_links, enrich_hug_topic_tags
 from app.rag.ingestion.precedents_d import load_precedent_chunks
 from app.rag.ingestion.statutes_d import load_statute_chunks
 from app.rag.retrievers.base import _vector_literal
@@ -115,6 +115,7 @@ async def ingest(embed_enabled: bool = False):
 
         rows = load_precedent_chunks() + load_statute_chunks() + load_hug_chunks()
         rows = _split_oversized_rows(rows)
+        enrich_hug_topic_tags([row for row in rows if row["source_type"] == "HUG사례집"])
         for row in rows:
             row["id"] = _insert_chunk(conn, row)
 
