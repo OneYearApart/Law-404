@@ -21,8 +21,21 @@ async def test_row_counts(ingested):
         )).all())
 
     assert counts["판례"] == 431
-    assert counts["법령원문"] == 703
+    assert counts["법령원문"] == 798
     assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
+
+
+@pytest.mark.asyncio
+async def test_decree_articles_loaded(ingested):
+    """최우선변제액·소액임차인 범위는 법률 본문이 아닌 시행령에만 있다 (작업단위 38)."""
+    with get_engine().connect() as conn:
+        rows = dict(conn.execute(text(
+            "SELECT article_no, content FROM d_part_embeddings"
+            " WHERE statute_name = '주택임대차보호법 시행령' AND article_no IN ('10', '11')"
+        )).all())
+
+    assert "5천500만원" in rows["10"]      # 최우선변제 금액 (서울)
+    assert "1억6천500만원" in rows["11"]   # 소액임차인 범위 (서울)
 
 
 @pytest.mark.asyncio
