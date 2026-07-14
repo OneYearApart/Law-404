@@ -1,10 +1,9 @@
-# backend/tests/a_part/run_a_part_answer_eval20.py
+# backend/tests/a_part/run_search_answer20.py
 # A part 대표 질문 20개로 검색·근거 선택·구조화 답변 품질을 평가한다.
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,8 +28,6 @@ from backend.app.llm.a_part import (
 )
 
 
-RESULT_DIR = PROJECT_ROOT / "backend" / "tests" / "a_part" / "results"
-RESULT_PATH = RESULT_DIR / "a_part_rag_answer_eval20_v1.json"
 
 
 KeywordGroup = tuple[str, ...]
@@ -1053,21 +1050,19 @@ def _parse_args() -> argparse.Namespace:
             "예: --only q07_mortgage q10_trust"
         ),
     )
-    parser.add_argument(
-        "--output",
-        default=str(RESULT_PATH),
-        help="JSON 결과 저장 경로",
-    )
     return parser.parse_args()
 
 
-def main() -> None:
-    args = _parse_args()
-
+def run_evaluation(
+    *,
+    full: bool = False,
+    only: list[str] | None = None,
+) -> dict:
+    """대표 질문을 실행하고 파일 저장 없이 평가 결과를 반환한다."""
     selected_cases = list(EVAL_CASES)
 
-    if args.only:
-        only_ids = set(args.only)
+    if only:
+        only_ids = set(only)
         selected_cases = [
             case
             for case in EVAL_CASES
@@ -1137,7 +1132,7 @@ def main() -> None:
             )
             summary[result.status] += 1
 
-            if args.full:
+            if full:
                 print(format_answer_for_console(response))
                 print()
                 print("자동 평가")
@@ -1196,9 +1191,7 @@ def main() -> None:
     for status in ["PASS", "REVIEW", "FAIL", "ERROR"]:
         print(f"{status}: {summary[status]}개")
 
-    RESULT_DIR.mkdir(parents=True, exist_ok=True)
-
-    payload = {
+    return {
         "answer_code_version": getattr(
             a_part_module,
             "ANSWER_CODE_VERSION",
@@ -1210,21 +1203,16 @@ def main() -> None:
         "results": serialized_results,
     }
 
-    result_path = Path(args.output)
-    if not result_path.is_absolute():
-        result_path = PROJECT_ROOT / result_path
-    result_path.parent.mkdir(parents=True, exist_ok=True)
 
-    result_path.write_text(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+def main() -> None:
+    args = _parse_args()
+    result = run_evaluation(
+        full=args.full,
+        only=args.only,
     )
-
-    print(f"\nJSON 결과 저장: {result_path}")
+    expected = {"PASS": len(result["results"]), "REVIEW": 0, "FAIL": 0, "ERROR": 0}
+    if result.get("summary") != expected:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
