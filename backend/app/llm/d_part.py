@@ -25,6 +25,9 @@ from app.core.config import settings
 from app.graph.parts.d_part.schemas import GENERAL_TOPIC_LABELS, SPECIAL_CASE_CATEGORIES
 
 MODEL = "gpt-4o"
+# 확인 응답 판별은 예/아니오/불명확 3-way 분류라 법률지식이 필요 없고 매 턴 호출되므로
+# 더 싼 모델을 쓴다. 단위 21′에서 로컬모델(EXAONE)로 스왑 검토 예정.
+CONFIRMATION_MODEL = "gpt-4o-mini"
 MAX_RETRIES = 3
 
 _client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -53,6 +56,23 @@ _SUPERVISOR_TOOL = {
                 "reason": {"type": "string", "description": "판단 근거 한 줄"},
             },
             "required": ["category"],
+        },
+    },
+}
+
+
+_CONFIRMATION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "confirm",
+        "description": "확인 질문에 대한 사용자 응답을 yes/no/unclear로 판별한다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string", "enum": ["yes", "no", "unclear"]},
+                "reason": {"type": "string", "description": "판단 근거 한 줄"},
+            },
+            "required": ["answer"],
         },
     },
 }
@@ -96,7 +116,7 @@ async def _call_structured(prompt_name: str, **kwargs) -> dict:
     return json.loads(_strip_code_fence(raw))
 
 
-async def _call_tool(prompt_name: str, tool: dict, **kwargs) -> dict:
+async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs) -> dict:
     """_call_structured와 달리 응답을 텍스트로 받아 JSON 파싱하지 않고, OpenAI tool
     calling으로 스키마(enum)를 강제해 모델이 정의된 카테고리 밖의 값을 반환할 수
     없게 한다. 스트리밍 대상이 아니라 stream=False로 호출한다."""
@@ -105,7 +125,7 @@ async def _call_tool(prompt_name: str, tool: dict, **kwargs) -> dict:
     for attempt in range(MAX_RETRIES):
         try:
             response = await _client.chat.completions.create(
-                model=MODEL,
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 tools=[tool],
                 tool_choice={"type": "function", "function": {"name": tool_name}},
@@ -128,6 +148,16 @@ async def call_victim_check(user_input: str, existing_slots: dict) -> dict:
 
 async def call_supervisor(user_input: str) -> dict:
     return await _call_tool("supervisor", _SUPERVISOR_TOOL, user_input=user_input)
+
+
+async def call_confirmation(question: str, user_input: str) -> dict:
+    return await _call_tool(
+        "confirmation",
+        _CONFIRMATION_TOOL,
+        model=CONFIRMATION_MODEL,
+        question=question,
+        user_input=user_input,
+    )
 
 
 async def generate_response(context: str) -> AsyncGenerator[str, None]:

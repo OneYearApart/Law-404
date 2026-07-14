@@ -82,6 +82,51 @@ async def test_call_structured_strips_markdown_code_fence(monkeypatch):
     assert result == {"stage": "전"}
 
 
+def _tool_call_response(arguments: dict):
+    call = SimpleNamespace(function=SimpleNamespace(arguments=json.dumps(arguments, ensure_ascii=False)))
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))])
+
+
+@pytest.mark.asyncio
+async def test_call_confirmation_returns_tool_answer_and_uses_cheaper_model(monkeypatch):
+    captured = {}
+
+    async def _fake_create(**kwargs):
+        captured.update(kwargs)
+        return _tool_call_response({"answer": "unclear", "reason": "조건부 긍정"})
+
+    monkeypatch.setattr(d_part._client.chat.completions, "create", _fake_create)
+
+    result = await d_part.call_confirmation("'전' 단계로 보입니다. 맞으신가요?", "맞긴 한데 좀 애매해요")
+
+    assert result["answer"] == "unclear"
+    # 3-way 판별에 gpt-4o를 쓸 이유가 없다 — 매 턴 호출되는 경로라 더 싼 모델로 고정
+    assert captured["model"] == d_part.CONFIRMATION_MODEL
+    assert captured["model"] != d_part.MODEL
+    # enum으로 세 값 밖을 못 나가도록 tool calling을 강제한다
+    assert captured["tools"][0]["function"]["parameters"]["properties"]["answer"]["enum"] == [
+        "yes",
+        "no",
+        "unclear",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_call_supervisor_still_uses_default_model(monkeypatch):
+    """_call_tool에 model 파라미터를 추가하면서 기존 호출부가 영향받지 않았는지."""
+    captured = {}
+
+    async def _fake_create(**kwargs):
+        captured.update(kwargs)
+        return _tool_call_response({"category": "open_qa"})
+
+    monkeypatch.setattr(d_part._client.chat.completions, "create", _fake_create)
+
+    await d_part.call_supervisor("보증금 반환청구 소송은 어떻게 하나요")
+
+    assert captured["model"] == d_part.MODEL
+
+
 def test_render_prompt_loads_template_and_appends_context():
     prompt = d_part._render_prompt("stage_router", user_input="테스트 발화")
 

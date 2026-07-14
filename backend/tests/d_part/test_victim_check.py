@@ -1,6 +1,7 @@
 """
 victim_check 노드 상태기계 테스트 (DB 접근 없는 순수 로직).
-call_victim_check(LLM 호출)는 monkeypatch로 흉내내고, 노드에 남은 병합/상태기계/판정 로직만 검증한다.
+LLM 호출 두 종류(call_victim_check로 슬롯 추출, parse_confirmation으로 구제수단 확인응답 판별)는
+monkeypatch로 흉내내고, 노드가 코드로 책임지는 병합/상태기계/판정 로직만 검증한다.
 """
 import pytest
 
@@ -12,6 +13,13 @@ from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimReq
 def _fake_call_victim_check(payload: dict):
     async def _fake(user_input: str, existing_slots: dict) -> dict:
         return payload
+
+    return _fake
+
+
+def _fake_confirmation(answer):
+    async def _fake(question: str, user_input: str):
+        return answer
 
     return _fake
 
@@ -131,16 +139,23 @@ async def test_all_slots_filled_asks_relief_measure_explicitly(monkeypatch):
     assert result.get("victim_judgment") is None
 
 
-@pytest.mark.asyncio
-async def test_affirmative_relief_measure_excludes_without_judgment():
-    # has_relief_measure 확인은 awaiting_relief_confirmation 분기라 LLM 호출이 없음(명시 예/아니오 판정)
-    slots = VictimRequirementSlots(
+def _all_filled_slots() -> VictimRequirementSlots:
+    return VictimRequirementSlots(
         moved_in_and_fixed_date=SlotStatus.FILLED,
         deposit_under_limit=SlotStatus.FILLED,
         multiple_victims=SlotStatus.FILLED,
         no_intent_to_return=SlotStatus.FILLED,
     )
-    state = {"user_input": "네 맞아요", "victim_slots": slots, "awaiting_relief_confirmation": True}
+
+
+@pytest.mark.asyncio
+async def test_affirmative_relief_measure_excludes_without_judgment(monkeypatch):
+    monkeypatch.setattr(victim_check, "parse_confirmation", _fake_confirmation(True))
+    state = {
+        "user_input": "네 맞아요",
+        "victim_slots": _all_filled_slots(),
+        "awaiting_relief_confirmation": True,
+    }
 
     result = await check_victim_status(state)
 
@@ -151,15 +166,13 @@ async def test_affirmative_relief_measure_excludes_without_judgment():
 
 
 @pytest.mark.asyncio
-async def test_negative_relief_measure_computes_final_judgment():
-    # has_relief_measure 확인은 awaiting_relief_confirmation 분기라 LLM 호출이 없음(명시 예/아니오 판정)
-    slots = VictimRequirementSlots(
-        moved_in_and_fixed_date=SlotStatus.FILLED,
-        deposit_under_limit=SlotStatus.FILLED,
-        multiple_victims=SlotStatus.FILLED,
-        no_intent_to_return=SlotStatus.FILLED,
-    )
-    state = {"user_input": "아니요 없어요", "victim_slots": slots, "awaiting_relief_confirmation": True}
+async def test_negative_relief_measure_computes_final_judgment(monkeypatch):
+    monkeypatch.setattr(victim_check, "parse_confirmation", _fake_confirmation(False))
+    state = {
+        "user_input": "아니요 없어요",
+        "victim_slots": _all_filled_slots(),
+        "awaiting_relief_confirmation": True,
+    }
 
     result = await check_victim_status(state)
 
@@ -167,6 +180,50 @@ async def test_negative_relief_measure_computes_final_judgment():
     assert result["victim_flow_closed"] is True
     # 이번 턴에 새로 확정된 판단이므로 응답 조립이 필요하다는 신호가 켜져야 한다
     assert result["needs_response_assembly"] is True
+
+
+@pytest.mark.asyncio
+async def test_unclear_relief_answer_never_excludes_and_reasks(monkeypatch):
+    """구제수단 게이트에서 확신할 수 없는 응답을 긍정으로 삼키면 실제 피해자가 지원대상에서
+    부당 제외된다 — 이 프로젝트에서 가장 위험한 실패 모드라 unclear는 반드시 재질문이어야 한다."""
+    monkeypatch.setattr(victim_check, "parse_confirmation", _fake_confirmation(None))
+    state = {
+        "user_input": "그건 왜 물어보세요?",
+        "victim_slots": _all_filled_slots(),
+        "awaiting_relief_confirmation": True,
+        "victim_check_attempts": 0,
+    }
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].has_relief_measure is None
+    assert result.get("victim_judgment") is None
+    assert result.get("victim_flow_closed", False) is False
+    assert result["awaiting_relief_confirmation"] is True
+    assert result["victim_check_attempts"] == 1
+    assert "제외" not in result["final_answer"]
+
+
+@pytest.mark.asyncio
+async def test_repeated_unclear_relief_answer_triggers_fallback(monkeypatch):
+    """구제수단 게이트가 무한 재질문 루프에 빠지지 않고 상한에서 fallback으로 빠져야 한다."""
+    monkeypatch.setattr(victim_check, "parse_confirmation", _fake_confirmation(None))
+    state = {
+        "user_input": "잘 모르겠어요",
+        "victim_slots": _all_filled_slots(),
+        "awaiting_relief_confirmation": True,
+        "victim_check_attempts": 0,
+    }
+
+    for _ in range(victim_check._MAX_ATTEMPTS):
+        state.pop("final_answer", None)
+        state = await check_victim_status(state)
+
+    assert state["victim_fallback"] is True
+    assert state["victim_flow_closed"] is True
+    assert state["awaiting_relief_confirmation"] is False
+    assert state["victim_slots"].has_relief_measure is None
+    assert state.get("victim_judgment") is None
 
 
 @pytest.mark.asyncio
@@ -199,6 +256,89 @@ async def test_no_progress_repeated_turns_triggers_fallback(monkeypatch):
     assert state["victim_fallback"] is True
     assert state["victim_flow_closed"] is True
     assert state.get("victim_judgment") is None
+
+
+@pytest.mark.asyncio
+async def test_filled_slot_is_never_regressed_by_later_unclear(monkeypatch):
+    """이미 filled로 확정된 슬롯은 이후 턴의 unclear/unfilled로 되돌아가면 안 된다
+    (병합을 프롬프트에 위임했을 때 모델이 지시를 어기면 이미 답한 질문을 다시 묻게 됨)."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",
+                "deposit_under_limit": "unclear",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "filled",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(
+        moved_in_and_fixed_date=SlotStatus.FILLED,
+        deposit_under_limit=SlotStatus.FILLED,
+    )
+    state = {"user_input": "돌려줄 생각이 없어 보여요", "victim_slots": existing}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].moved_in_and_fixed_date == SlotStatus.FILLED
+    assert result["victim_slots"].deposit_under_limit == SlotStatus.FILLED
+    # 이번 턴에 새로 확인된 슬롯은 반영된다
+    assert result["victim_slots"].no_intent_to_return == SlotStatus.FILLED
+
+
+@pytest.mark.asyncio
+async def test_auction_completed_true_survives_later_turns(monkeypatch):
+    """auction_completed는 슬롯①③을 면제하므로 뒤집히면 판정이 통째로 바뀐다.
+    매 턴 LLM이 재판정하더라도 True는 내려오지 않아야 하고, 미언급(null)이 False로 덮어써도 안 된다."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",
+                "deposit_under_limit": "filled",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "filled",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(auction_completed=True, no_intent_to_return=SlotStatus.FILLED)
+    state = {"user_input": "보증금은 2억이었어요", "victim_slots": existing}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].auction_completed is True
+    # ①③ 면제 + ②④ 충족이므로 곧바로 구제수단 질문 단계로 넘어간다
+    assert result["awaiting_relief_confirmation"] is True
+
+
+@pytest.mark.asyncio
+async def test_missing_auction_completed_does_not_default_to_false(monkeypatch):
+    """LLM이 auction_completed를 아예 반환하지 않아도 False로 강제되면 안 된다(Optional[bool] 설계)."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",
+                "deposit_under_limit": "unclear",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unclear",
+                "multiple_victims_reason": None,
+            }
+        ),
+    )
+    state = {"user_input": "음 글쎄요", "victim_slots": VictimRequirementSlots()}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].auction_completed is None
 
 
 @pytest.mark.asyncio

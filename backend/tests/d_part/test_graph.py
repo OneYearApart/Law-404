@@ -5,9 +5,23 @@ LLM/RAG 호출은 전부 monkeypatch로 흉내내고 DB 접근 없음.
 import pytest
 
 from app.graph.parts.d_part import graph as graph_module
-from app.graph.parts.d_part.nodes import general_scenario, open_qa, response_assembly, stage_router, supervisor
+from app.graph.parts.d_part.nodes import (
+    general_scenario,
+    open_qa,
+    response_assembly,
+    stage_router,
+    supervisor,
+    victim_check,
+)
 from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimJudgment, VictimRequirementSlots
 from app.rag.retrievers.base import Chunk
+
+
+def _fake_confirmation(answer):
+    async def _fake(question: str, user_input: str):
+        return answer
+
+    return _fake
 
 
 def test_route_after_supervisor_pending_final_answer_goes_to_finalize():
@@ -39,6 +53,7 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
         yield "판단 응답"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor)
+    monkeypatch.setattr(victim_check, "parse_confirmation", _fake_confirmation(False))
     monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _fake_search_by_requirement)
     monkeypatch.setattr(response_assembly.llm_d_part, "generate_response", _fake_generate_response)
 
@@ -258,6 +273,7 @@ async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypa
         yield "등기부등본 답변"
 
     monkeypatch.setattr(stage_router.llm_d_part, "call_stage_router", _fake_call_stage_router)
+    monkeypatch.setattr(stage_router, "parse_confirmation", _fake_confirmation(True))
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
     monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
     monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
