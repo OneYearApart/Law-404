@@ -21,7 +21,7 @@ def _confirmation_question(stage: Stage) -> str:
 async def route_stage(state: DPartGraphState) -> DPartGraphState:
     """전/중/후 1차 판별 + 사용자 확인 노드.
 
-    risk_trigger(단위 11)와 독립적으로 동작 — 위험신호는 여기서 신경쓰지 않는다.
+    supervisor(단위 11 후신)와 독립적으로 동작 — 카테고리 분류는 여기서 신경쓰지 않는다.
     상태기계:
       stage_confirmed=True          → no-op, 이전 턴 값 그대로 통과 (매 턴 재판별하지 않음)
       stage is None                 → LLM 판별 후 확인 질문 세팅

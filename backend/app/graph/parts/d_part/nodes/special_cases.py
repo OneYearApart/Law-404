@@ -1,20 +1,13 @@
 """
-특수상황(인지형) 매칭 노드.
-이미 피해자임을 인지한 사용자를 위한 개괄 수준 지원절차 안내.
+특수상황(인지형) 실행 노드 — 카테고리 판단은 supervisor가 이미 끝내고
+state["special_case_matched"]에 채워 넘긴다. 이 노드는 그 카테고리에 맞는
+개괄 안내문을 조회해 final_answer로 채우기만 한다.
 1. 임대인 사망/파산
 2. 신탁사기
 3. 다가구주택
 4. 공인중개사 허위고지
 """
-from app.graph.parts.d_part.schemas import DPartGraphState, get_active_query
-from app.llm import d_part as llm_d_part
-
-_SPECIAL_CASE_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "임대인 사망/파산": ("임대인이 사망", "집주인이 사망", "임대인이 파산", "집주인이 파산", "상속인"),
-    "신탁사기": ("신탁", "수탁자", "신탁사기"),
-    "다가구주택": ("다가구", "다가구주택", "선순위 보증금"),
-    "공인중개사 허위고지": ("공인중개사가 거짓말", "중개사가 허위", "중개사가 숨기고", "공인중개사 허위고지", "중개사가 말 안 해줬"),
-}
+from app.graph.parts.d_part.schemas import DPartGraphState
 
 _SPECIAL_CASE_GUIDANCE: dict[str, str] = {
     "임대인 사망/파산": (
@@ -38,34 +31,14 @@ _SPECIAL_CASE_GUIDANCE: dict[str, str] = {
 }
 
 
-async def _llm_special_case_check(user_input: str) -> str | None:
-    """1단계 키워드 스캔이 못 잡은 애매한 케이스를 LLM으로 보완 판별한다."""
-    result = await llm_d_part.call_special_cases(user_input)
-    return result.get("category")
-
-
 async def match_special_case(state: DPartGraphState) -> DPartGraphState:
-    """4개 특수상황 카테고리 중 하나에 해당하는지 판단한다(키워드 1차 스캔 + LLM 2차 보완).
-    이미 매칭된 상태(special_case_matched가 값이 있음)면 재판정하지 않고 통과한다.
-    이미 final_answer가 세팅된 턴(예: stage_router 확인질문 대기 중)도 건드리지 않고 통과한다."""
+    """supervisor가 이미 분류한 special_case_matched를 안내문으로 변환한다. 매 턴
+    다시 호출돼도(후속 대화가 이어져도) 같은 안내문을 그대로 다시 만든다 — 이 노드엔
+    victim_check처럼 이어갈 다회차 상태가 없어서, "이미 매칭됐으니 no-op"으로 두면
+    후속 발화가 finalize의 fallthrough 메시지로 빠지는 문제가 있었다(2026-07-14 제거)."""
     if state.get("final_answer") is not None:
         return state
-    if state.get("special_case_matched"):
-        return state
 
-    user_input = get_active_query(state)
-
-    for category, keywords in _SPECIAL_CASE_KEYWORDS.items():
-        if any(kw in user_input for kw in keywords):
-            state["special_case_matched"] = category
-            state["final_answer"] = _SPECIAL_CASE_GUIDANCE[category]
-            return state
-
-    category = await _llm_special_case_check(user_input)
-    if category:
-        state["special_case_matched"] = category
-        state["final_answer"] = _SPECIAL_CASE_GUIDANCE[category]
-        return state
-
-    state["special_case_matched"] = None
+    category = state["special_case_matched"]
+    state["final_answer"] = _SPECIAL_CASE_GUIDANCE[category]
     return state

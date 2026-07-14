@@ -38,6 +38,27 @@ class VictimJudgment(str, Enum):
     NEEDS_CONFIRMATION = "추가확인"
 
 
+# supervisor(nodes/supervisor.py)의 분류 대상 카테고리와 실행 노드(general_scenario.py/
+# special_cases.py)가 참조하는 라벨이 서로 어긋나지 않도록 여기 한 곳에서만 정의한다.
+GENERAL_TOPIC_LABELS: dict[str, str] = {
+    "전-①등기부등본_위험신호": "등기부등본 위험 신호 해석(근저당, 가압류, 소유권 이전 이력)",
+    "전-②전세가율_HUG보증보험": "전세가율/HUG 보증보험 가입 가능 여부 미확인",
+    "전-③다가구_선순위보증금": "다가구주택 선순위 보증금 미확인",
+    "전-④계약서_특약사항": "계약서 특약사항 위험 조항 해석",
+    "전-⑤신탁사기": "임대인 실제 소유자 여부(신탁사기)",
+    "전-⑥공인중개사_허위고지": "공인중개사 허위/누락 고지",
+    "중-①소유권_변동모니터링": "소유권 변동 모니터링",
+    "중-②근저당_추가설정": "근저당 추가 설정 모니터링",
+    "중-③임대인_세금체납": "임대인 세금 체납 확인",
+    "중-④갱신시점_위험": "갱신 시점 위험(갱신료 요구, 갱신 거절 빙자 사기)",
+    "중-⑤다가구_타세입자_피해": "다가구주택 타 세입자 피해 소식(조기경보)",
+    "후-①대항력_우선변제권_상실": "대항력/우선변제권 상실 위험",
+    "후-②이중계약_배당순위": "이중계약/배당 순위 다툼",
+}
+
+SPECIAL_CASE_CATEGORIES: tuple[str, ...] = ("임대인 사망/파산", "신탁사기", "다가구주택", "공인중개사 허위고지")
+
+
 class VictimRequirementSlots(BaseModel):
     moved_in_and_fixed_date: Optional[SlotStatus] = None      # ① 전입신고+확정일자
     deposit_under_limit: Optional[SlotStatus] = None            # ② 보증금 한도
@@ -61,16 +82,16 @@ class DPartGraphState(TypedDict, total=False):
     persona: Optional[str]                             # 사용자 유형(임차인/임대인 등) — 최초 판별 후 유지
     stage: Optional[Stage]                              # 계약 단계(전/중/후) — 최초 판별+확인 후 유지
     stage_confirmed: bool                                 # stage가 사용자 확인을 거쳤는지
-    risk_trigger_detected: bool                            # 이번 턴 위험신호 감지 여부 — 매 턴 재계산, carryover 아님
-    risk_trigger_reason: Optional[str]                      # 위 감지 근거 — 역시 매 턴 재계산
+    route_target: Optional[str]                             # supervisor가 이번 턴 결정한 다음 노드
+                                                               # ("victim_check"/"special_cases"/"general_scenario"/
+                                                               # "open_qa") — 이번 턴 라우팅 전용, carryover 아님
     victim_slots: VictimRequirementSlots                     # 요건 슬롯 누적 결과 — 이 기능의 핵심 carryover 데이터
     victim_judgment: Optional[VictimJudgment]                 # 판단 결과(높음/있음/추가확인)
     victim_fallback: bool                                       # 반복 질문에도 슬롯 미충족 시 전문가 상담 안내로 폴백했는지
     victim_check_attempts: int                                   # 슬롯 진전 없이 머문 연속 턴 수 — fallback 판단용
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     special_case_matched: Optional[str]                          # 매칭된 특수상황
-    general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(전/중/후 13개 항목 키) — 매 턴 재분류, carryover 아님
-    recognized: Optional[bool]                                     # risk_trigger 최초 감지 시 인지형/미인지형 라우팅 판별 — 이번 턴 라우팅 전용, carryover 아님
+    general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(13개 항목 키) — 매 턴 재분류, carryover 아님
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
     # TODO: app/rag 쪽에 전용 Chunk 타입이 생기면 list[Chunk]로 교체 (2026-07-11 기준 미존재)
     final_answer: Optional[str]                                     # 이번 턴 최종 답변 — messages 테이블에 별도 저장되므로 state에 중복 보관 안 함
@@ -106,10 +127,10 @@ def get_active_query(state: DPartGraphState) -> str:
       3) 게이트 응답(부정)을 받아 리셋하는 턴 — active_query를 None으로 비움
       4) 게이트 응답을 못 알아들어 재질문하는 턴 — active_query를 건드리지 않음
 
-    분류/매칭 로직만 있는 노드(risk_trigger, recognition_router, special_cases,
-    general_scenario)는 이 함수를 통해서만 "분류 대상 텍스트"에 접근해야 하며,
-    게이트 자체를 소유한 노드(stage_router)나 자기 완결적 게이트를 가진 노드
-    (victim_check의 awaiting_relief_confirmation)는 그대로 raw user_input을 써도 된다
-    — 그 응답이 "예/아니오"류 제어신호일 뿐 재추출할 실질 콘텐츠가 없기 때문이다.
+    분류/매칭 로직만 있는 노드(supervisor, open_qa)는 이 함수를 통해서만 "분류 대상
+    텍스트"에 접근해야 하며, 게이트 자체를 소유한 노드(stage_router)나 자기 완결적
+    게이트를 가진 노드(victim_check의 awaiting_relief_confirmation)는 그대로 raw
+    user_input을 써도 된다 — 그 응답이 "예/아니오"류 제어신호일 뿐 재추출할 실질
+    콘텐츠가 없기 때문이다.
     """
     return state.get("active_query") or state["user_input"]

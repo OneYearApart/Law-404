@@ -9,8 +9,10 @@ app/llm/base.py::call_llm_stream_raw는 아직 미구현 스텁이고 팀 공용
 통합 시 팀에 공유할 것.
 
 _call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환하고, 각 노드가 필요로 하는
-구조화된 값(enum/슬롯 등)은 이 파일에서 그 텍스트를 JSON으로 파싱해 반환한다.
-실제 enum/pydantic 모델로의 변환은 호출하는 노드 쪽 책임이다.
+구조화된 값(enum/슬롯 등)은 이 파일에서 그 텍스트를 JSON으로 파싱해 반환한다
+(_call_structured). supervisor 분류처럼 카테고리를 스키마로 강제해야 하는 경우는
+OpenAI tool calling을 쓰는 _call_tool을 대신 쓴다. 실제 enum/pydantic 모델로의
+변환은 호출하는 노드 쪽 책임이다.
 """
 import asyncio
 import json
@@ -20,12 +22,40 @@ from typing import AsyncGenerator
 from openai import APIError, AsyncOpenAI, RateLimitError
 
 from app.core.config import settings
+from app.graph.parts.d_part.schemas import GENERAL_TOPIC_LABELS, SPECIAL_CASE_CATEGORIES
 
 MODEL = "gpt-4o"
 MAX_RETRIES = 3
 
 _client = AsyncOpenAI(api_key=settings.openai_api_key)
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
+
+# supervisor가 고를 수 있는 전체 카테고리 — victim_interview(위험신호+미인지형) +
+# 특수상황 4종 + 일반시나리오 13종 + open_qa(어디에도 안 걸리는 질문). enum 값은
+# schemas.py의 GENERAL_TOPIC_LABELS/SPECIAL_CASE_CATEGORIES와 그대로 맞물려야
+# general_scenario.py/special_cases.py의 실행부가 같은 키로 조회할 수 있다.
+_SUPERVISOR_CATEGORIES = [
+    "victim_interview",
+    *[f"special_case:{name}" for name in SPECIAL_CASE_CATEGORIES],
+    *[f"general_topic:{key}" for key in GENERAL_TOPIC_LABELS],
+    "open_qa",
+]
+
+_SUPERVISOR_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "route",
+        "description": "사용자 발화를 카테고리 하나로 분류해 다음 처리 노드를 정한다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "enum": _SUPERVISOR_CATEGORIES},
+                "reason": {"type": "string", "description": "판단 근거 한 줄"},
+            },
+            "required": ["category"],
+        },
+    },
+}
 
 
 def _render_prompt(prompt_name: str, **kwargs) -> str:
@@ -66,30 +96,38 @@ async def _call_structured(prompt_name: str, **kwargs) -> dict:
     return json.loads(_strip_code_fence(raw))
 
 
+async def _call_tool(prompt_name: str, tool: dict, **kwargs) -> dict:
+    """_call_structured와 달리 응답을 텍스트로 받아 JSON 파싱하지 않고, OpenAI tool
+    calling으로 스키마(enum)를 강제해 모델이 정의된 카테고리 밖의 값을 반환할 수
+    없게 한다. 스트리밍 대상이 아니라 stream=False로 호출한다."""
+    prompt = _render_prompt(prompt_name, **kwargs)
+    tool_name = tool["function"]["name"]
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = await _client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[tool],
+                tool_choice={"type": "function", "function": {"name": tool_name}},
+            )
+            call = response.choices[0].message.tool_calls[0]
+            return json.loads(call.function.arguments)
+        except (RateLimitError, APIError):
+            if attempt == MAX_RETRIES - 1:
+                raise
+            await asyncio.sleep(2**attempt)
+
+
 async def call_stage_router(user_input: str) -> dict:
     return await _call_structured("stage_router", user_input=user_input)
-
-
-async def call_risk_trigger(user_input: str) -> dict:
-    return await _call_structured("risk_trigger", user_input=user_input)
 
 
 async def call_victim_check(user_input: str, existing_slots: dict) -> dict:
     return await _call_structured("victim_check", user_input=user_input, existing_slots=existing_slots)
 
 
-async def call_special_cases(user_input: str) -> dict:
-    return await _call_structured("special_cases", user_input=user_input)
-
-
-async def call_recognition_check(user_input: str) -> dict:
-    return await _call_structured("recognition_router", user_input=user_input)
-
-
-async def call_general_scenario(user_input: str, stage: str, topic_choices: list[str]) -> dict:
-    return await _call_structured(
-        "general_scenario", user_input=user_input, stage=stage, topic_choices=topic_choices
-    )
+async def call_supervisor(user_input: str) -> dict:
+    return await _call_tool("supervisor", _SUPERVISOR_TOOL, user_input=user_input)
 
 
 async def generate_response(context: str) -> AsyncGenerator[str, None]:

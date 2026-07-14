@@ -5,54 +5,32 @@ LLM/RAG 호출은 전부 monkeypatch로 흉내내고 DB 접근 없음.
 import pytest
 
 from app.graph.parts.d_part import graph as graph_module
-from app.graph.parts.d_part.nodes import general_scenario, response_assembly, risk_trigger, stage_router
+from app.graph.parts.d_part.nodes import general_scenario, open_qa, response_assembly, stage_router, supervisor
 from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimJudgment, VictimRequirementSlots
 from app.rag.retrievers.base import Chunk
 
 
-def test_route_after_risk_trigger_special_case_matched_wins():
-    state = {"special_case_matched": "신탁사기", "risk_trigger_detected": False}
-    assert graph_module._route_after_risk_trigger(state) == "special_cases"
+def test_route_after_supervisor_pending_final_answer_goes_to_finalize():
+    state = {"final_answer": "확인 질문", "route_target": "open_qa"}
+    assert graph_module._route_after_supervisor(state) == "finalize"
 
 
 @pytest.mark.parametrize(
-    "state",
-    [
-        {"victim_judgment": VictimJudgment.HIGH},
-        {"victim_fallback": True},
-        {"awaiting_relief_confirmation": True},
-        {"victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED)},
-    ],
+    "route_target",
+    ["victim_check", "special_cases", "general_scenario", "open_qa"],
 )
-def test_route_after_risk_trigger_continues_in_progress_victim_check(state):
-    # risk_trigger_detected가 이번 턴 False라도(재트리거 안 됨) 진행 중인 흐름은 계속돼야 함
-    assert graph_module._route_after_risk_trigger(state) == "victim_check"
-
-
-def test_route_after_risk_trigger_fresh_trigger_goes_to_recognition():
-    state = {"risk_trigger_detected": True}
-    assert graph_module._route_after_risk_trigger(state) == "recognition_router"
-
-
-def test_route_after_risk_trigger_nothing_goes_to_general_scenario():
-    state = {"risk_trigger_detected": False}
-    assert graph_module._route_after_risk_trigger(state) == "general_scenario"
-
-
-def test_route_after_recognition_recognized():
-    assert graph_module._route_after_recognition({"recognized": True}) == "special_cases"
-
-
-def test_route_after_recognition_not_recognized():
-    assert graph_module._route_after_recognition({"recognized": False}) == "victim_check"
+def test_route_after_supervisor_follows_route_target(route_target):
+    state = {"route_target": route_target}
+    assert graph_module._route_after_supervisor(state) == route_target
 
 
 @pytest.mark.asyncio
 async def test_full_graph_continues_pending_relief_question_to_judgment_response(monkeypatch):
-    """진행 중이던 victim_check(구제수단 질문 대기)를 이어받아 판단 확정 + 응답 조립까지 가는 종단 경로."""
+    """진행 중이던 victim_check(구제수단 질문 대기)를 이어받아 판단 확정 + 응답 조립까지 가는 종단 경로.
+    supervisor는 진행 중 흐름을 감지해 LLM 호출 없이 바로 victim_check로 보내야 한다."""
 
-    async def _fake_call_risk_trigger(user_input: str) -> dict:
-        return {"matched": False, "condition_no": None, "reason": None}
+    async def _unreachable_call_supervisor(user_input: str) -> dict:
+        raise AssertionError("진행 중인 흐름이 있을 땐 supervisor가 LLM을 호출하면 안 된다")
 
     async def _fake_search_by_requirement(slots):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="제3조")], "case_law": [], "cases": []}
@@ -60,7 +38,7 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
     async def _fake_generate_response(context: str):
         yield "판단 응답"
 
-    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger)
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor)
     monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _fake_search_by_requirement)
     monkeypatch.setattr(response_assembly.llm_d_part, "generate_response", _fake_generate_response)
 
@@ -90,8 +68,8 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
 async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch):
     """위험신호도 없고 진행 중인 흐름도 없는 턴은 general_scenario에서 항목 매칭+응답 조립까지 간다."""
 
-    async def _fake_call_risk_trigger(user_input: str) -> dict:
-        return {"matched": False, "condition_no": None, "reason": None}
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"category": "general_topic:전-①등기부등본_위험신호"}
 
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": []}
@@ -99,7 +77,7 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
     async def _fake_generate_response(context: str):
         yield "일반 시나리오 응답"
 
-    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger)
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
     monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
     monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
 
@@ -118,6 +96,70 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(monkeypatch):
+    """확정된 계약단계(중)와 다른 단계 접두어를 가진 항목(전-③)도 매칭돼야 한다 — supervisor
+    도입 전엔 general_scenario가 확정 단계의 항목만 후보로 놓아서 이런 질문이 무조건
+    fallthrough로 빠졌다(2026-07-14에 고친 지점)."""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"category": "general_topic:전-③다가구_선순위보증금"}
+
+    async def _fake_search_by_topic(topic_key, query_text):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": []}
+
+    async def _fake_generate_response(context: str):
+        yield "다가구주택 답변"
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+
+    initial_state = {
+        "user_input": "다가구주택인데 선순위 보증금이 걱정돼요",
+        "stage": Stage.DURING,
+        "stage_confirmed": True,
+    }
+
+    result = await graph_module.graph.ainvoke(initial_state)
+
+    assert result["general_topic_matched"] == "전-③다가구_선순위보증금"
+    chunks = [c async for c in result["response_stream"]]
+    assert "".join(chunks) == "다가구주택 답변"
+
+
+@pytest.mark.asyncio
+async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallthrough(monkeypatch):
+    """13개 항목/특수상황/위험신호 어디에도 안 걸리는 질문은 open_qa에서 실제 RAG 응답을
+    받아야 하며, finalize의 fallthrough 문구로 빠지면 안 된다."""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"category": "open_qa"}
+
+    async def _fake_search(query: str, top_k: int = 5):
+        return [Chunk(id=1, source_type="판례", content="관련 판례")]
+
+    async def _fake_generate_response(context: str):
+        yield "open_qa 응답"
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(open_qa._retriever, "search", _fake_search)
+    monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
+
+    initial_state = {
+        "user_input": "보증금 반환청구 소송은 어떻게 진행하나요",
+        "stage": Stage.DURING,
+        "stage_confirmed": True,
+    }
+
+    result = await graph_module.graph.ainvoke(initial_state)
+
+    chunks = [c async for c in result["response_stream"]]
+    joined = "".join(chunks)
+    assert joined == "open_qa 응답"
+    assert "안내드릴 내용이 없습니다" not in joined
+
+
+@pytest.mark.asyncio
 async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypatch):
     """턴1: 실질 질문 → 단계 확인질문. 턴2: '네' → 원래 질문에 대한 답이 나와야 하며
     '안내드릴 내용이 없습니다' 폴백으로 떨어지면 안 된다 (재현된 버그의 회귀 테스트)."""
@@ -125,8 +167,8 @@ async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypa
     async def _fake_call_stage_router(user_input: str) -> dict:
         return {"stage": "전"}
 
-    async def _fake_call_risk_trigger(user_input: str) -> dict:
-        return {"matched": False, "condition_no": None, "reason": None}
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"category": "general_topic:전-①등기부등본_위험신호"}
 
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="등기부 관련 조문")], "case_law": [], "cases": []}
@@ -135,7 +177,7 @@ async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypa
         yield "등기부등본 답변"
 
     monkeypatch.setattr(stage_router.llm_d_part, "call_stage_router", _fake_call_stage_router)
-    monkeypatch.setattr(risk_trigger.llm_d_part, "call_risk_trigger", _fake_call_risk_trigger)
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
     monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
     monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
 

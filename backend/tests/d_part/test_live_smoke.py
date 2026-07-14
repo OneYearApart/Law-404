@@ -50,12 +50,6 @@ async def test_call_stage_router_live():
 
 
 @pytest.mark.asyncio
-async def test_call_risk_trigger_live():
-    result = await llm_d_part.call_risk_trigger("요즘 좀 불안한 일이 있었어요")
-    assert isinstance(result.get("matched"), bool)
-
-
-@pytest.mark.asyncio
 async def test_call_victim_check_live():
     result = await llm_d_part.call_victim_check(
         "작년에 전입신고랑 확정일자는 받아뒀는데 집주인이 돌려줄 생각이 없어 보여요",
@@ -67,15 +61,9 @@ async def test_call_victim_check_live():
 
 
 @pytest.mark.asyncio
-async def test_call_special_cases_live():
-    result = await llm_d_part.call_special_cases("전세 계약 갱신은 어떻게 하나요?")
-    assert result.get("category") is None or isinstance(result["category"], str)
-
-
-@pytest.mark.asyncio
-async def test_call_recognition_check_live():
-    result = await llm_d_part.call_recognition_check("보증금을 못 받고 있어요")
-    assert isinstance(result.get("recognized"), bool)
+async def test_call_supervisor_live():
+    result = await llm_d_part.call_supervisor("보증금을 못 받고 있어요")
+    assert isinstance(result.get("category"), str)
 
 
 @pytest.mark.asyncio
