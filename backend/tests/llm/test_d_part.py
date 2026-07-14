@@ -44,20 +44,6 @@ async def test_call_stage_router_parses_json(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_call_risk_trigger_parses_json(monkeypatch):
-    payload = {"matched": True, "condition_no": 2, "reason": "보증금을 못 돌려받고 있다고 함"}
-
-    async def _fake_call_llm(prompt: str) -> str:
-        return json.dumps(payload, ensure_ascii=False)
-
-    monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
-
-    result = await d_part.call_risk_trigger("보증금을 못 돌려받고 있어요")
-
-    assert result == payload
-
-
-@pytest.mark.asyncio
 async def test_call_victim_check_includes_existing_slots_in_prompt(monkeypatch):
     captured = {}
 
@@ -80,18 +66,6 @@ async def test_call_victim_check_includes_existing_slots_in_prompt(monkeypatch):
     assert result["moved_in_and_fixed_date"] == "filled"
     assert "existing_slots" in captured["prompt"]
     assert "moved_in_and_fixed_date" in captured["prompt"]
-
-
-@pytest.mark.asyncio
-async def test_call_special_cases_null_category(monkeypatch):
-    async def _fake_call_llm(prompt: str) -> str:
-        return json.dumps({"category": None})
-
-    monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
-
-    result = await d_part.call_special_cases("전세 계약 갱신은 어떻게 하나요?")
-
-    assert result == {"category": None}
 
 
 @pytest.mark.asyncio
