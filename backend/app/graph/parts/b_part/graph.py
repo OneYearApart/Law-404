@@ -22,7 +22,16 @@ from app.graph.parts.b_part.calendar_events import (
     format_calendar_events_for_answer,
     is_calendar_registration_approved,
 )
-from app.graph.parts.b_part.rules import parse_money_values_from_text, run_b_part_rules
+from app.graph.parts.b_part.memory import (
+    build_contextual_question,
+    extract_conversation_id,
+    memory_store,
+)
+from app.graph.parts.b_part.rules import (
+    has_date_in_text,
+    parse_money_values_from_text,
+    run_b_part_rules,
+)
 
 
 RETRIEVAL_MIN_TOP_SIMILARITY = 0.27
@@ -118,12 +127,7 @@ def has_schedule_signal(question: str) -> bool:
     이 함수는 최종 분류기가 아니라 LLM Intent Analyzer를 보조 호출할지
     판단하기 위한 신호 감지용입니다.
     """
-    has_date = bool(
-        re.search(
-            r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{4}년\s*\d{1,2}월\s*\d{1,2}일",
-            question,
-        )
-    )
+    has_date = has_date_in_text(question)
     has_schedule_word = any(
         keyword in question
         for keyword in [
@@ -223,7 +227,11 @@ def merge_categories(base_categories: list[str], new_categories: list[str]) -> l
 def find_missing_questions(question: str, categories: list[str]) -> list[str]:
     """계산이나 판단에 필요한 핵심 정보가 빠졌을 때 추가 질문을 만듭니다."""
     missing: list[str] = []
-    has_date = bool(re.search(r"\d{4}[년./-]\s*\d{1,2}|만료|종료|통보|받았", question))
+    has_date = has_date_in_text(question)
+    has_repair_signal = any(
+        keyword in question
+        for keyword in ["수리", "고장", "누수", "보일러", "곰팡이", "결로", "배관", "하자"]
+    )
 
     money_values = parse_money_values_from_text(question)
     has_two_money_values = len(money_values) >= 2
@@ -238,7 +246,7 @@ def find_missing_questions(question: str, categories: list[str]) -> list[str]:
         if "최근" not in question and "1년" not in question:
             missing.append("최근 1년 안에 보증금이나 월세를 올린 적이 있는지 알려주세요.")
 
-    if any(category in categories for category in ["수선의무", "임대인의무", "계약해지", "손해배상"]):
+    if has_repair_signal and any(category in categories for category in ["수선의무", "임대인의무", "계약해지", "손해배상"]):
         if "문자" not in question and "카톡" not in question and "증거" not in question:
             missing.append("집주인에게 수리를 요청한 문자, 카카오톡, 사진 같은 증거가 있는지 알려주세요.")
         if "언제" not in question and "며칠" not in question and "개월" not in question:
@@ -360,8 +368,22 @@ class BPartMVPGraph:
         self.retriever = BPartRetriever()
 
     async def ainvoke(self, request: dict[str, Any]) -> dict[str, Any]:
-        question = extract_user_question(request)
-        out_of_scope = detect_out_of_scope_reason(question)
+        original_question = extract_user_question(request)
+        conversation_id = extract_conversation_id(request)
+        history_messages = (
+            memory_store.get_messages(conversation_id)
+            if conversation_id
+            else []
+        )
+        question, memory_meta = build_contextual_question(
+            current_question=original_question,
+            history_messages=history_messages,
+        )
+        memory_meta["conversation_id"] = conversation_id
+        memory_meta["original_question"] = original_question
+        memory_meta["contextual_question"] = question
+
+        out_of_scope = detect_out_of_scope_reason(original_question)
         if out_of_scope:
             answer = (
                 "이 질문은 현재 계약 중 범위인 '주택임대차 계약 중 분쟁'에는 포함되지 않습니다.\n\n"
@@ -371,7 +393,7 @@ class BPartMVPGraph:
                 "계약 중 손해배상 문제를 다룹니다."
             )
 
-            return {
+            final_state = {
                 "question": question,
                 "categories": [],
                 "intent_result": None,
@@ -392,12 +414,15 @@ class BPartMVPGraph:
                     "is_out_of_scope": True,
                     "reason": out_of_scope["reason"],
                 },
+                "memory": memory_meta,
                 "final_answer": answer,
                 "response_stream": stream_text(answer),
             }
+            self._save_turn(conversation_id, original_question, answer)
+            return final_state
 
         pending_action = request.get("pending_action")
-        if isinstance(pending_action, dict) and is_calendar_registration_approved(question):
+        if isinstance(pending_action, dict) and is_calendar_registration_approved(original_question):
             calendar_registration = build_calendar_registration_ready_action(pending_action)
             if calendar_registration:
                 answer = (
@@ -406,7 +431,7 @@ class BPartMVPGraph:
                     "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
                 )
 
-                return {
+                final_state = {
                     "question": question,
                     "categories": [],
                     "intent_result": None,
@@ -417,9 +442,12 @@ class BPartMVPGraph:
                     "calendar_registration": calendar_registration,
                     "missing_questions": [],
                     "retrieved": [],
+                    "memory": memory_meta,
                     "final_answer": answer,
                     "response_stream": stream_text(answer),
                 }
+                self._save_turn(conversation_id, original_question, answer)
+                return final_state
 
         categories = request.get("categories") or request.get("category")
         if isinstance(categories, str):
@@ -435,7 +463,7 @@ class BPartMVPGraph:
             scope = scope_result.get("scope")
             if scope in {"out_of_scope", "ambiguous"}:
                 answer = build_scope_guidance_answer(scope_result)
-                return {
+                final_state = {
                     "question": question,
                     "categories": scope_result.get("suggested_categories", []),
                     "intent_result": None,
@@ -451,9 +479,12 @@ class BPartMVPGraph:
                         "is_ambiguous_scope": scope == "ambiguous",
                         "reason": scope_result.get("reason"),
                     },
+                    "memory": memory_meta,
                     "final_answer": answer,
                     "response_stream": stream_text(answer),
                 }
+                self._save_turn(conversation_id, original_question, answer)
+                return final_state
 
             categories = merge_categories(
                 categories,
@@ -512,7 +543,7 @@ class BPartMVPGraph:
         if calendar_answer_section:
             answer = f"{answer.rstrip()}\n\n{calendar_answer_section}"
 
-        return {
+        final_state = {
             "question": question,
             "categories": categories,
             "intent_result": intent_result,
@@ -523,9 +554,24 @@ class BPartMVPGraph:
             "missing_questions": missing_questions,
             "retrieved": retrieved,
             "retrieval_quality": retrieval_quality,
+            "memory": memory_meta,
             "final_answer": answer,
             "response_stream": stream_text(answer),
         }
+        self._save_turn(conversation_id, original_question, answer)
+        return final_state
+
+    def _save_turn(
+        self,
+        conversation_id: str | None,
+        user_question: str,
+        assistant_answer: str,
+    ) -> None:
+        """conversation_id가 있을 때만 현재 턴을 InMemory에 저장합니다."""
+        if not conversation_id:
+            return
+        memory_store.add_message(conversation_id, "user", user_question)
+        memory_store.add_message(conversation_id, "assistant", assistant_answer)
 
     def _retrieve(self, question: str, categories: list[str], top_k: int) -> list[dict[str, Any]]:
         """

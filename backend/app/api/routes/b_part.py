@@ -26,6 +26,7 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
             "pending_action": final_state.get("pending_action"),
             "calendar_events": final_state.get("calendar_events", []),
             "calendar_registration": final_state.get("calendar_registration"),
+            "memory": final_state.get("memory"),
         }
         yield f"data: {StreamEvent(type=EventType.META, data=meta_data).model_dump_json()}\n\n"
 
