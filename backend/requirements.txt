@@ -9,8 +9,11 @@ sqlalchemy
 alembic
 pydantic
 pydantic-settings
+python-dotenv
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
-alembic
 tiktoken
+PyMuPDF
+Pillow
+pytesseract
