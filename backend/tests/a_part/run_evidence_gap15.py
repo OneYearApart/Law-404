@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 import os
 import sys
@@ -19,9 +18,6 @@ import psycopg2
 import backend.app.rag.retrievers.a_part as retriever_module
 from backend.app.rag.retrievers.a_part import search_documents
 
-RESULT_DIR = PROJECT_ROOT / "backend" / "tests" / "a_part" / "results"
-JSON_PATH = RESULT_DIR / "a_part_evidence_gap_analysis_v2.json"
-CSV_PATH = RESULT_DIR / "a_part_evidence_gap_summary_v2.csv"
 
 
 DATABASE_URL = getattr(
@@ -690,7 +686,7 @@ def _dedupe_by_document_id(
     return deduped
 
 
-def main() -> None:
+def run_analysis() -> dict:
     print(
         "검색 코드 버전:",
         getattr(retriever_module, "CODE_VERSION", "버전 정보 없음"),
@@ -852,67 +848,30 @@ def main() -> None:
     ]:
         print(f"{key}: {summary_counts[key]}개")
 
-    RESULT_DIR.mkdir(parents=True, exist_ok=True)
-
-    JSON_PATH.write_text(
-        json.dumps(
-            {
-                "search_code_version": getattr(
-                    retriever_module,
-                    "CODE_VERSION",
-                    None,
-                ),
-                "dataset_version": DATASET_VERSION,
-                "question_count": len(GAP_CASES),
-                "summary": summary_counts,
-                "results": results,
-            },
-            ensure_ascii=False,
-            indent=2,
+    return {
+        "search_code_version": getattr(
+            retriever_module,
+            "CODE_VERSION",
+            None,
         ),
-        encoding="utf-8",
-    )
+        "dataset_version": DATASET_VERSION,
+        "question_count": len(GAP_CASES),
+        "summary": summary_counts,
+        "results": results,
+    }
 
-    with CSV_PATH.open(
-        "w",
-        encoding="utf-8-sig",
-        newline="",
-    ) as csv_file:
-        writer = csv.DictWriter(
-            csv_file,
-            fieldnames=[
-                "question_id",
-                "topic",
-                "classification",
-                "recommended_action",
-                "semantic_direct_count",
-                "db_direct_count",
-                "semantic_weak_count",
-                "db_weak_count",
-            ],
-        )
-        writer.writeheader()
 
-        for item in results:
-            writer.writerow(
-                {
-                    "question_id": item["question_id"],
-                    "topic": item["topic"],
-                    "classification": item["classification"],
-                    "recommended_action": item["recommended_action"],
-                    "semantic_direct_count": item[
-                        "semantic_direct_count"
-                    ],
-                    "db_direct_count": item["db_direct_count"],
-                    "semantic_weak_count": item[
-                        "semantic_weak_count"
-                    ],
-                    "db_weak_count": item["db_weak_count"],
-                }
-            )
-
-    print(f"\nJSON 결과 저장: {JSON_PATH}")
-    print(f"CSV 요약 저장: {CSV_PATH}")
+def main() -> None:
+    result = run_analysis()
+    expected = {
+        "BODY_DIRECT_IN_TOP30": 15,
+        "BODY_DIRECT_OUTSIDE_TOP30": 0,
+        "BODY_WEAK_ONLY": 0,
+        "NO_BODY_EVIDENCE": 0,
+        "ERROR": 0,
+    }
+    if result.get("summary") != expected:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
