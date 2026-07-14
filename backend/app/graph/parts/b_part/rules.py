@@ -96,6 +96,56 @@ def parse_date_from_text(text: str) -> date | None:
     return None
 
 
+def parse_year_month_from_text(text: str) -> tuple[int, int] | None:
+    """
+    사용자 질문에서 연도와 월만 추출합니다.
+
+    지원하는 형식:
+    - 2026년 9월
+    - 26년 9월
+    - 2026-09
+    - 26.09
+
+    일자까지 있는 완전한 날짜는 parse_date_from_text()가 담당합니다.
+    이 함수는 "2026년 9월입니다"처럼 날짜 계산에 필요한 일자가 빠진 상태를
+    별도로 감지하기 위해 사용합니다.
+    """
+    patterns = [
+        r"(?P<year>\d{2,4})년\s*(?P<month>\d{1,2})월(?!\s*\d{1,2}\s*일)",
+        r"(?P<year>\d{2,4})[-./](?P<month>\d{1,2})(?![-./]\d{1,2})",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+
+        year = normalize_year(match.group("year"))
+        month = int(match.group("month"))
+        if 1 <= month <= 12:
+            return year, month
+
+    return None
+
+
+def parse_day_from_text(text: str) -> int | None:
+    """
+    사용자 답변에서 일자만 추출합니다.
+
+    예:
+    - 10일
+    - 10일입니다
+    """
+    match = re.search(r"(?P<day>\d{1,2})\s*일", text)
+    if not match:
+        return None
+
+    day = int(match.group("day"))
+    if 1 <= day <= 31:
+        return day
+    return None
+
+
 def has_date_in_text(text: str) -> bool:
     """사용자 입력에 실제 날짜가 포함되어 있는지 확인합니다."""
     return parse_date_from_text(text) is not None

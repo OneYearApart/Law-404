@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.graph.parts.b_part.rules import has_date_in_text
+from app.graph.parts.b_part.rules import has_date_in_text, parse_year_month_from_text
 
 
 MAX_HISTORY_MESSAGES = 8
@@ -39,6 +39,7 @@ class BPartInMemoryChatMessageHistory:
 
     def __init__(self) -> None:
         self._store: dict[str, list[BPartChatMessage]] = {}
+        self._state: dict[str, dict[str, Any]] = {}
 
     def add_message(self, session_id: str, role: str, content: str) -> None:
         if not session_id or not content.strip():
@@ -59,8 +60,25 @@ class BPartInMemoryChatMessageHistory:
     def get_messages(self, session_id: str) -> list[BPartChatMessage]:
         return list(self._store.get(session_id, []))
 
+    def get_state(self, session_id: str) -> dict[str, Any]:
+        return dict(self._state.get(session_id, {}))
+
+    def update_state(self, session_id: str, updates: dict[str, Any]) -> None:
+        if not session_id:
+            return
+        state = self._state.setdefault(session_id, {})
+        state.update(updates)
+
+    def clear_state_fields(self, session_id: str, fields: list[str]) -> None:
+        state = self._state.get(session_id)
+        if not state:
+            return
+        for field in fields:
+            state.pop(field, None)
+
     def clear(self, session_id: str) -> None:
         self._store.pop(session_id, None)
+        self._state.pop(session_id, None)
 
 
 memory_store = BPartInMemoryChatMessageHistory()
@@ -92,6 +110,7 @@ def is_short_followup_answer(message: str) -> bool:
         return False
 
     has_date = has_date_in_text(text)
+    has_year_month = parse_year_month_from_text(text) is not None
     has_money = bool(re.search(r"\d+\s*(만\s*)?원|\d+\s*만원", text))
     has_duration = has_duration_in_text(text)
     has_followup_cue = has_followup_cue_in_text(text)
@@ -113,6 +132,7 @@ def is_short_followup_answer(message: str) -> bool:
 
     return is_short and (
         has_date
+        or has_year_month
         or has_money
         or has_duration
         or has_followup_cue
