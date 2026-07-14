@@ -17,8 +17,6 @@ async def _unreachable_call_supervisor(user_input: str) -> dict:
 @pytest.mark.parametrize(
     "state",
     [
-        {"victim_judgment": VictimJudgment.HIGH},
-        {"victim_fallback": True},
         {"awaiting_relief_confirmation": True},
         {"victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED)},
     ],
@@ -30,6 +28,38 @@ async def test_in_progress_victim_check_skips_llm_call(monkeypatch, state):
     result = await run_supervisor(state)
 
     assert result["route_target"] == "victim_check"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "closed_state",
+    [
+        # 판정 확정
+        {"victim_judgment": VictimJudgment.HIGH, "victim_flow_closed": True},
+        # 지원대상 제외(victim_judgment는 None으로 남는다)
+        {
+            "victim_flow_closed": True,
+            "victim_slots": VictimRequirementSlots(
+                moved_in_and_fixed_date=SlotStatus.FILLED, has_relief_measure=True
+            ),
+        },
+        # fallback
+        {"victim_fallback": True, "victim_flow_closed": True},
+    ],
+)
+async def test_closed_victim_flow_is_reclassified(monkeypatch, closed_state):
+    """인터뷰가 종결된 뒤엔 슬롯/판정 값이 세션에 남아 있어도 이번 턴 발화를 정상 재분류해야 한다
+    (종결 후 모든 후속 턴이 victim_check로 영구히 고정되던 버그의 회귀 테스트)."""
+
+    async def _fake(user_input: str) -> dict:
+        return {"category": "open_qa"}
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
+    state = {**closed_state, "user_input": "전세보증보험은 언제 가입하나요?"}
+
+    result = await run_supervisor(state)
+
+    assert result["route_target"] == "open_qa"
 
 
 @pytest.mark.asyncio

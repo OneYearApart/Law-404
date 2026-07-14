@@ -75,12 +75,21 @@ def _compute_judgment(slots: VictimRequirementSlots) -> VictimJudgment:
 
 async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
     """요건 슬롯 판별 + 구제수단 확인 + 최종판단 상태기계.
-    이미 종결(victim_judgment 확정 또는 victim_fallback)됐으면 재계산하지 않는다.
-    이미 final_answer가 세팅된 턴(예: stage_router 확인질문 대기 중)도 건드리지 않고 통과한다."""
+    이미 final_answer가 세팅된 턴(예: stage_router 확인질문 대기 중)은 건드리지 않고 통과한다.
+
+    종결(판정 확정/지원대상 제외/fallback) 시 victim_flow_closed를 세우면 supervisor가
+    이후 턴을 정상 재분류하므로, 이 노드로 다시 라우팅됐다는 건 supervisor가 이번 턴 발화를
+    victim_interview로 재분류했다는 뜻이다. 이때는 기존 슬롯을 그대로 둔 채 종결 표식만
+    되돌려 인터뷰를 이어간다 — 처음부터 다시 묻지 않는다(설계 결정).
+    """
     if state.get("final_answer") is not None:
         return state
-    if state.get("victim_judgment") is not None or state.get("victim_fallback"):
-        return state
+
+    if state.get("victim_flow_closed"):
+        state["victim_flow_closed"] = False
+        state["victim_judgment"] = None
+        state["victim_fallback"] = False
+        state["victim_check_attempts"] = 0
 
     user_input = state["user_input"]
     slots = state.get("victim_slots") or VictimRequirementSlots()
@@ -108,6 +117,7 @@ async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
     if unresolved:
         if state.get("victim_check_attempts", 0) >= _MAX_ATTEMPTS:
             state["victim_fallback"] = True
+            state["victim_flow_closed"] = True
             state["final_answer"] = _FALLBACK_MESSAGE
         else:
             state["final_answer"] = _SLOT_QUESTIONS[unresolved[0]]
@@ -121,7 +131,10 @@ async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
     if slots.has_relief_measure:
         state["final_answer"] = _EXCLUSION_MESSAGE
         state["victim_judgment"] = None
+        state["victim_flow_closed"] = True
     else:
         state["victim_judgment"] = _compute_judgment(slots)
+        state["victim_flow_closed"] = True
+        state["needs_response_assembly"] = True
         state["final_answer"] = None
     return state

@@ -29,9 +29,10 @@ def _format_context(state: DPartGraphState) -> str:
 
 
 async def assemble_response(state: DPartGraphState) -> DPartGraphState:
-    """victim_judgment가 방금 이번 턴에 확정된 경우(final_answer가 아직 None)에만 조립한다.
-    이미 조립된 과거 턴이거나 판단이 없는 턴은 no-op으로 통과."""
-    if state.get("victim_judgment") is None or state.get("final_answer") is not None:
+    """victim_check가 이번 턴에 판단을 새로 확정했을 때만(needs_response_assembly) 조립한다.
+    victim_judgment는 세션에 영속되는 값이라 그것만 보고 조립하면, 판정이 끝난 대화방의
+    모든 후속 턴이 같은 판정 응답을 RAG+LLM으로 매번 재생성하게 된다."""
+    if not state.get("needs_response_assembly"):
         return state
 
     retrieved = await _retriever.search_by_requirement(state["victim_slots"])

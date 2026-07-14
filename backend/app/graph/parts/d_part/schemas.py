@@ -88,8 +88,12 @@ class DPartGraphState(TypedDict, total=False):
     victim_slots: VictimRequirementSlots                     # 요건 슬롯 누적 결과 — 이 기능의 핵심 carryover 데이터
     victim_judgment: Optional[VictimJudgment]                 # 판단 결과(높음/있음/추가확인)
     victim_fallback: bool                                       # 반복 질문에도 슬롯 미충족 시 전문가 상담 안내로 폴백했는지
+    victim_flow_closed: bool                                      # 인터뷰가 종결됐는지(판정 확정/지원대상 제외/fallback).
+                                                                     # True면 supervisor가 이번 턴 발화를 정상 재분류한다
     victim_check_attempts: int                                   # 슬롯 진전 없이 머문 연속 턴 수 — fallback 판단용
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
+    needs_response_assembly: bool                                     # victim_check가 이번 턴에 판단을 새로 확정했는지 —
+                                                                        # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
     special_case_matched: Optional[str]                          # 매칭된 특수상황
     general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(13개 항목 키) — 매 턴 재분류, carryover 아님
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
@@ -110,6 +114,7 @@ class DPartSessionState(BaseModel):
     victim_slots: VictimRequirementSlots = Field(default_factory=VictimRequirementSlots)
     victim_judgment: Optional[VictimJudgment] = None
     victim_fallback: bool = False
+    victim_flow_closed: bool = False
     victim_check_attempts: int = 0
     awaiting_relief_confirmation: bool = False
     special_case_matched: Optional[str] = None

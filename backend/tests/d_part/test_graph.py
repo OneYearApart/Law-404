@@ -160,6 +160,87 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "closed_session",
+    [
+        pytest.param(
+            {
+                "victim_judgment": VictimJudgment.HIGH,
+                "victim_flow_closed": True,
+                "victim_slots": VictimRequirementSlots(
+                    moved_in_and_fixed_date=SlotStatus.FILLED,
+                    deposit_under_limit=SlotStatus.FILLED,
+                    multiple_victims=SlotStatus.FILLED,
+                    no_intent_to_return=SlotStatus.FILLED,
+                    has_relief_measure=False,
+                ),
+            },
+            id="판정확정",
+        ),
+        pytest.param(
+            {
+                "victim_flow_closed": True,
+                "victim_slots": VictimRequirementSlots(
+                    moved_in_and_fixed_date=SlotStatus.FILLED,
+                    deposit_under_limit=SlotStatus.FILLED,
+                    multiple_victims=SlotStatus.FILLED,
+                    no_intent_to_return=SlotStatus.FILLED,
+                    has_relief_measure=True,
+                ),
+            },
+            id="지원대상제외",
+        ),
+        pytest.param(
+            {
+                "victim_fallback": True,
+                "victim_flow_closed": True,
+                "victim_check_attempts": 3,
+                "victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.UNCLEAR),
+            },
+            id="fallback",
+        ),
+    ],
+)
+async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeypatch, closed_session):
+    """victim_check 인터뷰가 종결된 대화방에서 무관한 후속 질문이 오면 정상 재분류돼야 한다.
+    종결 상태(판정/제외/fallback)가 세션에 영속되는 탓에 모든 후속 턴이 victim_check로 영구히
+    고정되던 버그의 회귀 테스트 — 판정 확정 경로에선 응답까지 매 턴 재생성되고 있었다."""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"category": "open_qa"}
+
+    async def _fake_search(query: str, top_k: int = 5):
+        return [Chunk(id=1, source_type="법령원문", content="보증보험 관련 조문")]
+
+    async def _fake_generate_response(context: str):
+        yield "보증보험 안내"
+
+    async def _unreachable_search_by_requirement(slots):
+        raise AssertionError("종결된 인터뷰의 후속 턴에서 판정 응답을 재조립하면 안 된다")
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(open_qa._retriever, "search", _fake_search)
+    monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
+    monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _unreachable_search_by_requirement)
+
+    initial_state = {
+        "user_input": "전세보증보험은 언제 가입하나요?",
+        "stage": Stage.DURING,
+        "stage_confirmed": True,
+        **closed_session,
+    }
+
+    result = await graph_module.graph.ainvoke(initial_state)
+
+    assert result["route_target"] == "open_qa"
+    # 종결 플래그는 victim_check를 거치지 않는 턴에도 그대로 살아남아 다음 턴에 재저장돼야 한다
+    assert result["victim_flow_closed"] is True
+    joined = "".join([c async for c in result["response_stream"]])
+    assert joined == "보증보험 안내"
+    assert "안내드릴 내용이 없습니다" not in joined
+
+
+@pytest.mark.asyncio
 async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypatch):
     """턴1: 실질 질문 → 단계 확인질문. 턴2: '네' → 원래 질문에 대한 답이 나와야 하며
     '안내드릴 내용이 없습니다' 폴백으로 떨어지면 안 된다 (재현된 버그의 회귀 테스트)."""

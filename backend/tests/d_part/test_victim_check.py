@@ -147,6 +147,7 @@ async def test_affirmative_relief_measure_excludes_without_judgment():
     assert result["victim_judgment"] is None
     assert result.get("victim_fallback", False) is False
     assert "제외" in result["final_answer"]
+    assert result["victim_flow_closed"] is True
 
 
 @pytest.mark.asyncio
@@ -163,6 +164,9 @@ async def test_negative_relief_measure_computes_final_judgment():
     result = await check_victim_status(state)
 
     assert result["victim_judgment"] == VictimJudgment.HIGH
+    assert result["victim_flow_closed"] is True
+    # 이번 턴에 새로 확정된 판단이므로 응답 조립이 필요하다는 신호가 켜져야 한다
+    assert result["needs_response_assembly"] is True
 
 
 @pytest.mark.asyncio
@@ -193,7 +197,44 @@ async def test_no_progress_repeated_turns_triggers_fallback(monkeypatch):
         state = await check_victim_status(state)
 
     assert state["victim_fallback"] is True
+    assert state["victim_flow_closed"] is True
     assert state.get("victim_judgment") is None
+
+
+@pytest.mark.asyncio
+async def test_reentry_after_closure_resumes_with_existing_slots(monkeypatch):
+    """종결된 인터뷰로 supervisor가 다시 라우팅하면(사용자가 새 위험신호를 말한 경우),
+    기존 슬롯은 유지한 채 종결 표식만 되돌려 이어간다 — 처음부터 다시 묻지 않는다."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "filled",
+                "deposit_under_limit": "filled",
+                "multiple_victims": "filled",
+                "no_intent_to_return": "filled",
+                "multiple_victims_reason": None,
+                "auction_completed": False,
+            }
+        ),
+    )
+    # fallback으로 종결된 상태에서 슬롯 하나만 채워져 있던 대화방
+    state = {
+        "user_input": "알고 보니 다른 세입자도 3명이나 피해를 봤대요",
+        "victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED),
+        "victim_fallback": True,
+        "victim_flow_closed": True,
+        "victim_check_attempts": 3,
+    }
+
+    result = await check_victim_status(state)
+
+    assert result["victim_fallback"] is False
+    assert result["victim_check_attempts"] == 0
+    # 슬롯이 전부 채워졌으므로 곧바로 구제수단 질문 단계로 이어진다(슬롯 재수집 없음)
+    assert result["awaiting_relief_confirmation"] is True
+    assert result["victim_flow_closed"] is False
 
 
 @pytest.mark.asyncio

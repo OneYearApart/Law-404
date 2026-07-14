@@ -2,8 +2,8 @@
 분류 supervisor 노드 — 예전 risk_trigger/recognition_router/special_cases와
 general_scenario의 매칭부를 흡수해 카테고리 판단을 한 곳으로 모은 노드.
 
-이미 진행 중인 victim_check 인터뷰(슬롯 채우는 중 / 구제수단 확인 대기 / 최종판단 완료 직후)가
-있으면 재분류 없이 그대로 이어간다. special_case_matched는 여기서 우선순위 대상으로 보지
+아직 종결되지 않은 victim_check 인터뷰(슬롯 채우는 중 / 구제수단 확인 대기)가 있으면
+재분류 없이 그대로 이어간다. special_case_matched는 여기서 우선순위 대상으로 보지
 않는다 — special_cases는 후속 대화가 없는 1회성 안내라, victim_check 슬롯 인터뷰처럼
 "이번 턴 발화 자체가 분류 불가능한 답변"이 되는 경우가 없다. 오히려 재분류를 막으면 안내
 이후 사용자가 말을 이어갈 때마다 매번 예전 안내문으로만 되돌아가게 된다.
@@ -24,12 +24,13 @@ def _has_slot_progress(slots: VictimRequirementSlots | None) -> bool:
 
 
 def _in_progress_route(state: DPartGraphState) -> str | None:
-    if (
-        state.get("victim_judgment") is not None
-        or state.get("victim_fallback")
-        or state.get("awaiting_relief_confirmation")
-        or _has_slot_progress(state.get("victim_slots"))
-    ):
+    """아직 종결되지 않은 victim_check 인터뷰가 진행 중이면 재분류 없이 그대로 이어간다.
+    종결(victim_flow_closed)된 뒤에도 슬롯 값은 세션에 그대로 남으므로, 슬롯 진행 여부보다
+    종결 플래그를 먼저 본다 — 안 그러면 인터뷰가 끝난 대화방의 모든 후속 턴이 영구히
+    victim_check로 고정된다."""
+    if state.get("victim_flow_closed"):
+        return None
+    if state.get("awaiting_relief_confirmation") or _has_slot_progress(state.get("victim_slots")):
         return "victim_check"
     return None
 

@@ -35,7 +35,12 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
         multiple_victims=SlotStatus.FILLED,
         no_intent_to_return=SlotStatus.FILLED,
     )
-    state = {"victim_slots": slots, "victim_judgment": VictimJudgment.HIGH, "final_answer": None}
+    state = {
+        "victim_slots": slots,
+        "victim_judgment": VictimJudgment.HIGH,
+        "needs_response_assembly": True,
+        "final_answer": None,
+    }
 
     result = await response_assembly.assemble_response(state)
 
@@ -67,4 +72,34 @@ async def test_noop_when_already_has_final_answer():
 
     result = await response_assembly.assemble_response(state)
 
+    assert result.get("response_stream") is None
+
+
+@pytest.mark.asyncio
+async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
+    """판정이 이미 확정된 과거 턴(victim_judgment는 세션에 남아 있지만 이번 턴에 새로
+    확정된 게 아님)에는 RAG/LLM을 한 번도 재호출하면 안 된다 — 종결 후 매 턴 같은 판정
+    응답을 재생성하던 비용/지연 버그의 회귀 테스트."""
+    calls = {"retrieve": 0, "generate": 0}
+
+    async def _counting_search_by_requirement(slots):
+        calls["retrieve"] += 1
+        return {"statute": [], "case_law": [], "cases": []}
+
+    async def _counting_generate_response(context: str):
+        calls["generate"] += 1
+        yield "재생성된 응답"
+
+    monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _counting_search_by_requirement)
+    monkeypatch.setattr(response_assembly.llm_d_part, "generate_response", _counting_generate_response)
+
+    state = {
+        "victim_judgment": VictimJudgment.HIGH,
+        "victim_slots": VictimRequirementSlots(),
+        "final_answer": None,
+    }
+
+    result = await response_assembly.assemble_response(state)
+
+    assert calls == {"retrieve": 0, "generate": 0}
     assert result.get("response_stream") is None
