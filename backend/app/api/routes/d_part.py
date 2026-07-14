@@ -19,12 +19,15 @@ router = APIRouter(prefix="/chat/d", tags=["d_part"])
 
 @router.post("/")
 async def chat_d(request: dict, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
+    # 소유권 검증은 스트리밍 시작 전에. get_session_state가 타인/미존재 대화방이면
+    # ConversationNotFoundError를 던지고, StreamingResponse가 만들어지기 전이므로 404가 정상 반환된다.
+    conversation_id = request["conversation_id"]
+    raw_state = await get_session_state(conversation_id, user.id)
+    session_state = DPartSessionState.model_validate(raw_state) if raw_state else DPartSessionState()
+
     async def event_generator():
         yield f"data: {StreamEvent(type=EventType.LOADING).model_dump_json()}\n\n"
 
-        conversation_id = request["conversation_id"]
-        raw_state = await get_session_state(conversation_id)
-        session_state = DPartSessionState.model_validate(raw_state) if raw_state else DPartSessionState()
         graph_input = {name: getattr(session_state, name) for name in DPartSessionState.model_fields} | request
 
         await save_message(user.id, "d", "user", request["user_input"], conversation_id)
@@ -44,10 +47,12 @@ async def chat_d(request: dict, background_tasks: BackgroundTasks, user=Depends(
         updated_session = DPartSessionState(
             **{name: final_state[name] for name in DPartSessionState.model_fields if name in final_state}
         )
-        await update_session_state(conversation_id, updated_session.model_dump(mode="json"))
+        await update_session_state(conversation_id, user.id, updated_session.model_dump(mode="json"))
 
         await save_message(user.id, "d", "assistant", final_answer, conversation_id)
-        background_tasks.add_task(maybe_summarize_conversation, conversation_id, settings.summary_trigger_turns)
+        background_tasks.add_task(
+            maybe_summarize_conversation, conversation_id, user.id, settings.summary_trigger_turns
+        )
 
         yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
 

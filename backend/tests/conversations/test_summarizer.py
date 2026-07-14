@@ -49,7 +49,7 @@ async def test_maybe_summarize_skips_when_below_threshold(user_id, monkeypatch):
     await save_message(user_id, "d", "user", "메시지1", conversation.id)
     await save_message(user_id, "d", "assistant", "메시지2", conversation.id)
 
-    await summarizer.maybe_summarize_conversation(conversation.id, turn_threshold=4)
+    await summarizer.maybe_summarize_conversation(conversation.id, user_id, turn_threshold=4)
 
     assert called is False
 
@@ -68,7 +68,7 @@ async def test_maybe_summarize_triggers_and_saves_title_at_threshold(user_id, mo
     await save_message(user_id, "d", "user", "메시지3", conversation.id)
     await save_message(user_id, "d", "assistant", "메시지4", conversation.id)
 
-    await summarizer.maybe_summarize_conversation(conversation.id, turn_threshold=2)
+    await summarizer.maybe_summarize_conversation(conversation.id, user_id, turn_threshold=2)
 
     db = SessionLocal()
     title = db.query(Conversation).filter(Conversation.id == conversation.id).first().title
@@ -87,7 +87,7 @@ async def test_maybe_summarize_leaves_title_unchanged_on_failure(user_id, monkey
     await save_message(user_id, "d", "user", "메시지1", conversation.id)
     await save_message(user_id, "d", "assistant", "메시지2", conversation.id)
 
-    await summarizer.maybe_summarize_conversation(conversation.id, turn_threshold=1)
+    await summarizer.maybe_summarize_conversation(conversation.id, user_id, turn_threshold=1)
 
     db = SessionLocal()
     title = db.query(Conversation).filter(Conversation.id == conversation.id).first().title

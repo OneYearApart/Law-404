@@ -16,9 +16,12 @@ async def summarize_conversation(messages: list[str]) -> str:
     return await local_summarize(messages)
 
 
-async def maybe_summarize_conversation(conversation_id: int, turn_threshold: int) -> None:
-    """대화가 turn_threshold의 배수(user+assistant 쌍 기준)에 도달했을 때만 재요약해 title을 갱신합니다."""
-    messages = await load_conversation(conversation_id)
+async def maybe_summarize_conversation(conversation_id: int, user_id: int, turn_threshold: int) -> None:
+    """대화가 turn_threshold의 배수(user+assistant 쌍 기준)에 도달했을 때만 재요약해 title을 갱신합니다.
+
+    user_id는 대화방 소유자 — repository의 소유권 필터에 전달한다(호출부에서 이미 검증된 값).
+    """
+    messages = await load_conversation(conversation_id, user_id)
     message_threshold = turn_threshold * 2
     if len(messages) == 0 or len(messages) % message_threshold != 0:
         return
@@ -30,4 +33,4 @@ async def maybe_summarize_conversation(conversation_id: int, turn_threshold: int
         logger.exception("conversation summarization failed (conversation_id=%s)", conversation_id)
         return
 
-    await update_conversation_title(conversation_id, title)
+    await update_conversation_title(conversation_id, user_id, title)

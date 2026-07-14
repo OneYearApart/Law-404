@@ -6,6 +6,7 @@ import pytest
 import pytest_asyncio
 
 from app.auth.orm import User
+from app.conversations.errors import ConversationNotFoundError
 from app.conversations.orm import Conversation, Message
 from app.conversations.repository import (
     create_conversation,
@@ -51,7 +52,7 @@ async def test_save_message_then_load_conversation_returns_in_order(user_id):
     await save_message(user_id, "d", "user", "첫 번째 메시지", conversation.id)
     await save_message(user_id, "d", "assistant", "두 번째 메시지", conversation.id)
 
-    messages = await load_conversation(conversation.id)
+    messages = await load_conversation(conversation.id, user_id)
 
     assert [m.content for m in messages] == ["첫 번째 메시지", "두 번째 메시지"]
     assert [m.role for m in messages] == ["user", "assistant"]
@@ -63,7 +64,27 @@ async def test_save_message_noop_when_user_id_none(user_id):
 
     await save_message(None, "d", "user", "저장되면 안 됨", conversation.id)
 
-    assert await load_conversation(conversation.id) == []
+    assert await load_conversation(conversation.id, user_id) == []
+
+
+@pytest.mark.asyncio
+async def test_save_message_to_non_owned_conversation_raises(user_id):
+    """타인 소유 대화방에는 메시지를 이어쓰지 못한다(IDOR 쓰기 경로 차단)."""
+    conversation = await create_conversation(user_id, "d")
+
+    with pytest.raises(ConversationNotFoundError):
+        await save_message(user_id + 12345, "d", "user", "몰래 이어쓰기", conversation.id)
+
+    assert await load_conversation(conversation.id, user_id) == []
+
+
+@pytest.mark.asyncio
+async def test_load_conversation_by_non_owner_raises(user_id):
+    conversation = await create_conversation(user_id, "d")
+    await save_message(user_id, "d", "user", "내 메시지", conversation.id)
+
+    with pytest.raises(ConversationNotFoundError):
+        await load_conversation(conversation.id, user_id + 12345)
 
 
 @pytest.mark.asyncio

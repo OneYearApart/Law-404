@@ -24,4 +24,5 @@ async def list_conversations(user=Depends(get_current_user)):
 
 @router.get("/{conversation_id}")
 async def load_conversation(conversation_id: int, user=Depends(get_current_user)):
-    return await repository.load_conversation(conversation_id)
+    # 소유자가 아니거나 없으면 repository가 ConversationNotFoundError → main.py 핸들러가 404로 매핑
+    return await repository.load_conversation(conversation_id, user.id)
