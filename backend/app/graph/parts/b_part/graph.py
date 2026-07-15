@@ -1,16 +1,21 @@
 """
 B파트 계약 중 분쟁 MVP 그래프.
 
-현재 단계에서는 LangGraph StateGraph 대신 같은 인터페이스의 얇은 클래스를 둡니다.
-FastAPI 라우터가 기대하는 graph.ainvoke(request)를 제공하면서,
-질문 의도 분류 -> 부족 정보 확인 -> Retriever 검색 -> GPT 답변 생성을 순서대로 실행합니다.
+FastAPI 라우터가 기대하는 graph.ainvoke(request) 인터페이스를 유지하면서,
+내부 실행은 LangGraph StateGraph를 통해 수행합니다.
+
+현재 1차 전환에서는 기존 B파트 파이프라인을 StateGraph의 호환 노드로 감싸고,
+후속 작업에서 Context Resolver, Intent Planner, Rule Engine, Retriever 등을
+개별 노드로 점진 분리할 수 있게 구조를 마련합니다.
 """
 
 from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Any
+from typing import Any, TypedDict
+
+from langgraph.graph import END, START, StateGraph
 
 from app.llm.b_part import generate_b_part_answer, stream_text
 from app.llm.b_part_context import analyze_b_part_context
@@ -474,13 +479,40 @@ def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]
     return questions[:3]
 
 
+class BPartGraphState(TypedDict, total=False):
+    """B파트 LangGraph 실행 상태입니다."""
+
+    request: dict[str, Any]
+    final_state: dict[str, Any]
+
+
 class BPartMVPGraph:
-    """FastAPI 라우터와 맞추기 위한 최소 graph 인터페이스입니다."""
+    """FastAPI 라우터와 호환되는 B파트 LangGraph 어댑터입니다."""
 
     def __init__(self) -> None:
         self.retriever = BPartRetriever()
+        self._compiled_graph = self._build_state_graph()
+
+    def _build_state_graph(self):
+        """기존 B파트 파이프라인을 LangGraph StateGraph로 감싸 컴파일합니다."""
+        builder = StateGraph(BPartGraphState)
+        builder.add_node("run_b_part_pipeline", self._run_b_part_pipeline_node)
+        builder.add_edge(START, "run_b_part_pipeline")
+        builder.add_edge("run_b_part_pipeline", END)
+        return builder.compile()
 
     async def ainvoke(self, request: dict[str, Any]) -> dict[str, Any]:
+        """외부 호출 인터페이스는 유지하고 내부적으로 LangGraph를 실행합니다."""
+        state = await self._compiled_graph.ainvoke({"request": request})
+        return state["final_state"]
+
+    async def _run_b_part_pipeline_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 기존 B파트 파이프라인을 실행합니다."""
+        request = state.get("request", {})
+        final_state = await self._run_pipeline(request)
+        return {"final_state": final_state}
+
+    async def _run_pipeline(self, request: dict[str, Any]) -> dict[str, Any]:
         original_question = extract_user_question(request)
         conversation_id = extract_conversation_id(request)
         history_messages = (
