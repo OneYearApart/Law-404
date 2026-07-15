@@ -7,14 +7,20 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "postgresql://edu:1234@localhost:5433/edudb"
-    openai_api_key: str
+    OPENAI_API_KEY: str
     jwt_secret: str
     jwt_expire_minutes: int = 30  # access token은 여전히 stateless라 짧게 잡아 탈취 리스크 완화, 대신 refresh token으로 로그인 유지
     refresh_token_expire_days: int = 14
     law_api_key: str = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_TEMPERATURE: float = 0.7
+    LOG_LEVEL: str = "INFO" 
+    CLOVA_OCR_URL: str = ""
+    CLOVA_OCR_SECRET: str = ""
 
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
+    
