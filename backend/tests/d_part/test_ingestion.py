@@ -23,6 +23,7 @@ async def test_row_counts(ingested):
     assert counts["판례"] == 431
     assert counts["법령원문"] == 798
     assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
+    assert counts["정부자료"] == 21  # 깡통전세 유형/예방 8 + 실태조사 섹션 13 (작업단위 37)
 
 
 @pytest.mark.asyncio
@@ -36,6 +37,25 @@ async def test_decree_articles_loaded(ingested):
 
     assert "5천500만원" in rows["10"]      # 최우선변제 금액 (서울)
     assert "1억6천500만원" in rows["11"]   # 소액임차인 범위 (서울)
+
+
+@pytest.mark.asyncio
+async def test_gov_docs_loaded(ingested):
+    """정부자료(깡통전세 유형/예방, 국토부 실태조사) 섹션 청킹 + topic_tags 부여 (작업단위 37)."""
+    with get_engine().connect() as conn:
+        rows = dict(conn.execute(text(
+            "SELECT case_no, topic_tags FROM d_part_embeddings WHERE source_type = '정부자료'"
+        )).all())
+
+    # 깡통전세 유형 6종 + 예방법 계약 전/후
+    assert {f"깡통전세-유형{i}" for i in range(1, 7)} <= set(rows)
+    assert "깡통전세-예방법-계약전" in rows and "깡통전세-예방법-계약후" in rows
+    # 신탁사 유형은 통제 어휘 전-⑤신탁사기로 태깅됨
+    assert "전-⑤신탁사기" in rows["깡통전세-유형5"]
+
+    # 실태조사 사기유형 분석 하위섹션은 청킹되고, 헤더만 있던 대섹션 조각은 버려짐
+    assert "실태조사-Ⅱ-2" in rows
+    assert "실태조사-Ⅱ" not in rows  # 표지 한 줄짜리 대섹션 조각 제외
 
 
 @pytest.mark.asyncio

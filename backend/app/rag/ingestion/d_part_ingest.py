@@ -5,6 +5,7 @@ D파트 데이터 적재 스크립트.
   - 전세사기피해자법_전문.pdf        (조 단위 청킹)
   - HUG_2025_전세피해지원_사례집.pdf (케이스 Q+A 단위 청킹)
   - HUG_전세피해_예방_종합안내.pdf   (섹션 기준 청킹)
+  - 정부자료(깡통전세 유형/피해예방, 국토부 실태조사 보고서)  (유형/섹션 단위 청킹)
   - 판례(law.go.kr API 별도 수집)     (판결요지 우선, 필요시 전문 분리)
 
 적재 대상: d_part_embeddings 테이블 (db/schema/d_part_tables.sql)
@@ -22,6 +23,7 @@ from sqlalchemy import text
 
 from app.core.config import get_engine
 from app.rag.embeddings.d_base import embed_batch
+from app.rag.ingestion.gov_docs_d import load_gov_chunks
 from app.rag.ingestion.hug_docs_d import load_hug_chunks
 from app.rag.ingestion.links_d import build_links, enrich_hug_topic_tags
 from app.rag.ingestion.precedents_d import load_precedent_chunks
@@ -113,9 +115,9 @@ async def ingest(embed_enabled: bool = False):
         _bootstrap_schema(conn)
         conn.execute(text("TRUNCATE d_reference_links, d_part_embeddings RESTART IDENTITY"))
 
-        rows = load_precedent_chunks() + load_statute_chunks() + load_hug_chunks()
+        rows = load_precedent_chunks() + load_statute_chunks() + load_hug_chunks() + load_gov_chunks()
         rows = _split_oversized_rows(rows)
-        enrich_hug_topic_tags([row for row in rows if row["source_type"] == "HUG사례집"])
+        enrich_hug_topic_tags([row for row in rows if row["source_type"] in ("HUG사례집", "정부자료")])
         for row in rows:
             row["id"] = _insert_chunk(conn, row)
 
@@ -126,7 +128,8 @@ async def ingest(embed_enabled: bool = False):
     precedent_n = sum(1 for r in rows if r["source_type"] == "판례")
     statute_n = sum(1 for r in rows if r["source_type"] == "법령원문")
     hug_n = sum(1 for r in rows if r["source_type"] in ("HUG사례집", "HUG규정"))
-    print(f"청크 {len(rows)}건 적재 (판례 {precedent_n}건, 법령 {statute_n}건, HUG {hug_n}건)")
+    gov_n = sum(1 for r in rows if r["source_type"] == "정부자료")
+    print(f"청크 {len(rows)}건 적재 (판례 {precedent_n}건, 법령 {statute_n}건, HUG {hug_n}건, 정부자료 {gov_n}건)")
     print(f"링크 {len(links)}건 적재")
 
     if embed_enabled:
