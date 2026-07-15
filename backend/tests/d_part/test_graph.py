@@ -154,14 +154,14 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
     async def _fake_call_supervisor(user_input: str) -> dict:
         return {"category": "open_qa"}
 
-    async def _fake_search(query: str, top_k: int = 5):
-        return [Chunk(id=1, source_type="판례", content="관련 판례")]
+    async def _fake_search_balanced(query, quota=None):
+        return [Chunk(id=1, source_type="법령원문", content="관련 조문")]
 
     async def _fake_generate_response(context: str):
         yield "open_qa 응답"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
-    monkeypatch.setattr(open_qa._retriever, "search", _fake_search)
+    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     initial_state = {
@@ -228,7 +228,7 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
     async def _fake_call_supervisor(user_input: str) -> dict:
         return {"category": "open_qa"}
 
-    async def _fake_search(query: str, top_k: int = 5):
+    async def _fake_search_balanced(query, quota=None):
         return [Chunk(id=1, source_type="법령원문", content="보증보험 관련 조문")]
 
     async def _fake_generate_response(context: str):
@@ -238,7 +238,7 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
         raise AssertionError("종결된 인터뷰의 후속 턴에서 판정 응답을 재조립하면 안 된다")
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
-    monkeypatch.setattr(open_qa._retriever, "search", _fake_search)
+    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
     monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _unreachable_search_by_requirement)
 
