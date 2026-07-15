@@ -36,6 +36,7 @@ from app.graph.parts.b_part.memory import (
     build_history_text,
     memory_store,
 )
+from app.graph.parts.b_part.planner_validator import validate_planner_flow
 from app.graph.parts.b_part.rules import (
     has_date_in_text,
     parse_day_from_text,
@@ -511,6 +512,7 @@ class BPartGraphState(TypedDict, total=False):
     categories: list[str]
     keyword_categories: list[str]
     planner_result: dict[str, Any]
+    planner_validation: dict[str, Any]
     scope_result: dict[str, Any] | None
     intent_result: dict[str, Any] | None
     rule_results: list[dict[str, Any]]
@@ -536,6 +538,7 @@ class BPartMVPGraph:
         builder.add_node("check_keyword_scope", self._check_keyword_scope_node)
         builder.add_node("handle_calendar_confirmation", self._handle_calendar_confirmation_node)
         builder.add_node("plan", self._plan_node)
+        builder.add_node("validate_plan", self._validate_plan_node)
         builder.add_node("missing_scope", self._missing_scope_node)
         builder.add_node("compute", self._compute_node)
         builder.add_node("retrieve", self._retrieve_node)
@@ -558,7 +561,8 @@ class BPartMVPGraph:
                 "continue": "plan",
             },
         )
-        builder.add_edge("plan", "missing_scope")
+        builder.add_edge("plan", "validate_plan")
+        builder.add_edge("validate_plan", "missing_scope")
         builder.add_conditional_edges(
             "missing_scope",
             self._route_after_missing_scope,
@@ -774,6 +778,20 @@ class BPartMVPGraph:
             "planner_result": planner_result,
         }
 
+    async def _validate_plan_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: LLM Planner 결과를 실행 제어용 결정값으로 검증합니다."""
+        planner_validation = validate_planner_flow(
+            question=state["question"],
+            categories=state.get("categories", []),
+            context_result=state["context_result"],
+            planner_result=state["planner_result"],
+        )
+
+        return {
+            **state,
+            "planner_validation": planner_validation,
+        }
+
     async def _compute_node(self, state: BPartGraphState) -> BPartGraphState:
         """LangGraph 노드: Rule Engine 계산과 캘린더 후보 생성을 수행합니다."""
         question = state["question"]
@@ -815,6 +833,7 @@ class BPartMVPGraph:
         memory_meta = state["memory_meta"]
         categories = state.get("categories", [])
         planner_result = state["planner_result"]
+        planner_validation = state.get("planner_validation", {})
 
         memory_state = (
             memory_store.get_state(conversation_id)
@@ -960,12 +979,11 @@ class BPartMVPGraph:
                 }
 
         required_missing_questions = context_result.get("required_missing_questions", [])
-        if (
-            context_result.get("source") == "llm"
-            and context_result.get("response_mode") == "ask_missing_info"
-            and required_missing_questions
-            and not can_continue_with_rule_results(question, categories)
-        ):
+        if planner_validation.get("context_should_stop"):
+            required_missing_questions = planner_validation.get(
+                "context_missing_questions",
+                required_missing_questions,
+            )
             answer = "\n".join(str(question) for question in required_missing_questions)
             final_state = self._build_early_final_state(
                 question=question,
@@ -981,17 +999,13 @@ class BPartMVPGraph:
                 },
                 memory_meta=memory_meta,
                 answer=answer,
+                planner_validation=planner_validation,
             )
             self._save_turn(conversation_id, original_question, answer)
             return {**state, "final_state": final_state}
 
-        planner_missing_questions = build_planner_missing_questions(planner_result)
-        if (
-            planner_result.get("source") == "llm"
-            and planner_result.get("answer_mode") == "ask_missing_info"
-            and planner_missing_questions
-            and not can_continue_with_rule_results(question, categories)
-        ):
+        planner_missing_questions = planner_validation.get("planner_missing_questions", [])
+        if planner_validation.get("planner_should_stop"):
             answer = "\n".join(planner_missing_questions)
             final_state = self._build_early_final_state(
                 question=question,
@@ -1007,6 +1021,7 @@ class BPartMVPGraph:
                 },
                 memory_meta=memory_meta,
                 answer=answer,
+                planner_validation=planner_validation,
             )
             self._save_turn(conversation_id, original_question, answer)
             return {**state, "final_state": final_state}
@@ -1116,6 +1131,7 @@ class BPartMVPGraph:
         memory_meta = state["memory_meta"]
         categories = state.get("categories", [])
         planner_result = state["planner_result"]
+        planner_validation = state.get("planner_validation", {})
         intent_result = state.get("intent_result")
         rule_results = state.get("rule_results", [])
         calendar_events = state.get("calendar_events", [])
@@ -1142,6 +1158,7 @@ class BPartMVPGraph:
             "categories": categories,
             "context_result": context_result,
             "planner_result": planner_result,
+            "planner_validation": planner_validation,
             "intent_result": intent_result,
             "scope_result": scope_result,
             "rule_results": rule_results,
@@ -1170,6 +1187,7 @@ class BPartMVPGraph:
         retrieval_quality: dict[str, Any],
         memory_meta: dict[str, Any],
         answer: str,
+        planner_validation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """조기 종료 노드에서 공통으로 사용하는 final_state를 만듭니다."""
         return {
@@ -1177,6 +1195,7 @@ class BPartMVPGraph:
             "categories": categories,
             "context_result": context_result,
             "planner_result": planner_result,
+            "planner_validation": planner_validation or {},
             "intent_result": intent_result,
             "scope_result": scope_result,
             "rule_results": [],
