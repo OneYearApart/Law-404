@@ -55,6 +55,9 @@ SYSTEM_PROMPT = """
 - 법령 문서와 판례 문서가 충돌하거나 판례 관련성이 낮아 보이면 법령 문서를 기준으로 설명합니다.
 - 어려운 법률 용어는 중학생도 이해할 수 있게 풀어 씁니다.
 - 보증금 반환, 임차권등기명령, 대항력 등 계약 종료 이후 이슈는 핵심 답변이 아니라 주의사항 수준으로만 언급합니다.
+- 최종 답변이 가능한 상황에서는 추가 확인 질문을 0~1개만 작성합니다.
+- 사용자가 이미 제공한 날짜, 금액, 기간, 하자 내용은 다시 묻지 않습니다.
+- 선택 정보가 부족하다는 이유만으로 답변을 흐리지 말고, 필요한 경우 가장 중요한 확인 질문 1개만 남깁니다.
 
 반드시 아래 형식을 사용하세요.
 
@@ -119,13 +122,38 @@ def format_calendar_events(calendar_events: list[dict[str, Any]] | None) -> str:
     return "\n\n".join(blocks)
 
 
-def format_retrieved_documents(retrieved_documents: list[dict[str, Any]]) -> str:
+def format_retrieved_documents(
+    retrieved_documents: list[dict[str, Any]],
+    categories: list[str] | None = None,
+) -> str:
     """GPT 프롬프트에 넣기 좋게 검색 결과를 짧게 정리합니다."""
     if not retrieved_documents:
         return "검색된 법령/판례가 없습니다."
 
+    category_set = set(categories or [])
+    law_documents = [
+        document
+        for document in retrieved_documents
+        if (document.get("source_type") or (document.get("metadata") or {}).get("document_type")) == "law"
+    ]
+    precedent_documents = []
+    for document in retrieved_documents:
+        metadata = document.get("metadata") or {}
+        source_type = document.get("source_type") or metadata.get("document_type")
+        if source_type != "precedent":
+            continue
+
+        similarity = float(document.get("similarity") or 0)
+        category = document.get("category") or metadata.get("category")
+        if similarity >= 0.34 and (not category_set or category in category_set):
+            precedent_documents.append(document)
+
+    display_documents = law_documents + precedent_documents
+    if not display_documents:
+        display_documents = law_documents or retrieved_documents[:3]
+
     blocks: list[str] = []
-    for index, document in enumerate(retrieved_documents, start=1):
+    for index, document in enumerate(display_documents, start=1):
         metadata = document.get("metadata") or {}
         title = document.get("title") or metadata.get("title") or "제목 없음"
         category = document.get("category") or metadata.get("category") or "카테고리 없음"
@@ -188,10 +216,13 @@ Calendar Event Candidates가 있으면 답변 마지막에 "캘린더 등록 가
 {missing_text}
 
 [검색된 법령/판례/해설]
-{format_retrieved_documents(retrieved_documents)}
+{format_retrieved_documents(retrieved_documents, categories=categories)}
 
 [작성 지시]
 - 사용자의 질문에 먼저 답하고, 필요한 경우 추가 확인 질문을 마지막에 붙이세요.
+- [부족하거나 추가 확인할 정보]는 후보 목록입니다. 최종 답변이 가능한 경우 전부 쓰지 말고 가장 중요한 질문 0~1개만 쓰세요.
+- ⑦ 추가 확인 질문에는 최대 1개의 질문만 작성하세요. 더 물을 것이 없으면 "현재 추가 확인 질문은 없습니다."라고 쓰세요.
+- 같은 의미의 질문을 반복하지 마세요.
 - 날짜, 금액, 인상률, 5% 초과 여부는 Rule Engine 계산 결과가 있으면 그 값을 우선 사용하세요.
 - Rule Engine 계산 결과가 없는 날짜/금액 판단은 직접 확정하지 말고 추가 확인이 필요하다고 말하세요.
 - 차임증감 질문에서 Rule Engine 계산 결과가 없으면 현재 월세와 요구 월세가 필요하다고 반드시 안내하세요.
