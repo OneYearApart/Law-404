@@ -77,6 +77,7 @@ class ConversationState(BaseModel):
     """상담 하나에서 유지하는 전체 상태."""
 
     conversation_id: str = Field(default_factory=lambda: str(uuid4()))
+    owner_user_id: int | None = None
     primary_issue_id: str
     related_issue_ids: list[str] = Field(default_factory=list)
     issue_slots: dict[str, dict[str, SlotState]] = Field(default_factory=dict)
@@ -178,6 +179,21 @@ class ConversationState(BaseModel):
         raise ValueError(
             f"상담에 연결되지 않은 document_id입니다: {document.document_id}"
         )
+
+    def remove_document(self, document_id: str) -> UploadedDocument:
+        """상담에 연결된 문서를 제거하고 제거한 메타데이터를 반환한다."""
+
+        normalized = document_id.strip()
+        if not normalized:
+            raise ValueError("document_id는 빈 문자열일 수 없습니다.")
+
+        for index, document in enumerate(self.documents):
+            if document.document_id == normalized:
+                removed = self.documents.pop(index)
+                self.touch()
+                return removed
+
+        raise ValueError(f"상담에 연결되지 않은 document_id입니다: {normalized}")
 
     def confirmed_facts(self) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = {}
