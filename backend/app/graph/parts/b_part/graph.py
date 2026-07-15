@@ -521,7 +521,7 @@ class BPartMVPGraph:
         builder.add_node("missing_scope", self._missing_scope_node)
         builder.add_node("compute", self._compute_node)
         builder.add_node("retrieve", self._retrieve_node)
-        builder.add_node("run_core_pipeline", self._run_core_pipeline_node)
+        builder.add_node("answer", self._answer_node)
         builder.add_edge(START, "prepare_context")
         builder.add_edge("prepare_context", "check_keyword_scope")
         builder.add_conditional_edges(
@@ -550,8 +550,8 @@ class BPartMVPGraph:
             },
         )
         builder.add_edge("compute", "retrieve")
-        builder.add_edge("retrieve", "run_core_pipeline")
-        builder.add_edge("run_core_pipeline", END)
+        builder.add_edge("retrieve", "answer")
+        builder.add_edge("answer", END)
         return builder.compile()
 
     async def ainvoke(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -1082,12 +1082,13 @@ class BPartMVPGraph:
             "retrieval_quality": retrieval_quality,
         }
 
-    async def _run_core_pipeline_node(self, state: BPartGraphState) -> BPartGraphState:
-        """LangGraph 노드: Rule/RAG/답변 생성 중심 파이프라인을 실행합니다."""
-        final_state = await self._run_core_pipeline(state)
+    async def _answer_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 검색/계산 결과를 바탕으로 최종 답변을 생성합니다."""
+        final_state = await self._generate_final_answer(state)
         return {"final_state": final_state}
 
-    async def _run_core_pipeline(self, state: BPartGraphState) -> dict[str, Any]:
+    async def _generate_final_answer(self, state: BPartGraphState) -> dict[str, Any]:
+        """GPT 답변 생성, 캘린더 후보 문구 추가, 대화 저장을 수행합니다."""
         original_question = state["original_question"]
         conversation_id = state.get("conversation_id")
         question = state["question"]
