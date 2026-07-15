@@ -493,6 +493,7 @@ class BPartGraphState(TypedDict, total=False):
     categories: list[str]
     keyword_categories: list[str]
     planner_result: dict[str, Any]
+    scope_result: dict[str, Any] | None
     intent_result: dict[str, Any] | None
     rule_results: list[dict[str, Any]]
     calendar_events: list[dict[str, Any]]
@@ -517,6 +518,7 @@ class BPartMVPGraph:
         builder.add_node("check_keyword_scope", self._check_keyword_scope_node)
         builder.add_node("handle_calendar_confirmation", self._handle_calendar_confirmation_node)
         builder.add_node("plan", self._plan_node)
+        builder.add_node("missing_scope", self._missing_scope_node)
         builder.add_node("compute", self._compute_node)
         builder.add_node("retrieve", self._retrieve_node)
         builder.add_node("run_core_pipeline", self._run_core_pipeline_node)
@@ -538,7 +540,15 @@ class BPartMVPGraph:
                 "continue": "plan",
             },
         )
-        builder.add_edge("plan", "compute")
+        builder.add_edge("plan", "missing_scope")
+        builder.add_conditional_edges(
+            "missing_scope",
+            self._route_after_missing_scope,
+            {
+                "end": END,
+                "continue": "compute",
+            },
+        )
         builder.add_edge("compute", "retrieve")
         builder.add_edge("retrieve", "run_core_pipeline")
         builder.add_edge("run_core_pipeline", END)
@@ -778,6 +788,254 @@ class BPartMVPGraph:
             "pending_action": pending_action,
         }
 
+    async def _missing_scope_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 추가 정보 요청, 부분 날짜 처리, LLM Scope 확인을 수행합니다."""
+        original_question = state["original_question"]
+        conversation_id = state.get("conversation_id")
+        question = state["question"]
+        context_result = state["context_result"]
+        memory_meta = state["memory_meta"]
+        categories = state.get("categories", [])
+        planner_result = state["planner_result"]
+
+        memory_state = (
+            memory_store.get_state(conversation_id)
+            if conversation_id
+            else {}
+        )
+        renewal_slot_context = has_renewal_slot_context(
+            question=question,
+            categories=categories,
+            context_result=context_result,
+        )
+
+        if renewal_slot_context and conversation_id:
+            pending_year = memory_state.get("pending_contract_end_year")
+            pending_month = memory_state.get("pending_contract_end_month")
+            pending_field = memory_state.get("pending_field")
+
+            if pending_field == "contract_end_day" and pending_year and pending_month:
+                day = parse_day_from_text(original_question)
+                if day is not None:
+                    try:
+                        contract_end_date = date(int(pending_year), int(pending_month), day)
+                    except ValueError:
+                        answer = (
+                            f"{pending_year}년 {pending_month}월에는 {day}일이 없습니다. "
+                            "계약서에 적힌 정확한 계약 종료일을 다시 알려주세요."
+                        )
+                        final_state = self._build_early_final_state(
+                            question=question,
+                            categories=categories,
+                            context_result=context_result,
+                            planner_result=planner_result,
+                            intent_result=None,
+                            scope_result=None,
+                            missing_questions=[answer],
+                            retrieval_quality={
+                                "skipped": True,
+                                "reason": "invalid_contract_end_day",
+                            },
+                            memory_meta={
+                                **memory_meta,
+                                "state": memory_store.get_state(conversation_id),
+                            },
+                            answer=answer,
+                        )
+                        self._save_turn(conversation_id, original_question, answer)
+                        return {**state, "final_state": final_state}
+
+                    memory_store.clear_state_fields(
+                        conversation_id,
+                        [
+                            "pending_contract_end_year",
+                            "pending_contract_end_month",
+                            "pending_field",
+                        ],
+                    )
+                    question = (
+                        f"{question}\n\n"
+                        f"확정된 계약 종료일: {contract_end_date.isoformat()}"
+                    )
+                    memory_meta["contextual_question"] = question
+                    memory_meta["state"] = memory_store.get_state(conversation_id)
+                    memory_meta["resolved_partial_date"] = {
+                        "field": "contract_end_date",
+                        "value": contract_end_date.isoformat(),
+                    }
+
+                elif is_contract_end_date_clarification(original_question):
+                    answer = build_contract_end_day_question(
+                        int(pending_year),
+                        int(pending_month),
+                    )
+                    final_state = self._build_early_final_state(
+                        question=question,
+                        categories=categories,
+                        context_result=context_result,
+                        planner_result=planner_result,
+                        intent_result=None,
+                        scope_result=None,
+                        missing_questions=[answer],
+                        retrieval_quality={
+                            "skipped": True,
+                            "reason": "waiting_for_contract_end_day",
+                        },
+                        memory_meta={
+                            **memory_meta,
+                            "state": memory_store.get_state(conversation_id),
+                        },
+                        answer=answer,
+                    )
+                    self._save_turn(conversation_id, original_question, answer)
+                    return {**state, "final_state": final_state}
+
+        if renewal_slot_context and not has_date_in_text(question):
+            year_month = (
+                parse_year_month_from_text(original_question)
+                or parse_year_month_from_text(question)
+            )
+            if year_month and conversation_id:
+                year, month = year_month
+                memory_store.update_state(
+                    conversation_id,
+                    {
+                        "pending_contract_end_year": year,
+                        "pending_contract_end_month": month,
+                        "pending_field": "contract_end_day",
+                    },
+                )
+                answer = build_contract_end_day_question(year, month)
+                next_context_result = {
+                    **context_result,
+                    "response_mode": "ask_missing_info",
+                    "required_missing_questions": [answer],
+                    "partial_facts": {
+                        "contract_end_year": year,
+                        "contract_end_month": month,
+                        "missing": ["contract_end_day"],
+                    },
+                }
+                final_state = self._build_early_final_state(
+                    question=question,
+                    categories=categories,
+                    context_result=next_context_result,
+                    planner_result=planner_result,
+                    intent_result=None,
+                    scope_result=None,
+                    missing_questions=[answer],
+                    retrieval_quality={
+                        "skipped": True,
+                        "reason": "partial_contract_end_date",
+                    },
+                    memory_meta={
+                        **memory_meta,
+                        "state": memory_store.get_state(conversation_id),
+                    },
+                    answer=answer,
+                )
+                self._save_turn(conversation_id, original_question, answer)
+                return {
+                    **state,
+                    "context_result": next_context_result,
+                    "final_state": final_state,
+                }
+
+        required_missing_questions = context_result.get("required_missing_questions", [])
+        if (
+            context_result.get("source") == "llm"
+            and context_result.get("response_mode") == "ask_missing_info"
+            and required_missing_questions
+        ):
+            answer = "\n".join(str(question) for question in required_missing_questions)
+            final_state = self._build_early_final_state(
+                question=question,
+                categories=categories,
+                context_result=context_result,
+                planner_result=planner_result,
+                intent_result=None,
+                scope_result=None,
+                missing_questions=required_missing_questions,
+                retrieval_quality={
+                    "skipped": True,
+                    "reason": "required_missing_information",
+                },
+                memory_meta=memory_meta,
+                answer=answer,
+            )
+            self._save_turn(conversation_id, original_question, answer)
+            return {**state, "final_state": final_state}
+
+        planner_missing_questions = build_planner_missing_questions(planner_result)
+        if (
+            planner_result.get("source") == "llm"
+            and planner_result.get("answer_mode") == "ask_missing_info"
+            and planner_missing_questions
+        ):
+            answer = "\n".join(planner_missing_questions)
+            final_state = self._build_early_final_state(
+                question=question,
+                categories=categories,
+                context_result=context_result,
+                planner_result=planner_result,
+                intent_result=None,
+                scope_result=None,
+                missing_questions=planner_missing_questions,
+                retrieval_quality={
+                    "skipped": True,
+                    "reason": "planner_required_missing_information",
+                },
+                memory_meta=memory_meta,
+                answer=answer,
+            )
+            self._save_turn(conversation_id, original_question, answer)
+            return {**state, "final_state": final_state}
+
+        scope_result: dict[str, Any] | None = None
+        if should_call_scope_analyzer(question=question, categories=categories):
+            scope_result = analyze_b_part_scope(question)
+            scope = scope_result.get("scope")
+            if scope in {"out_of_scope", "ambiguous"}:
+                answer = build_scope_guidance_answer(scope_result)
+                final_state = self._build_early_final_state(
+                    question=question,
+                    categories=scope_result.get("suggested_categories", []),
+                    context_result=context_result,
+                    planner_result=planner_result,
+                    intent_result=None,
+                    scope_result=scope_result,
+                    missing_questions=[scope_result.get("clarification_question", "")],
+                    retrieval_quality={
+                        "is_out_of_scope": scope == "out_of_scope",
+                        "is_ambiguous_scope": scope == "ambiguous",
+                        "reason": scope_result.get("reason"),
+                    },
+                    memory_meta=memory_meta,
+                    answer=answer,
+                )
+                self._save_turn(conversation_id, original_question, answer)
+                return {**state, "final_state": final_state}
+
+            categories = merge_categories(
+                categories,
+                scope_result.get("suggested_categories", []),
+            )
+
+        return {
+            **state,
+            "question": question,
+            "categories": categories,
+            "context_result": context_result,
+            "memory_meta": memory_meta,
+            "scope_result": scope_result,
+        }
+
+    def _route_after_missing_scope(self, state: BPartGraphState) -> str:
+        """missing/scope 노드 이후 다음 경로를 결정합니다."""
+        if state.get("final_state"):
+            return "end"
+        return "continue"
+
     async def _retrieve_node(self, state: BPartGraphState) -> BPartGraphState:
         """LangGraph 노드: PGVector 검색과 검색 품질 보정을 수행합니다."""
         request = state.get("request", {})
@@ -843,261 +1101,7 @@ class BPartMVPGraph:
         pending_action = state.get("pending_action")
         retrieved = state.get("retrieved", [])
         retrieval_quality = state.get("retrieval_quality", {})
-
-        memory_state = (
-            memory_store.get_state(conversation_id)
-            if conversation_id
-            else {}
-        )
-        renewal_slot_context = has_renewal_slot_context(
-            question=question,
-            categories=categories,
-            context_result=context_result,
-        )
-
-        if renewal_slot_context and conversation_id:
-            pending_year = memory_state.get("pending_contract_end_year")
-            pending_month = memory_state.get("pending_contract_end_month")
-            pending_field = memory_state.get("pending_field")
-
-            if pending_field == "contract_end_day" and pending_year and pending_month:
-                day = parse_day_from_text(original_question)
-                if day is not None:
-                    try:
-                        contract_end_date = date(int(pending_year), int(pending_month), day)
-                    except ValueError:
-                        answer = (
-                            f"{pending_year}년 {pending_month}월에는 {day}일이 없습니다. "
-                            "계약서에 적힌 정확한 계약 종료일을 다시 알려주세요."
-                        )
-                        final_state = {
-                            "question": question,
-                            "categories": categories,
-                            "context_result": context_result,
-                            "planner_result": planner_result,
-                            "intent_result": None,
-                            "scope_result": None,
-                            "rule_results": [],
-                            "calendar_events": [],
-                            "pending_action": None,
-                            "calendar_registration": None,
-                            "missing_questions": [answer],
-                            "retrieved": [],
-                            "retrieval_quality": {
-                                "skipped": True,
-                                "reason": "invalid_contract_end_day",
-                            },
-                            "memory": {
-                                **memory_meta,
-                                "state": memory_store.get_state(conversation_id),
-                            },
-                            "final_answer": answer,
-                            "response_stream": stream_text(answer),
-                        }
-                        self._save_turn(conversation_id, original_question, answer)
-                        return final_state
-
-                    memory_store.clear_state_fields(
-                        conversation_id,
-                        [
-                            "pending_contract_end_year",
-                            "pending_contract_end_month",
-                            "pending_field",
-                        ],
-                    )
-                    question = (
-                        f"{question}\n\n"
-                        f"확정된 계약 종료일: {contract_end_date.isoformat()}"
-                    )
-                    memory_meta["contextual_question"] = question
-                    memory_meta["state"] = memory_store.get_state(conversation_id)
-                    memory_meta["resolved_partial_date"] = {
-                        "field": "contract_end_date",
-                        "value": contract_end_date.isoformat(),
-                    }
-
-                elif is_contract_end_date_clarification(original_question):
-                    answer = build_contract_end_day_question(
-                        int(pending_year),
-                        int(pending_month),
-                    )
-                    final_state = {
-                        "question": question,
-                        "categories": categories,
-                        "context_result": context_result,
-                        "planner_result": planner_result,
-                        "intent_result": None,
-                        "scope_result": None,
-                        "rule_results": [],
-                        "calendar_events": [],
-                        "pending_action": None,
-                        "calendar_registration": None,
-                        "missing_questions": [answer],
-                        "retrieved": [],
-                        "retrieval_quality": {
-                            "skipped": True,
-                            "reason": "waiting_for_contract_end_day",
-                        },
-                        "memory": {
-                            **memory_meta,
-                            "state": memory_store.get_state(conversation_id),
-                        },
-                        "final_answer": answer,
-                        "response_stream": stream_text(answer),
-                    }
-                    self._save_turn(conversation_id, original_question, answer)
-                    return final_state
-
-        if renewal_slot_context and not has_date_in_text(question):
-            year_month = (
-                parse_year_month_from_text(original_question)
-                or parse_year_month_from_text(question)
-            )
-            if year_month and conversation_id:
-                year, month = year_month
-                memory_store.update_state(
-                    conversation_id,
-                    {
-                        "pending_contract_end_year": year,
-                        "pending_contract_end_month": month,
-                        "pending_field": "contract_end_day",
-                    },
-                )
-                answer = build_contract_end_day_question(year, month)
-                final_state = {
-                    "question": question,
-                    "categories": categories,
-                    "context_result": {
-                        **context_result,
-                        "response_mode": "ask_missing_info",
-                        "required_missing_questions": [answer],
-                        "partial_facts": {
-                            "contract_end_year": year,
-                            "contract_end_month": month,
-                            "missing": ["contract_end_day"],
-                        },
-                    },
-                    "planner_result": planner_result,
-                    "intent_result": None,
-                    "scope_result": None,
-                    "rule_results": [],
-                    "calendar_events": [],
-                    "pending_action": None,
-                    "calendar_registration": None,
-                    "missing_questions": [answer],
-                    "retrieved": [],
-                    "retrieval_quality": {
-                        "skipped": True,
-                        "reason": "partial_contract_end_date",
-                    },
-                    "memory": {
-                        **memory_meta,
-                        "state": memory_store.get_state(conversation_id),
-                    },
-                    "final_answer": answer,
-                    "response_stream": stream_text(answer),
-                }
-                self._save_turn(conversation_id, original_question, answer)
-                return final_state
-
-        scope_result: dict[str, Any] | None = None
-
-        required_missing_questions = context_result.get("required_missing_questions", [])
-        if (
-            context_result.get("source") == "llm"
-            and context_result.get("response_mode") == "ask_missing_info"
-            and required_missing_questions
-        ):
-            answer = "\n".join(str(question) for question in required_missing_questions)
-            final_state = {
-                "question": question,
-                "categories": categories,
-                "context_result": context_result,
-                "planner_result": planner_result,
-                "intent_result": None,
-                "scope_result": None,
-                "rule_results": [],
-                "calendar_events": [],
-                "pending_action": None,
-                "calendar_registration": None,
-                "missing_questions": required_missing_questions,
-                "retrieved": [],
-                "retrieval_quality": {
-                    "skipped": True,
-                    "reason": "required_missing_information",
-                },
-                "memory": memory_meta,
-                "final_answer": answer,
-                "response_stream": stream_text(answer),
-            }
-            self._save_turn(conversation_id, original_question, answer)
-            return final_state
-
-        planner_missing_questions = build_planner_missing_questions(planner_result)
-        if (
-            planner_result.get("source") == "llm"
-            and planner_result.get("answer_mode") == "ask_missing_info"
-            and planner_missing_questions
-        ):
-            answer = "\n".join(planner_missing_questions)
-            final_state = {
-                "question": question,
-                "categories": categories,
-                "context_result": context_result,
-                "planner_result": planner_result,
-                "intent_result": None,
-                "scope_result": None,
-                "rule_results": [],
-                "calendar_events": [],
-                "pending_action": None,
-                "calendar_registration": None,
-                "missing_questions": planner_missing_questions,
-                "retrieved": [],
-                "retrieval_quality": {
-                    "skipped": True,
-                    "reason": "planner_required_missing_information",
-                },
-                "memory": memory_meta,
-                "final_answer": answer,
-                "response_stream": stream_text(answer),
-            }
-            self._save_turn(conversation_id, original_question, answer)
-            return final_state
-
-        if should_call_scope_analyzer(question=question, categories=categories):
-            scope_result = analyze_b_part_scope(question)
-            scope = scope_result.get("scope")
-            if scope in {"out_of_scope", "ambiguous"}:
-                answer = build_scope_guidance_answer(scope_result)
-                final_state = {
-                    "question": question,
-                    "categories": scope_result.get("suggested_categories", []),
-                    "context_result": context_result,
-                    "planner_result": planner_result,
-                    "intent_result": None,
-                    "scope_result": scope_result,
-                    "rule_results": [],
-                    "calendar_events": [],
-                    "pending_action": None,
-                    "calendar_registration": None,
-                    "missing_questions": [scope_result.get("clarification_question", "")],
-                    "retrieved": [],
-                    "retrieval_quality": {
-                        "is_out_of_scope": scope == "out_of_scope",
-                        "is_ambiguous_scope": scope == "ambiguous",
-                        "reason": scope_result.get("reason"),
-                    },
-                    "memory": memory_meta,
-                    "final_answer": answer,
-                    "response_stream": stream_text(answer),
-                }
-                self._save_turn(conversation_id, original_question, answer)
-                return final_state
-
-            categories = merge_categories(
-                categories,
-                scope_result.get("suggested_categories", []),
-            )
+        scope_result = state.get("scope_result")
 
         missing_questions = find_missing_questions(question, categories)
 
@@ -1131,6 +1135,40 @@ class BPartMVPGraph:
         }
         self._save_turn(conversation_id, original_question, answer)
         return final_state
+
+    def _build_early_final_state(
+        self,
+        *,
+        question: str,
+        categories: list[str],
+        context_result: dict[str, Any],
+        planner_result: dict[str, Any] | None,
+        intent_result: dict[str, Any] | None,
+        scope_result: dict[str, Any] | None,
+        missing_questions: list[Any],
+        retrieval_quality: dict[str, Any],
+        memory_meta: dict[str, Any],
+        answer: str,
+    ) -> dict[str, Any]:
+        """조기 종료 노드에서 공통으로 사용하는 final_state를 만듭니다."""
+        return {
+            "question": question,
+            "categories": categories,
+            "context_result": context_result,
+            "planner_result": planner_result,
+            "intent_result": intent_result,
+            "scope_result": scope_result,
+            "rule_results": [],
+            "calendar_events": [],
+            "pending_action": None,
+            "calendar_registration": None,
+            "missing_questions": missing_questions,
+            "retrieved": [],
+            "retrieval_quality": retrieval_quality,
+            "memory": memory_meta,
+            "final_answer": answer,
+            "response_stream": stream_text(answer),
+        }
 
     def _save_turn(
         self,
