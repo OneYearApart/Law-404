@@ -17,6 +17,12 @@ law.go.kr Open API(target=law)로 근거법 조문 전문을 수집한다.
 신탁법 시행령은 조문 17개가 전부 서식·절차(수익증권 기재사항, 사채 총액 한도 등)라
 신탁사기 도메인과 접점이 없어 수집 대상에서 제외한다.
 
+작업단위 39(일반 민사 절차)로 아래 3개 법령을 추가한다. C파트(계약 후)와 주제가 겹치나,
+종합문서 §13 방침대로 지금은 D파트 테이블에 독립 적재하고 통합 단계에서 조율한다:
+- 민사소송법 (독촉절차 발췌 — 지급명령/독촉 키워드)
+- 민사집행법 (강제경매·배당절차 발췌 — 배당/강제경매/우선변제 키워드, 전문은 노이즈 과다)
+- 소액사건심판법 (전문 — 25개 조문으로 작음)
+
 - 검색: lawSearch.do (target=law) → 법령일련번호(MST) 확인
 - 상세: lawService.do (target=law) → 조문단위(조/항/호) 전문 조회
 - 결과: {out}/{법령명}.json (조 단위, 항이 많으면 항 단위로도 분리된 구조)
@@ -56,6 +62,9 @@ EXCERPT_KEYWORDS = {
         "중개대상물", "확인ㆍ설명", "손해배상", "거래계약서", "계약금등",
         "보증보험금", "보증의 변경", "교란행위", "중개보수", "중개계약",
     ],
+    # 작업단위 39: 전세보증금 반환 관련 절차 조문만 발췌 (전문은 노이즈 과다)
+    "민사소송법": ["지급명령", "독촉"],
+    "민사집행법": ["배당", "강제경매", "우선변제"],
 }
 
 # 수집 대상 법령 (검색 쿼리 = 정식 법령명)
@@ -67,6 +76,9 @@ TARGET_LAWS = [
     "주택임대차보호법 시행령",
     "전세사기피해자 지원 및 주거안정에 관한 특별법 시행령",
     "공인중개사법 시행령",
+    "민사소송법",          # 작업단위 39 (독촉절차 발췌)
+    "민사집행법",          # 작업단위 39 (강제경매·배당 발췌)
+    "소액사건심판법",      # 작업단위 39 (전문)
 ]
 
 
@@ -191,11 +203,16 @@ def article_matches_keywords(article: dict, keywords: list[str]) -> bool:
     return any(kw in haystack for kw in keywords)
 
 
-def run_collection(oc: str, out_dir: Path):
+def run_collection(oc: str, out_dir: Path, only: list[str] | None = None):
     out_dir.mkdir(parents=True, exist_ok=True)
     summary = []
 
-    for law_name in TARGET_LAWS:
+    targets = [l for l in TARGET_LAWS if l in only] if only else TARGET_LAWS
+    if only:
+        missing = [l for l in only if l not in TARGET_LAWS]
+        if missing:
+            raise SystemExit(f"--only에 TARGET_LAWS에 없는 법령: {missing}")
+    for law_name in targets:
         print(f"\n=== {law_name} ===")
         print("  검색 중...")
         search_meta = search_law_mst(oc, law_name)
@@ -240,15 +257,16 @@ def run_collection(oc: str, out_dir: Path):
             "발췌여부": is_excerpt, "조문수": len(articles), "파일": out_path.name,
         })
 
-    summary_path = out_dir / "index.json"
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
+    if not only:  # 부분(--only) 실행은 기존 index.json을 덮어쓰지 않는다
+        summary_path = out_dir / "index.json"
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+        print(f"  인덱스: {summary_path}")
 
     print("\n=== 전체 완료 ===")
     for s in summary:
         tag = "(발췌)" if s["발췌여부"] else "(전문)"
         print(f"  {s['법령명']} {tag}: {s['조문수']}개 조문 -> {s['파일']}")
-    print(f"  인덱스: {summary_path}")
 
 
 def sanity_check(oc: str):
@@ -269,13 +287,16 @@ def main():
     parser.add_argument("--out", default="./statutes", help="출력 디렉토리 (기본: ./statutes)")
     parser.add_argument("--check", action="store_true",
                          help="본 수집 없이 단일 쿼리로 인증/연결 상태만 확인하고 종료")
+    parser.add_argument("--only", default=None,
+                         help="쉼표로 구분한 법령명만 수집(기존 JSON/index.json 유지). 예: --only 민사소송법,민사집행법")
     args = parser.parse_args()
 
     if args.check:
         sanity_check(args.oc)
         return
 
-    run_collection(args.oc, Path(args.out))
+    only = [s.strip() for s in args.only.split(",")] if args.only else None
+    run_collection(args.oc, Path(args.out), only=only)
 
 
 if __name__ == "__main__":

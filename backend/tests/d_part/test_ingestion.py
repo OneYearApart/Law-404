@@ -21,7 +21,7 @@ async def test_row_counts(ingested):
         )).all())
 
     assert counts["판례"] == 431
-    assert counts["법령원문"] == 798
+    assert counts["법령원문"] == 932  # 시행령 3종(38) + 민사절차 3법(39) 포함
     assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
     assert counts["정부자료"] == 21  # 깡통전세 유형/예방 8 + 실태조사 섹션 13 (작업단위 37)
 
@@ -37,6 +37,35 @@ async def test_decree_articles_loaded(ingested):
 
     assert "5천500만원" in rows["10"]      # 최우선변제 금액 (서울)
     assert "1억6천500만원" in rows["11"]   # 소액임차인 범위 (서울)
+
+
+@pytest.mark.asyncio
+async def test_civil_procedure_statutes_loaded(ingested):
+    """일반 민사 절차 법령 — 독촉/강제집행·배당/소액사건 (작업단위 39, C파트와 주제 겹침).
+
+    민사소송법·민사집행법은 발췌 적재라 전문이 아니며, 절차 핵심 조문만 확인한다.
+    """
+    with get_engine().connect() as conn:
+        by_statute = dict(conn.execute(text(
+            "SELECT statute_name, count(*) FROM d_part_embeddings"
+            " WHERE statute_name IN ('민사소송법', '민사집행법', '소액사건심판법')"
+            " GROUP BY statute_name"
+        )).all())
+        # 대표 조문이 실제로 적재됐는지 (지급명령 신청 / 배당받을 채권자 범위)
+        articles = {
+            (r.statute_name, r.article_no): r.content
+            for r in conn.execute(text(
+                "SELECT statute_name, article_no, content FROM d_part_embeddings"
+                " WHERE (statute_name = '민사소송법' AND article_no = '464')"
+                "    OR (statute_name = '민사집행법' AND article_no = '148')"
+            ))
+        }
+
+    assert by_statute.get("민사소송법", 0) > 0
+    assert by_statute.get("민사집행법", 0) > 0
+    assert by_statute.get("소액사건심판법", 0) > 0
+    assert "지급명령" in articles[("민사소송법", "464")]
+    assert "배당" in articles[("민사집행법", "148")]
 
 
 @pytest.mark.asyncio
@@ -62,7 +91,7 @@ async def test_gov_docs_loaded(ingested):
 async def test_links_loaded(ingested):
     with get_engine().connect() as conn:
         total = conn.execute(text("SELECT count(*) FROM d_reference_links")).scalar_one()
-    assert total == 2220
+    assert total == 2245  # 민사절차 3법 추가로 판례 참조조문 링크 +25 (작업단위 39)
 
 
 @pytest.mark.asyncio
