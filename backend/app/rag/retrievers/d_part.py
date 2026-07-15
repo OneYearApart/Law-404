@@ -24,15 +24,27 @@ _CHUNK_COLUMNS = """id, source_type, statute_name, article_no, case_no,
                    reference_articles, topic_tags, grade, source_date,
                    unresolved_ownership, content, metadata"""
 
+# search_by_topic 컨텍스트 상한. topic_tags 태깅(links_d.py::TOPIC_TAG_KEYWORDS)이 광범위한
+# 키워드 기반이라 태그 일치 청크가 판례/HUG 각각 수십~수백 건일 수 있다 → 유사도 상위 top_k만.
+_STATUTE_TOP_K = 3
+_TOPIC_TOP_K = 3                                        # 판례/HUG사례집 각각
+_MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
+
 
 class DPartRetriever(BaseRetriever):
     def __init__(self):
         super().__init__(table_name="d_part_embeddings")
 
     async def search(
-        self, query: str, top_k: int = 5, grade: Optional[str] = None, source_type: Optional[str] = None
+        self,
+        query: str,
+        top_k: int = 5,
+        grade: Optional[str] = None,
+        source_type: Optional[str] = None,
+        query_vector: Optional[list[float]] = None,
     ) -> list[Chunk]:
-        query_vector = await embed(query)
+        if query_vector is None:                        # 호출부가 미리 임베딩한 벡터를 넘기면 재임베딩 생략
+            query_vector = await embed(query)
         grade_filter = "AND grade = :grade" if grade else ""
         source_type_filter = "AND source_type = :source_type" if source_type else ""
         sql = text(f"""
@@ -55,22 +67,41 @@ class DPartRetriever(BaseRetriever):
         return [Chunk(**dict(row)) for row in rows]
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
-        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문(벡터검색) + 판례/HUG사례집
-        (topic_tags 직접 매칭)을 조회한다. search_by_requirement와 달리 조문↔판례 링크
-        (d_reference_links) 없이 판례/HUG 양쪽에 이미 있는 topic_tags를 각각 직접 필터링한다."""
-        statute_chunks = await self.search(query_text, top_k=3, source_type="법령원문")
-        case_law = await self._fetch_by_topic_tag(topic_key, "판례")
-        cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집")
+        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문 + 판례/HUG사례집을 조회한다.
+        판례/HUG는 topic_tags로 후보를 거른 뒤 query_text 유사도로 재랭킹해 상위 top_k만 취한다
+        (태그만으로 필터하면 수십~수백 건이 통째로 컨텍스트에 들어가 토큰이 폭증하므로).
+        query_text는 한 번만 임베딩해 조문 벡터검색과 두 재랭킹에 재사용한다."""
+        query_vector = await embed(query_text)
+        statute_chunks = await self.search(
+            query_text, top_k=_STATUTE_TOP_K, source_type="법령원문", query_vector=query_vector
+        )
+        case_law = await self._fetch_by_topic_tag(topic_key, "판례", query_vector)
+        cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집", query_vector)
         return {"statute": statute_chunks, "case_law": case_law, "cases": cases}
 
-    async def _fetch_by_topic_tag(self, topic_key: str, source_type: str) -> list[Chunk]:
+    async def _fetch_by_topic_tag(
+        self, topic_key: str, source_type: str, query_vector: list[float], top_k: int = _TOPIC_TOP_K
+    ) -> list[Chunk]:
+        """topic_tags에 topic_key가 걸린 청크를 벡터 유사도 순으로 top_k건 반환.
+        `&&`(배열 겹침) 파라미터는 psycopg2가 리스트를 잘 어댑팅하지만 의도를 명시하려 text[]로 캐스팅한다."""
         sql = text(f"""
-            SELECT {_CHUNK_COLUMNS}, NULL AS distance
+            SELECT {_CHUNK_COLUMNS},
+                   embedding <=> CAST(:query_vector AS vector) AS distance
             FROM {self.table_name}
-            WHERE source_type = :source_type AND topic_tags && :tags
+            WHERE source_type = :source_type
+              AND topic_tags && CAST(:tags AS text[])
+              AND embedding IS NOT NULL
+            ORDER BY distance
+            LIMIT :top_k
         """)
+        params = {
+            "query_vector": _vector_literal(query_vector),
+            "source_type": source_type,
+            "tags": [topic_key],
+            "top_k": top_k,
+        }
         with get_engine().connect() as conn:
-            rows = conn.execute(sql, {"source_type": source_type, "tags": [topic_key]}).mappings().all()
+            rows = conn.execute(sql, params).mappings().all()
         return [Chunk(**dict(row)) for row in rows]
 
     async def search_by_requirement(self, slot_result: dict) -> dict:
