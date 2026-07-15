@@ -479,6 +479,24 @@ def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]
     return questions[:3]
 
 
+def can_continue_with_rule_results(question: str, categories: list[str]) -> bool:
+    """
+    일부 부가 정보가 부족해도 Rule Engine 계산이 가능한 질문인지 판단합니다.
+
+    예를 들어 월세 인상 질문에서 현재 월세와 요구 월세가 모두 있으면
+    계약 종료일이 없어도 5% 초과 여부는 계산할 수 있으므로 답변 흐름을 계속 진행합니다.
+    또한 누수로 인한 물건 파손처럼 하자와 손해가 함께 드러난 질문은
+    증거 여부가 없어도 기본 법률 구조를 먼저 설명할 수 있습니다.
+    """
+    if "차임증감" in categories and len(parse_money_values_from_text(question)) >= 2:
+        return True
+    has_defect = any(keyword in question for keyword in ["누수", "보일러", "곰팡이", "결로", "배관", "하자"])
+    has_damage = any(keyword in question for keyword in ["망가", "파손", "손해", "손해배상", "피해"])
+    if has_defect and has_damage:
+        return True
+    return False
+
+
 class BPartGraphState(TypedDict, total=False):
     """B파트 LangGraph 실행 상태입니다."""
 
@@ -946,6 +964,7 @@ class BPartMVPGraph:
             context_result.get("source") == "llm"
             and context_result.get("response_mode") == "ask_missing_info"
             and required_missing_questions
+            and not can_continue_with_rule_results(question, categories)
         ):
             answer = "\n".join(str(question) for question in required_missing_questions)
             final_state = self._build_early_final_state(
@@ -971,6 +990,7 @@ class BPartMVPGraph:
             planner_result.get("source") == "llm"
             and planner_result.get("answer_mode") == "ask_missing_info"
             and planner_missing_questions
+            and not can_continue_with_rule_results(question, categories)
         ):
             answer = "\n".join(planner_missing_questions)
             final_state = self._build_early_final_state(
