@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from backend.app.consultation.a_part.models import ConversationState
 from backend.app.consultation.a_part.service import (
@@ -39,6 +39,7 @@ class APartDocumentUploadService:
         conversation_service: APartConversationService | None = None,
         storage_root: Path | str | None = None,
         max_size_bytes: int | None = None,
+        database_repository: Any | None = None,
     ) -> None:
         if upload_service is not None and (
             storage_root is not None or max_size_bytes is not None
@@ -65,6 +66,52 @@ class APartDocumentUploadService:
         )
         self.conversation_service = (
             conversation_service or DEFAULT_CONVERSATION_SERVICE
+        )
+        self.database_repository = database_repository
+
+    def _persist_document(
+        self,
+        *,
+        document: UploadedDocument,
+        state: ConversationState,
+    ) -> None:
+        if self.database_repository is None:
+            return
+        same_type = [
+            item
+            for item in state.documents
+            if item.document_type == document.document_type
+        ]
+        page_index = next(
+            (
+                index
+                for index, item in enumerate(same_type, start=1)
+                if item.document_id == document.document_id
+            ),
+            len(same_type) or 1,
+        )
+        data = self.upload_service.read_bytes(
+            document.conversation_id,
+            document.document_id,
+        )
+        self.database_repository.upsert_document(
+            document_id=document.document_id,
+            conversation_id=document.conversation_id,
+            source_type="pdf",
+            document_type=document.document_type.value,
+            page_index=page_index,
+            original_filename=document.original_filename,
+            content_type=document.content_type,
+            data=data,
+            sha256=document.sha256,
+        )
+
+    def _persist_state(self, state: ConversationState) -> None:
+        if self.database_repository is None:
+            return
+        self.database_repository.upsert_state(
+            conversation_id=state.conversation_id,
+            state=state,
         )
 
     def _attach(
@@ -111,6 +158,8 @@ class APartDocumentUploadService:
             conversation_id=conversation_id,
             document=document,
         )
+        self._persist_document(document=document, state=state)
+        self._persist_state(state)
 
         warnings: list[str] = []
         if document.is_duplicate:
@@ -147,6 +196,8 @@ class APartDocumentUploadService:
             conversation_id=conversation_id,
             document=document,
         )
+        self._persist_document(document=document, state=state)
+        self._persist_state(state)
 
         warnings: list[str] = []
         if document.is_duplicate:
@@ -190,6 +241,9 @@ class APartDocumentUploadService:
             conversation_id,
             updated_document,
         )
+        if self.database_repository is not None:
+            self.database_repository.upsert_extraction(extraction)
+            self._persist_state(updated_state)
         return DocumentExtractionResponse(
             document=updated_document,
             extraction=extraction,
@@ -246,6 +300,37 @@ class APartDocumentUploadService:
             analysis_version=ANALYSIS_VERSION,
         )
         stored_state = self.conversation_service.store.save(state)
+        if self.database_repository is not None:
+            for analysis in response.lease_analyses:
+                self.database_repository.upsert_analysis(
+                    conversation_id=conversation_id,
+                    source_type="pdf",
+                    document_type="lease_contract",
+                    analysis_version=ANALYSIS_VERSION,
+                    source_document_ids=(
+                        analysis.source_document_ids or [analysis.document_id]
+                    ),
+                    result=analysis,
+                )
+            for analysis in response.registry_analyses:
+                self.database_repository.upsert_analysis(
+                    conversation_id=conversation_id,
+                    source_type="pdf",
+                    document_type="registry",
+                    analysis_version=ANALYSIS_VERSION,
+                    source_document_ids=(
+                        analysis.source_document_ids or [analysis.document_id]
+                    ),
+                    result=analysis,
+                )
+            if response.comparison is not None:
+                self.database_repository.upsert_comparison(
+                    conversation_id=conversation_id,
+                    source_type="pdf",
+                    analysis_version=ANALYSIS_VERSION,
+                    result=response.comparison,
+                )
+            self._persist_state(stored_state)
         return response.model_copy(
             update={
                 "state_mapping": mapping,
@@ -269,6 +354,59 @@ class APartDocumentUploadService:
     def list_documents(self, conversation_id: str):
         state = self.conversation_service.get_state(conversation_id)
         return [item.model_copy(deep=True) for item in state.documents]
+
+    def delete_conversation_artifacts(
+        self,
+        *,
+        conversation_id: str,
+    ) -> dict[str, Any]:
+        """상담에 연결된 파일과 문서 처리 DB 결과를 모두 정리한다."""
+
+        state = self.conversation_service.get_state(conversation_id)
+        removed_files = self.upload_service.delete_conversation(conversation_id)
+
+        database_cleanup = {
+            "documents": 0,
+            "extractions": 0,
+            "analyses": 0,
+            "comparisons": 0,
+        }
+        if self.database_repository is not None:
+            database_cleanup = (
+                self.database_repository.delete_conversation_artifacts(
+                    conversation_id=conversation_id
+                )
+            )
+
+        return {
+            "conversation_id": conversation_id,
+            "state_document_count": len(state.documents),
+            "deleted_file_count": len(removed_files),
+            "database_cleanup": database_cleanup,
+        }
+
+    def delete_document(
+        self,
+        *,
+        conversation_id: str,
+        document_id: str,
+    ) -> UploadedDocument:
+        state = self.conversation_service.get_state(conversation_id)
+        if not any(item.document_id == document_id for item in state.documents):
+            raise ValueError(
+                f"현재 상담에 연결되지 않은 document_id입니다: {document_id}"
+            )
+
+        removed = self.upload_service.delete(conversation_id, document_id)
+        state.remove_document(document_id)
+        stored_state = self.conversation_service.store.save(state)
+        if self.database_repository is not None:
+            self.database_repository.delete_document(
+                conversation_id=conversation_id,
+                document_id=document_id,
+            )
+            self._persist_state(stored_state)
+        return removed
 
 
 _DEFAULT_A_PART_DOCUMENT_UPLOAD_SERVICE: APartDocumentUploadService | None = None

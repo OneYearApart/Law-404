@@ -115,3 +115,223 @@ class MemoryConversationStore:
 
 
 DEFAULT_CONVERSATION_STORE = MemoryConversationStore()
+
+
+class PostgresConversationStore:
+    """A파트 상담 상태를 PostgreSQL JSONB 테이블에 저장한다."""
+
+    def __init__(self, database_url: str) -> None:
+        normalized = str(database_url or "").strip()
+        if not normalized:
+            raise ValueError("database_url은 빈 문자열일 수 없습니다.")
+        self.database_url = normalized
+        self._schema_checked = False
+        self._schema_lock = RLock()
+
+    @staticmethod
+    def _psycopg2():
+        try:
+            import psycopg2
+            from psycopg2.extras import Json
+        except ImportError as error:
+            raise ConversationStoreError(
+                "PostgreSQL 상담 상태 저장에는 psycopg2-binary가 필요합니다."
+            ) from error
+        return psycopg2, Json
+
+    def _connect(self):
+        psycopg2, _ = self._psycopg2()
+        return psycopg2.connect(self.database_url)
+
+    def _ensure_schema(self) -> None:
+        if self._schema_checked:
+            return
+        with self._schema_lock:
+            if self._schema_checked:
+                return
+            try:
+                with self._connect() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS a_part_conversation_states (
+                                conversation_id TEXT PRIMARY KEY,
+                                state JSONB NOT NULL,
+                                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                            )
+                            """
+                        )
+                self._schema_checked = True
+            except Exception as error:
+                raise ConversationStoreError(
+                    "A파트 상담 상태 테이블을 준비하지 못했습니다."
+                ) from error
+
+    @staticmethod
+    def _normalize_id(conversation_id: str) -> str:
+        normalized = str(conversation_id or "").strip()
+        if not normalized:
+            raise ValueError("conversation_id는 빈 문자열일 수 없습니다.")
+        return normalized
+
+    def create(self, state: ConversationState) -> ConversationState:
+        self._ensure_schema()
+        stored = state.model_copy(deep=True)
+        stored.touch()
+        _, Json = self._psycopg2()
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO a_part_conversation_states (
+                            conversation_id, state, updated_at
+                        ) VALUES (%s, %s, NOW())
+                        """,
+                        (
+                            stored.conversation_id,
+                            Json(stored.model_dump(mode="json")),
+                        ),
+                    )
+        except Exception as error:
+            if getattr(error, "pgcode", None) == "23505":
+                raise ConversationAlreadyExistsError(
+                    f"이미 존재하는 conversation_id입니다: {stored.conversation_id}"
+                ) from error
+            raise ConversationStoreError("상담 상태를 생성하지 못했습니다.") from error
+        return stored.model_copy(deep=True)
+
+    def get(self, conversation_id: str) -> ConversationState:
+        self._ensure_schema()
+        normalized = self._normalize_id(conversation_id)
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT state FROM a_part_conversation_states WHERE conversation_id = %s",
+                        (normalized,),
+                    )
+                    row = cursor.fetchone()
+        except Exception as error:
+            raise ConversationStoreError("상담 상태를 조회하지 못했습니다.") from error
+        if row is None:
+            raise ConversationNotFoundError(normalized)
+        return ConversationState.model_validate(row[0]).model_copy(deep=True)
+
+    def save(self, state: ConversationState) -> ConversationState:
+        self._ensure_schema()
+        stored = state.model_copy(deep=True)
+        stored.touch()
+        _, Json = self._psycopg2()
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE a_part_conversation_states
+                        SET state = %s, updated_at = NOW()
+                        WHERE conversation_id = %s
+                        """,
+                        (
+                            Json(stored.model_dump(mode="json")),
+                            stored.conversation_id,
+                        ),
+                    )
+                    updated = cursor.rowcount
+        except Exception as error:
+            raise ConversationStoreError("상담 상태를 저장하지 못했습니다.") from error
+        if not updated:
+            raise ConversationNotFoundError(stored.conversation_id)
+        return stored.model_copy(deep=True)
+
+    def upsert(self, state: ConversationState) -> ConversationState:
+        self._ensure_schema()
+        stored = state.model_copy(deep=True)
+        stored.touch()
+        _, Json = self._psycopg2()
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO a_part_conversation_states (
+                            conversation_id, state, updated_at
+                        ) VALUES (%s, %s, NOW())
+                        ON CONFLICT (conversation_id) DO UPDATE SET
+                            state = EXCLUDED.state,
+                            updated_at = NOW()
+                        """,
+                        (
+                            stored.conversation_id,
+                            Json(stored.model_dump(mode="json")),
+                        ),
+                    )
+        except Exception as error:
+            raise ConversationStoreError("상담 상태를 저장하지 못했습니다.") from error
+        return stored.model_copy(deep=True)
+
+    def delete(self, conversation_id: str) -> bool:
+        self._ensure_schema()
+        normalized = self._normalize_id(conversation_id)
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM a_part_conversation_states WHERE conversation_id = %s",
+                        (normalized,),
+                    )
+                    return bool(cursor.rowcount)
+        except Exception as error:
+            raise ConversationStoreError("상담 상태를 삭제하지 못했습니다.") from error
+
+    def reset(self, conversation_id: str) -> ConversationState:
+        state = self.get(conversation_id)
+        if not self.delete(conversation_id):
+            raise ConversationNotFoundError(conversation_id)
+        return state
+
+    def clear(self) -> int:
+        self._ensure_schema()
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("DELETE FROM a_part_conversation_states")
+                    return int(cursor.rowcount)
+        except Exception as error:
+            raise ConversationStoreError("상담 상태를 초기화하지 못했습니다.") from error
+
+    def exists(self, conversation_id: str) -> bool:
+        self._ensure_schema()
+        normalized = self._normalize_id(conversation_id)
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT 1 FROM a_part_conversation_states WHERE conversation_id = %s",
+                        (normalized,),
+                    )
+                    return cursor.fetchone() is not None
+        except Exception as error:
+            raise ConversationStoreError("상담 상태 존재 여부를 확인하지 못했습니다.") from error
+
+    def count(self) -> int:
+        self._ensure_schema()
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) FROM a_part_conversation_states")
+                    return int(cursor.fetchone()[0])
+        except Exception as error:
+            raise ConversationStoreError("상담 상태 수를 확인하지 못했습니다.") from error
+
+    def list_ids(self) -> tuple[str, ...]:
+        self._ensure_schema()
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT conversation_id FROM a_part_conversation_states ORDER BY updated_at DESC"
+                    )
+                    return tuple(str(row[0]) for row in cursor.fetchall())
+        except Exception as error:
+            raise ConversationStoreError("상담 상태 목록을 조회하지 못했습니다.") from error

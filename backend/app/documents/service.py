@@ -93,6 +93,12 @@ class DocumentUploadService:
     ) -> bytes:
         return self.repository.read_bytes(conversation_id, document_id)
 
+    def delete_conversation(
+        self,
+        conversation_id: str,
+    ) -> list[UploadedDocument]:
+        return self.repository.delete_conversation(conversation_id)
+
     def delete(
         self,
         conversation_id: str,

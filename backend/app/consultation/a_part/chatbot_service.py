@@ -614,6 +614,35 @@ class APartChatbotService:
         )
         answer["follow_up_questions"] = document_questions
         data["answer"] = answer
+
+        # 계약서·등기부 분석 결과가 있으면 법률 RAG가 일시적으로 비어도
+        # 문서에서 직접 확인된 사실과 비교 결과는 사용자에게 반환한다.
+        # 다만 법률 근거가 완전한 답변처럼 보이지 않도록 partial_evidence로
+        # 명확하게 낮춰 표시한다.
+        original_generation_status = str(
+            getattr(
+                getattr(rag_response, "generation_status", None),
+                "value",
+                getattr(rag_response, "generation_status", "completed"),
+            )
+        )
+        document_only_statuses = {
+            "evidence_not_found",
+            "search_failed",
+            "generation_failed",
+            "validation_failed",
+        }
+        if original_generation_status in document_only_statuses:
+            data["generation_status"] = "partial_evidence"
+            data["evidence_status"] = "partial"
+            data["warnings"] = _unique_text(
+                [
+                    *(data.get("warnings") or []),
+                    "문서 분석 결과는 확인했지만 법률 RAG 근거는 일부 부족합니다.",
+                ],
+                max_items=8,
+            )
+
         updated_rag = rag_response.__class__.model_validate(data)
 
         state = consultation.state.model_copy(deep=True)
@@ -644,6 +673,14 @@ class APartChatbotService:
                 "follow_up_questions": [],
                 "missing_facts": list(summary.get("warnings", []))[:6],
                 "conflict_facts": hold_reasons,
+                "rag_generation_status": str(
+                    getattr(
+                        updated_rag.generation_status,
+                        "value",
+                        updated_rag.generation_status,
+                    )
+                ),
+                "answer_ready": True,
             }
         )
 
