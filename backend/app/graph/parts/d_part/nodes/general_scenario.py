@@ -5,6 +5,7 @@ RAG 검색(조문+판례+HUG사례집) + 응답 생성만 담당한다.
 response_assembly.py(요건판정 결과 기반 RAG+응답 생성)와 결합 구조가 유사하지만
 검색 기준(topic_tag vs 요건슬롯)이 달라 노드는 분리돼 있다.
 """
+from app.graph.parts.d_part.nodes._context import format_chunks
 from app.graph.parts.d_part.schemas import DPartGraphState, GENERAL_TOPIC_LABELS, get_active_query
 from app.llm import d_part as llm_d_part
 from app.rag.retrievers.d_part import DPartRetriever
@@ -13,10 +14,7 @@ _retriever = DPartRetriever()
 
 
 def _format_context(topic_key: str, retrieved: list) -> str:
-    lines = [f"항목: {GENERAL_TOPIC_LABELS[topic_key]}"]
-    for chunk in retrieved:
-        lines.append(f"[{chunk.source_type}] {chunk.content}")
-    return "\n".join(lines)
+    return f"항목: {GENERAL_TOPIC_LABELS[topic_key]}\n\n{format_chunks(retrieved)}"
 
 
 async def handle_general_scenario(state: DPartGraphState) -> DPartGraphState:
