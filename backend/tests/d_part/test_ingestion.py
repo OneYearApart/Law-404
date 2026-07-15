@@ -20,7 +20,7 @@ async def test_row_counts(ingested):
             "SELECT source_type, count(*) FROM d_part_embeddings GROUP BY source_type"
         )).all())
 
-    assert counts["판례"] == 431
+    assert counts["판례"] == 467  # 중-①소유권변동 임대인지위 승계 판례 재수집 +36 (작업단위 42)
     assert counts["법령원문"] == 932  # 시행령 3종(38) + 민사절차 3법(39) 포함
     assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
     assert counts["정부자료"] == 21  # 깡통전세 유형/예방 8 + 실태조사 섹션 13 (작업단위 37)
@@ -114,10 +114,26 @@ async def test_gov_docs_loaded(ingested):
 
 
 @pytest.mark.asyncio
+async def test_ownership_change_precedents_loaded(ingested):
+    """중-①소유권_변동모니터링 — 임대인 지위 승계 판례 재수집 (작업단위 42).
+
+    수집 전 0건이던 토픽. --ownership-recollect로 소유권 변동 시 임대인 지위 승계
+    (주임법 §3②④) 판례를 추가·태깅해 해소. 오탐(조세/사해행위 등) 6건은 정제 제외.
+    """
+    with get_engine().connect() as conn:
+        docs = conn.execute(text(
+            "SELECT count(DISTINCT metadata->>'판례일련번호') FROM d_part_embeddings"
+            " WHERE source_type = '판례' AND '중-①소유권_변동모니터링' = ANY(topic_tags)"
+        )).scalar_one()
+
+    assert docs == 67  # 신규 승계 판례 36 + 기존 판례 태그 병합 31
+
+
+@pytest.mark.asyncio
 async def test_links_loaded(ingested):
     with get_engine().connect() as conn:
         total = conn.execute(text("SELECT count(*) FROM d_reference_links")).scalar_one()
-    assert total == 2245  # 민사절차 3법 추가로 판례 참조조문 링크 +25 (작업단위 39)
+    assert total == 2490  # 승계 판례 36건의 참조조문 링크 +245 (작업단위 42)
 
 
 @pytest.mark.asyncio
