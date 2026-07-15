@@ -97,17 +97,21 @@ class DPartRetriever(BaseRetriever):
         return filtered
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
-        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문 + 판례/HUG사례집을 조회한다.
-        판례/HUG는 topic_tags로 후보를 거른 뒤 query_text 유사도로 재랭킹해 상위 top_k만 취한다
-        (태그만으로 필터하면 수십~수백 건이 통째로 컨텍스트에 들어가 토큰이 폭증하므로).
-        query_text는 한 번만 임베딩해 조문 벡터검색과 두 재랭킹에 재사용한다."""
+        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문 + 판례/HUG사례집/
+        생활법령/정부자료를 조회한다. 판례/HUG/생활법령/정부자료는 topic_tags로 후보를 거른 뒤
+        query_text 유사도로 재랭킹해 상위 top_k만 취한다(태그만으로 필터하면 수십~수백 건이
+        통째로 컨텍스트에 들어가 토큰이 폭증하므로). 생활법령/정부자료(상황적용·해설 층)는 guides로
+        함께 반환해 판례/HUG가 0건인 항목(예: 전-④계약서_특약사항)도 근거자료가 검색되게 한다
+        (작업단위 40/41 + 코드트랙 재랭킹). query_text는 한 번만 임베딩해 재사용한다."""
         query_vector = await embed(query_text)
         statute_chunks = await self.search(
             query_text, top_k=_STATUTE_TOP_K, source_type="법령원문", query_vector=query_vector
         )
         case_law = await self._fetch_by_topic_tag(topic_key, "판례", query_vector)
         cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집", query_vector)
-        return {"statute": statute_chunks, "case_law": case_law, "cases": cases}
+        guides = (await self._fetch_by_topic_tag(topic_key, "생활법령", query_vector)
+                  + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector))
+        return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
 
     async def _fetch_by_topic_tag(
         self, topic_key: str, source_type: str, query_vector: list[float], top_k: int = _TOPIC_TOP_K

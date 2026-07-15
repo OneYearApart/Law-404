@@ -27,7 +27,8 @@ async def handle_general_scenario(state: DPartGraphState) -> DPartGraphState:
     # 라벨만 쿼리로 쓰면 같은 항목은 늘 같은 결과 → 사용자 발화를 결합해 유사도 재랭킹이 발화에 반응하게 한다
     query_text = f"{GENERAL_TOPIC_LABELS[topic_key]} {get_active_query(state)}"
     retrieved = await _retriever.search_by_topic(topic_key, query_text)
-    state["retrieved_chunks"] = retrieved["statute"] + retrieved["case_law"] + retrieved["cases"]
+    state["retrieved_chunks"] = (retrieved["statute"] + retrieved["case_law"]
+                                 + retrieved["cases"] + retrieved["guides"])
 
     context = _format_context(topic_key, state["retrieved_chunks"])
     state["response_stream"] = llm_d_part.generate_response(context)
