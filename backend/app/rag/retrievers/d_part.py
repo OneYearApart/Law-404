@@ -55,13 +55,17 @@ class DPartRetriever(BaseRetriever):
         return [Chunk(**dict(row)) for row in rows]
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
-        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문(벡터검색) + 판례/HUG사례집
-        (topic_tags 직접 매칭)을 조회한다. search_by_requirement와 달리 조문↔판례 링크
-        (d_reference_links) 없이 판례/HUG 양쪽에 이미 있는 topic_tags를 각각 직접 필터링한다."""
+        """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문(벡터검색) + 판례/HUG사례집/
+        생활법령/정부자료(topic_tags 직접 매칭)를 조회한다. search_by_requirement와 달리
+        조문↔판례 링크(d_reference_links) 없이 각 source_type에 이미 있는 topic_tags를 직접
+        필터링한다. 생활법령/정부자료(상황적용·해설 층)를 guides로 함께 반환해 판례/HUG가 0건인
+        항목(예: 전-④계약서_특약사항)도 근거자료가 검색되게 한다(작업단위 40/41)."""
         statute_chunks = await self.search(query_text, top_k=3, source_type="법령원문")
         case_law = await self._fetch_by_topic_tag(topic_key, "판례")
         cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집")
-        return {"statute": statute_chunks, "case_law": case_law, "cases": cases}
+        guides = (await self._fetch_by_topic_tag(topic_key, "생활법령")
+                  + await self._fetch_by_topic_tag(topic_key, "정부자료"))
+        return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
 
     async def _fetch_by_topic_tag(self, topic_key: str, source_type: str) -> list[Chunk]:
         sql = text(f"""

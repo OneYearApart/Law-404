@@ -27,7 +27,8 @@ async def handle_general_scenario(state: DPartGraphState) -> DPartGraphState:
 
     topic_key = state["general_topic_matched"]
     retrieved = await _retriever.search_by_topic(topic_key, GENERAL_TOPIC_LABELS[topic_key])
-    state["retrieved_chunks"] = retrieved["statute"] + retrieved["case_law"] + retrieved["cases"]
+    state["retrieved_chunks"] = (retrieved["statute"] + retrieved["case_law"]
+                                 + retrieved["cases"] + retrieved["guides"])
 
     context = _format_context(topic_key, state["retrieved_chunks"])
     state["response_stream"] = llm_d_part.generate_response(context)

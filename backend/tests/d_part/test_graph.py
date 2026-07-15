@@ -72,7 +72,7 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
         return {"category": "general_topic:전-①등기부등본_위험신호"}
 
     async def _fake_search_by_topic(topic_key, query_text):
-        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": []}
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": [], "guides": []}
 
     async def _fake_generate_response(context: str):
         yield "일반 시나리오 응답"
@@ -105,7 +105,7 @@ async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(mo
         return {"category": "general_topic:전-③다가구_선순위보증금"}
 
     async def _fake_search_by_topic(topic_key, query_text):
-        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": []}
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": [], "guides": []}
 
     async def _fake_generate_response(context: str):
         yield "다가구주택 답변"
@@ -252,7 +252,7 @@ async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypa
         return {"category": "general_topic:전-①등기부등본_위험신호"}
 
     async def _fake_search_by_topic(topic_key, query_text):
-        return {"statute": [Chunk(id=1, source_type="법령원문", content="등기부 관련 조문")], "case_law": [], "cases": []}
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="등기부 관련 조문")], "case_law": [], "cases": [], "guides": []}
 
     async def _fake_generate_response(context: str):
         yield "등기부등본 답변"

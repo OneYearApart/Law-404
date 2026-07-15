@@ -18,6 +18,7 @@ async def _fake_search_by_topic(topic_key, query_text):
         "statute": [_make_chunk("법령원문", "관련 조문")],
         "case_law": [_make_chunk("판례", "관련 판례")],
         "cases": [],
+        "guides": [_make_chunk("생활법령", "상황적용 안내")],
     }
 
 
@@ -41,7 +42,7 @@ async def test_each_topic_produces_response(monkeypatch, topic_key):
     chunks = [c async for c in result["response_stream"]]
     assert chunks == ["원문 ", "해설 ", "상황적용"]
     assert result.get("final_answer") is None
-    assert len(result["retrieved_chunks"]) == 2
+    assert len(result["retrieved_chunks"]) == 3  # statute 1 + case_law 1 + cases 0 + guides 1
 
 
 @pytest.mark.asyncio
