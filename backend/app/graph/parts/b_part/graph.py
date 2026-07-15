@@ -518,6 +518,8 @@ class BPartGraphState(TypedDict, total=False):
     rule_results: list[dict[str, Any]]
     calendar_events: list[dict[str, Any]]
     pending_action: dict[str, Any] | None
+    executed_tools: list[str]
+    skipped_tools: list[str]
     top_k: int
     retrieved: list[dict[str, Any]]
     retrieval_quality: dict[str, Any]
@@ -668,6 +670,8 @@ class BPartMVPGraph:
             "calendar_events": [],
             "pending_action": None,
             "calendar_registration": None,
+            "executed_tools": [],
+            "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": [],
             "retrieved": [],
             "retrieval_quality": {
@@ -724,6 +728,8 @@ class BPartMVPGraph:
             "calendar_events": calendar_registration.get("events", []),
             "pending_action": None,
             "calendar_registration": calendar_registration,
+            "executed_tools": ["calendar_confirmation"],
+            "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": [],
             "retrieved": [],
             "memory": memory_meta,
@@ -796,24 +802,42 @@ class BPartMVPGraph:
         """LangGraph 노드: Rule Engine 계산과 캘린더 후보 생성을 수행합니다."""
         question = state["question"]
         categories = state.get("categories", [])
+        planner_validation = state.get("planner_validation", {})
+        tools_to_use = planner_validation.get("tools_to_use", ["rule_engine", "retriever"])
+        if not isinstance(tools_to_use, list):
+            tools_to_use = ["rule_engine", "retriever"]
+        executed_tools = list(state.get("executed_tools", []))
+        skipped_tools = list(state.get("skipped_tools", []))
 
-        rule_results = run_b_part_rules(question=question, categories=categories)
+        rule_results: list[dict[str, Any]] = []
         intent_result: dict[str, Any] | None = None
 
-        if should_call_llm_intent(
-            question=question,
-            categories=categories,
-            rule_results=rule_results,
-        ):
-            intent_result = analyze_b_part_intent(question)
-            categories = merge_categories(
-                categories,
-                intent_result.get("categories", []),
-            )
+        if "rule_engine" in tools_to_use:
             rule_results = run_b_part_rules(question=question, categories=categories)
+            executed_tools.append("rule_engine")
 
-        calendar_events = build_calendar_event_candidates(rule_results)
-        pending_action = build_calendar_pending_action(calendar_events)
+            if should_call_llm_intent(
+                question=question,
+                categories=categories,
+                rule_results=rule_results,
+            ):
+                intent_result = analyze_b_part_intent(question)
+                categories = merge_categories(
+                    categories,
+                    intent_result.get("categories", []),
+                )
+                rule_results = run_b_part_rules(question=question, categories=categories)
+        else:
+            skipped_tools.append("rule_engine")
+
+        calendar_events: list[dict[str, Any]] = []
+        pending_action: dict[str, Any] | None = None
+        if "calendar_candidate" in tools_to_use:
+            calendar_events = build_calendar_event_candidates(rule_results)
+            pending_action = build_calendar_pending_action(calendar_events)
+            executed_tools.append("calendar_candidate")
+        else:
+            skipped_tools.append("calendar_candidate")
 
         return {
             **state,
@@ -822,6 +846,8 @@ class BPartMVPGraph:
             "rule_results": rule_results,
             "calendar_events": calendar_events,
             "pending_action": pending_action,
+            "executed_tools": list(dict.fromkeys(executed_tools)),
+            "skipped_tools": list(dict.fromkeys(skipped_tools)),
         }
 
     async def _missing_scope_node(self, state: BPartGraphState) -> BPartGraphState:
@@ -1078,12 +1104,34 @@ class BPartMVPGraph:
         categories = state.get("categories", [])
         intent_result = state.get("intent_result")
         top_k = int(request.get("top_k", 5))
+        planner_validation = state.get("planner_validation", {})
+        tools_to_use = planner_validation.get("tools_to_use", ["retriever"])
+        if not isinstance(tools_to_use, list):
+            tools_to_use = ["retriever"]
+        executed_tools = list(state.get("executed_tools", []))
+        skipped_tools = list(state.get("skipped_tools", []))
 
         rule_results = state.get("rule_results", [])
         calendar_events = state.get("calendar_events", [])
         pending_action = state.get("pending_action")
 
+        if "retriever" not in tools_to_use:
+            skipped_tools.append("retriever")
+            return {
+                **state,
+                "top_k": top_k,
+                "retrieved": [],
+                "retrieval_quality": {
+                    "skipped": True,
+                    "reason": "retriever_not_requested_by_tool_policy",
+                    "refined_by_llm": False,
+                },
+                "executed_tools": list(dict.fromkeys(executed_tools)),
+                "skipped_tools": list(dict.fromkeys(skipped_tools)),
+            }
+
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+        executed_tools.append("retriever")
         retrieval_quality = evaluate_retrieval_quality(retrieved)
 
         if should_refine_intent_after_retrieval(
@@ -1102,6 +1150,10 @@ class BPartMVPGraph:
             retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
             retrieval_quality = evaluate_retrieval_quality(retrieved)
             retrieval_quality["refined_by_llm"] = True
+            if "rule_engine" not in executed_tools:
+                executed_tools.append("rule_engine")
+            if "retriever" not in executed_tools:
+                executed_tools.append("retriever")
         else:
             retrieval_quality["refined_by_llm"] = False
 
@@ -1115,6 +1167,8 @@ class BPartMVPGraph:
             "top_k": top_k,
             "retrieved": retrieved,
             "retrieval_quality": retrieval_quality,
+            "executed_tools": list(dict.fromkeys(executed_tools)),
+            "skipped_tools": list(dict.fromkeys(skipped_tools)),
         }
 
     async def _answer_node(self, state: BPartGraphState) -> BPartGraphState:
@@ -1139,6 +1193,8 @@ class BPartMVPGraph:
         retrieved = state.get("retrieved", [])
         retrieval_quality = state.get("retrieval_quality", {})
         scope_result = state.get("scope_result")
+        executed_tools = state.get("executed_tools", [])
+        skipped_tools = state.get("skipped_tools", [])
 
         missing_questions = find_missing_questions(question, categories)
 
@@ -1164,6 +1220,8 @@ class BPartMVPGraph:
             "rule_results": rule_results,
             "calendar_events": calendar_events,
             "pending_action": pending_action,
+            "executed_tools": executed_tools,
+            "skipped_tools": skipped_tools,
             "missing_questions": missing_questions,
             "retrieved": retrieved,
             "retrieval_quality": retrieval_quality,
@@ -1202,6 +1260,8 @@ class BPartMVPGraph:
             "calendar_events": [],
             "pending_action": None,
             "calendar_registration": None,
+            "executed_tools": [],
+            "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": missing_questions,
             "retrieved": [],
             "retrieval_quality": retrieval_quality,

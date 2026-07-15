@@ -14,6 +14,24 @@ from typing import Any
 from app.graph.parts.b_part.rules import parse_money_values_from_text
 
 
+SUPPORTED_TOOLS = {"rule_engine", "retriever", "calendar_candidate"}
+
+TOOL_ALIASES = {
+    "rule": "rule_engine",
+    "rules": "rule_engine",
+    "rule_engine": "rule_engine",
+    "rule engine": "rule_engine",
+    "calculator": "rule_engine",
+    "retriever": "retriever",
+    "retrieve": "retriever",
+    "rag": "retriever",
+    "vector_search": "retriever",
+    "calendar": "calendar_candidate",
+    "calendar_candidate": "calendar_candidate",
+    "calendar_mcp": "calendar_candidate",
+}
+
+
 def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]:
     """Planner가 판단한 필수 부족 정보를 사용자 질문 문장으로 변환합니다."""
     missing_facts = planner_result.get("missing_required_facts")
@@ -41,6 +59,21 @@ def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]
         if question not in questions:
             questions.append(question)
     return questions[:3]
+
+
+def normalize_planner_tools(planner_result: dict[str, Any]) -> list[str]:
+    """Planner가 제안한 tools_to_use 값을 내부 도구 이름으로 정규화합니다."""
+    raw_tools = planner_result.get("tools_to_use")
+    if not isinstance(raw_tools, list):
+        return []
+
+    normalized: list[str] = []
+    for raw_tool in raw_tools:
+        key = str(raw_tool).strip().lower()
+        tool = TOOL_ALIASES.get(key)
+        if tool and tool not in normalized:
+            normalized.append(tool)
+    return normalized
 
 
 def can_continue_with_available_facts(question: str, categories: list[str]) -> bool:
@@ -72,6 +105,59 @@ def can_continue_with_available_facts(question: str, categories: list[str]) -> b
         return True
 
     return False
+
+
+def has_calendar_request(question: str) -> bool:
+    """사용자가 일정 또는 캘린더 등록을 기대하는 질문인지 가볍게 판단합니다."""
+    return any(
+        keyword in question
+        for keyword in ["캘린더", "일정", "등록", "알림", "마감일", "언제부터"]
+    )
+
+
+def has_rule_calculation_signal(question: str, categories: list[str]) -> bool:
+    """날짜/금액 계산이 필요한 질문인지 판단합니다."""
+    if len(parse_money_values_from_text(question)) >= 2:
+        return True
+    if any(keyword in question for keyword in ["계약 종료일", "종료일", "만료일", "갱신", "마감일"]):
+        return True
+    return any(category in categories for category in ["차임증감", "전월세전환", "계약갱신", "계약갱신요구권", "묵시적갱신"])
+
+
+def build_tool_policy(
+    *,
+    question: str,
+    categories: list[str],
+    planner_result: dict[str, Any],
+    answer_mode: str,
+) -> dict[str, Any]:
+    """
+    Planner의 tools_to_use를 그대로 믿지 않고, B파트 기본 정책으로 보정합니다.
+
+    일반 법률 답변은 근거 검색이 필요하므로 retriever를 기본 도구로 둡니다.
+    날짜/금액 신호가 있으면 rule_engine을 추가하고,
+    캘린더 신호가 있으면 calendar_candidate까지 추가합니다.
+    """
+    tools = normalize_planner_tools(planner_result)
+
+    if answer_mode == "final_answer" and "retriever" not in tools:
+        tools.append("retriever")
+
+    if has_rule_calculation_signal(question, categories) and "rule_engine" not in tools:
+        tools.append("rule_engine")
+
+    if has_calendar_request(question):
+        if "rule_engine" not in tools:
+            tools.append("rule_engine")
+        if "calendar_candidate" not in tools:
+            tools.append("calendar_candidate")
+
+    tools = [tool for tool in tools if tool in SUPPORTED_TOOLS]
+    skipped_tools = [tool for tool in sorted(SUPPORTED_TOOLS) if tool not in tools]
+    return {
+        "tools_to_use": tools,
+        "skipped_tools": skipped_tools,
+    }
 
 
 def validate_planner_flow(
@@ -118,6 +204,13 @@ def validate_planner_flow(
     else:
         decision = "continue"
 
+    tool_policy = build_tool_policy(
+        question=question,
+        categories=categories,
+        planner_result=planner_result,
+        answer_mode=str(planner_result.get("answer_mode") or "final_answer"),
+    )
+
     return {
         "decision": decision,
         "can_continue_with_available_facts": can_continue,
@@ -125,4 +218,6 @@ def validate_planner_flow(
         "planner_should_stop": planner_should_stop,
         "context_missing_questions": context_missing_questions[:3],
         "planner_missing_questions": planner_missing_questions[:3],
+        "tools_to_use": tool_policy["tools_to_use"],
+        "skipped_tools": tool_policy["skipped_tools"],
     }
