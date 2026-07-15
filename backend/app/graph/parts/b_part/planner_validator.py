@@ -64,6 +64,13 @@ def can_continue_with_available_facts(question: str, categories: list[str]) -> b
     if has_defect and has_damage:
         return True
 
+    has_termination_intent = any(
+        keyword in question
+        for keyword in ["중도해지", "해지", "계약을 끝", "계약 끝", "나가고 싶", "그만 살"]
+    )
+    if has_defect and has_termination_intent:
+        return True
+
     return False
 
 
