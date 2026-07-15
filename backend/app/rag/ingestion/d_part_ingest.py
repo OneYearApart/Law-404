@@ -23,6 +23,7 @@ from sqlalchemy import text
 
 from app.core.config import get_engine
 from app.rag.embeddings.d_base import embed_batch
+from app.rag.ingestion.easylaw_docs_d import load_easylaw_chunks
 from app.rag.ingestion.gov_docs_d import load_gov_chunks
 from app.rag.ingestion.hug_docs_d import load_hug_chunks
 from app.rag.ingestion.links_d import build_links, enrich_hug_topic_tags
@@ -115,9 +116,10 @@ async def ingest(embed_enabled: bool = False):
         _bootstrap_schema(conn)
         conn.execute(text("TRUNCATE d_reference_links, d_part_embeddings RESTART IDENTITY"))
 
-        rows = load_precedent_chunks() + load_statute_chunks() + load_hug_chunks() + load_gov_chunks()
+        rows = (load_precedent_chunks() + load_statute_chunks() + load_hug_chunks()
+                + load_gov_chunks() + load_easylaw_chunks())
         rows = _split_oversized_rows(rows)
-        enrich_hug_topic_tags([row for row in rows if row["source_type"] in ("HUG사례집", "정부자료")])
+        enrich_hug_topic_tags([row for row in rows if row["source_type"] in ("HUG사례집", "정부자료", "생활법령")])
         for row in rows:
             row["id"] = _insert_chunk(conn, row)
 
@@ -129,7 +131,9 @@ async def ingest(embed_enabled: bool = False):
     statute_n = sum(1 for r in rows if r["source_type"] == "법령원문")
     hug_n = sum(1 for r in rows if r["source_type"] in ("HUG사례집", "HUG규정"))
     gov_n = sum(1 for r in rows if r["source_type"] == "정부자료")
-    print(f"청크 {len(rows)}건 적재 (판례 {precedent_n}건, 법령 {statute_n}건, HUG {hug_n}건, 정부자료 {gov_n}건)")
+    easylaw_n = sum(1 for r in rows if r["source_type"] == "생활법령")
+    print(f"청크 {len(rows)}건 적재 (판례 {precedent_n}건, 법령 {statute_n}건, HUG {hug_n}건, "
+          f"정부자료 {gov_n}건, 생활법령 {easylaw_n}건)")
     print(f"링크 {len(links)}건 적재")
 
     if embed_enabled:

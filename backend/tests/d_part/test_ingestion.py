@@ -24,6 +24,7 @@ async def test_row_counts(ingested):
     assert counts["법령원문"] == 932  # 시행령 3종(38) + 민사절차 3법(39) 포함
     assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
     assert counts["정부자료"] == 21  # 깡통전세 유형/예방 8 + 실태조사 섹션 13 (작업단위 37)
+    assert counts["생활법령"] == 20  # easylaw 전세사기 피해자 지원 20페이지 (작업단위 40)
 
 
 @pytest.mark.asyncio
@@ -66,6 +67,31 @@ async def test_civil_procedure_statutes_loaded(ingested):
     assert by_statute.get("소액사건심판법", 0) > 0
     assert "지급명령" in articles[("민사소송법", "464")]
     assert "배당" in articles[("민사집행법", "148")]
+
+
+@pytest.mark.asyncio
+async def test_easylaw_docs_loaded(ingested):
+    """상황적용 층 — easylaw 전세사기 생활법령 (작업단위 40).
+
+    페이지=1청크, source_type 생활법령, 통제 어휘 태깅. 신탁 페이지가 전-⑤신탁사기로
+    태깅되는지(special_cases RAG 전환 근거)까지 확인.
+    """
+    with get_engine().connect() as conn:
+        rows = {
+            r.case_no: r.topic_tags
+            for r in conn.execute(text(
+                "SELECT case_no, topic_tags FROM d_part_embeddings WHERE source_type = '생활법령'"
+            ))
+        }
+        meta = conn.execute(text(
+            "SELECT metadata->>'출처' FROM d_part_embeddings"
+            " WHERE source_type = '생활법령' LIMIT 1"
+        )).scalar()
+
+    assert len(rows) == 20
+    assert "생활법령-1.1.2" in rows  # 신탁 부동산을 이용한 사기
+    assert "전-⑤신탁사기" in rows["생활법령-1.1.2"]
+    assert meta and "easylaw" in meta  # 출처(공공누리) 표기
 
 
 @pytest.mark.asyncio
