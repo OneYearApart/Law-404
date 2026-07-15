@@ -7,6 +7,7 @@ D파트 검색 전략.
 """
 from typing import Optional
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import text
 
 from app.core.config import get_engine
@@ -62,8 +63,12 @@ class DPartRetriever(BaseRetriever):
             params["grade"] = grade
         if source_type:
             params["source_type"] = source_type
-        with get_engine().connect() as conn:
-            rows = conn.execute(sql, params).mappings().all()
+
+        def _query():
+            with get_engine().connect() as conn:
+                return conn.execute(sql, params).mappings().all()
+
+        rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
@@ -100,8 +105,12 @@ class DPartRetriever(BaseRetriever):
             "tags": [topic_key],
             "top_k": top_k,
         }
-        with get_engine().connect() as conn:
-            rows = conn.execute(sql, params).mappings().all()
+
+        def _query():
+            with get_engine().connect() as conn:
+                return conn.execute(sql, params).mappings().all()
+
+        rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
 
     async def search_by_requirement(self, slot_result: dict) -> dict:
@@ -123,8 +132,14 @@ class DPartRetriever(BaseRetriever):
             FROM {self.table_name}
             WHERE statute_name = :statute_name AND article_no = ANY(:article_nos)
         """)
-        with get_engine().connect() as conn:
-            rows = conn.execute(sql, {"statute_name": JEONSE_LAW_NAME, "article_nos": article_nos}).mappings().all()
+
+        def _query():
+            with get_engine().connect() as conn:
+                return conn.execute(
+                    sql, {"statute_name": JEONSE_LAW_NAME, "article_nos": article_nos}
+                ).mappings().all()
+
+        rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
 
     async def _link_related(self, chunks: list[Chunk], source: str) -> list[Chunk]:
@@ -140,32 +155,34 @@ class DPartRetriever(BaseRetriever):
         chunk_ids = [c.id for c in chunks]
         statute_names = [c.statute_name for c in chunks if c.statute_name] or [None]
 
-        with get_engine().connect() as conn:
-            precedent_ids = conn.execute(text("""
-                SELECT DISTINCT source_id
-                FROM d_reference_links
-                WHERE linked_type = '법령원문'
-                  AND (linked_id = ANY(:chunk_ids) OR linked_statute_name = ANY(:statute_names))
-            """), {"chunk_ids": chunk_ids, "statute_names": statute_names}).scalars().all()
-
-            if source == "판례":
-                target_ids = list(precedent_ids)
-            else:
-                if not precedent_ids:
-                    return []
-                target_ids = list(conn.execute(text("""
-                    SELECT DISTINCT linked_id
+        def _query():
+            with get_engine().connect() as conn:
+                precedent_ids = conn.execute(text("""
+                    SELECT DISTINCT source_id
                     FROM d_reference_links
-                    WHERE linked_type = 'HUG사례집' AND source_id = ANY(:precedent_ids)
-                """), {"precedent_ids": list(precedent_ids)}).scalars().all())
+                    WHERE linked_type = '법령원문'
+                      AND (linked_id = ANY(:chunk_ids) OR linked_statute_name = ANY(:statute_names))
+                """), {"chunk_ids": chunk_ids, "statute_names": statute_names}).scalars().all()
 
-            if not target_ids:
-                return []
+                if source == "판례":
+                    target_ids = list(precedent_ids)
+                else:
+                    if not precedent_ids:
+                        return []
+                    target_ids = list(conn.execute(text("""
+                        SELECT DISTINCT linked_id
+                        FROM d_reference_links
+                        WHERE linked_type = 'HUG사례집' AND source_id = ANY(:precedent_ids)
+                    """), {"precedent_ids": list(precedent_ids)}).scalars().all())
 
-            rows = conn.execute(text(f"""
-                SELECT {_CHUNK_COLUMNS}, NULL AS distance
-                FROM {self.table_name}
-                WHERE id = ANY(:ids)
-            """), {"ids": target_ids}).mappings().all()
+                if not target_ids:
+                    return []
 
+                return conn.execute(text(f"""
+                    SELECT {_CHUNK_COLUMNS}, NULL AS distance
+                    FROM {self.table_name}
+                    WHERE id = ANY(:ids)
+                """), {"ids": target_ids}).mappings().all()
+
+        rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
