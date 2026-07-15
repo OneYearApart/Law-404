@@ -15,6 +15,7 @@ from typing import Any
 from app.llm.b_part import generate_b_part_answer, stream_text
 from app.llm.b_part_context import analyze_b_part_context
 from app.llm.b_part_intent import analyze_b_part_intent
+from app.llm.b_part_planner import analyze_b_part_plan
 from app.llm.b_part_scope import analyze_b_part_scope
 from app.rag.retrievers.b_part import BPartRetriever
 from app.graph.parts.b_part.calendar_events import (
@@ -444,6 +445,35 @@ def is_contract_end_date_clarification(question: str) -> bool:
     )
 
 
+def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]:
+    """Planner가 판단한 필수 누락 정보를 사용자 질문 문장으로 바꿉니다."""
+    missing_facts = planner_result.get("missing_required_facts")
+    if not isinstance(missing_facts, list):
+        return []
+
+    question_map = {
+        "contract_end_date": "계약 종료일이 언제인지 알려주세요.",
+        "contract_notice_date": "집주인 또는 세입자가 갱신 거절이나 조건 변경을 통보한 날짜가 언제인지 알려주세요.",
+        "current_rent": "현재 월세가 얼마인지 알려주세요.",
+        "requested_rent": "집주인이 요구한 월세가 얼마인지 알려주세요.",
+        "recent_rent_increase": "최근 1년 안에 보증금이나 월세를 올린 적이 있는지 알려주세요.",
+        "converted_deposit_amount": "월세로 전환하려는 보증금 금액이 얼마인지 알려주세요.",
+        "repair_request_date": "집주인에게 수리를 요청한 날짜나 수리 요청 후 경과 기간을 알려주세요.",
+        "repair_evidence": "집주인에게 수리를 요청한 문자, 카카오톡, 사진 같은 증거가 있는지 알려주세요.",
+        "defect_detail": "어떤 하자나 고장이 있는지 구체적으로 알려주세요.",
+    }
+
+    questions: list[str] = []
+    for fact in missing_facts:
+        key = str(fact).strip()
+        question = question_map.get(key)
+        if not question:
+            question = f"{key} 정보를 알려주세요."
+        if question not in questions:
+            questions.append(question)
+    return questions[:3]
+
+
 class BPartMVPGraph:
     """FastAPI 라우터와 맞추기 위한 최소 graph 인터페이스입니다."""
 
@@ -500,6 +530,7 @@ class BPartMVPGraph:
                 "question": question,
                 "categories": [],
                 "context_result": context_result,
+                "planner_result": None,
                 "intent_result": None,
                 "scope_result": {
                     "source": "keyword",
@@ -539,6 +570,7 @@ class BPartMVPGraph:
                     "question": question,
                     "categories": [],
                     "context_result": context_result,
+                    "planner_result": None,
                     "intent_result": None,
                     "scope_result": None,
                     "rule_results": [],
@@ -564,6 +596,19 @@ class BPartMVPGraph:
                 categories,
                 context_result.get("categories", []),
             )
+
+        keyword_categories = detect_categories(question)
+        planner_result = analyze_b_part_plan(
+            current_message=original_question,
+            resolved_question=question,
+            history_text=build_history_text(history_messages),
+            context_result=context_result,
+            keyword_categories=keyword_categories,
+        )
+        categories = merge_categories(
+            categories,
+            planner_result.get("categories", []),
+        )
 
         memory_state = (
             memory_store.get_state(conversation_id)
@@ -595,6 +640,7 @@ class BPartMVPGraph:
                             "question": question,
                             "categories": categories,
                             "context_result": context_result,
+                            "planner_result": planner_result,
                             "intent_result": None,
                             "scope_result": None,
                             "rule_results": [],
@@ -645,6 +691,7 @@ class BPartMVPGraph:
                         "question": question,
                         "categories": categories,
                         "context_result": context_result,
+                        "planner_result": planner_result,
                         "intent_result": None,
                         "scope_result": None,
                         "rule_results": [],
@@ -696,6 +743,7 @@ class BPartMVPGraph:
                             "missing": ["contract_end_day"],
                         },
                     },
+                    "planner_result": planner_result,
                     "intent_result": None,
                     "scope_result": None,
                     "rule_results": [],
@@ -732,6 +780,7 @@ class BPartMVPGraph:
                 "question": question,
                 "categories": categories,
                 "context_result": context_result,
+                "planner_result": planner_result,
                 "intent_result": None,
                 "scope_result": None,
                 "rule_results": [],
@@ -751,6 +800,37 @@ class BPartMVPGraph:
             self._save_turn(conversation_id, original_question, answer)
             return final_state
 
+        planner_missing_questions = build_planner_missing_questions(planner_result)
+        if (
+            planner_result.get("source") == "llm"
+            and planner_result.get("answer_mode") == "ask_missing_info"
+            and planner_missing_questions
+        ):
+            answer = "\n".join(planner_missing_questions)
+            final_state = {
+                "question": question,
+                "categories": categories,
+                "context_result": context_result,
+                "planner_result": planner_result,
+                "intent_result": None,
+                "scope_result": None,
+                "rule_results": [],
+                "calendar_events": [],
+                "pending_action": None,
+                "calendar_registration": None,
+                "missing_questions": planner_missing_questions,
+                "retrieved": [],
+                "retrieval_quality": {
+                    "skipped": True,
+                    "reason": "planner_required_missing_information",
+                },
+                "memory": memory_meta,
+                "final_answer": answer,
+                "response_stream": stream_text(answer),
+            }
+            self._save_turn(conversation_id, original_question, answer)
+            return final_state
+
         if should_call_scope_analyzer(question=question, categories=categories):
             scope_result = analyze_b_part_scope(question)
             scope = scope_result.get("scope")
@@ -760,6 +840,7 @@ class BPartMVPGraph:
                     "question": question,
                     "categories": scope_result.get("suggested_categories", []),
                     "context_result": context_result,
+                    "planner_result": planner_result,
                     "intent_result": None,
                     "scope_result": scope_result,
                     "rule_results": [],
@@ -841,6 +922,7 @@ class BPartMVPGraph:
             "question": question,
             "categories": categories,
             "context_result": context_result,
+            "planner_result": planner_result,
             "intent_result": intent_result,
             "scope_result": scope_result,
             "rule_results": rule_results,
