@@ -100,6 +100,8 @@ class DPartGraphState(TypedDict, total=False):
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
     # TODO: app/rag 쪽에 전용 Chunk 타입이 생기면 list[Chunk]로 교체 (2026-07-11 기준 미존재)
     final_answer: Optional[str]                                     # 이번 턴 최종 답변 — messages 테이블에 별도 저장되므로 state에 중복 보관 안 함
+    disclaimer_required: bool                                        # 이번 턴 final_answer가 법률 정보 응답이라 면책 문구가 필요한지
+                                                                       # (확인질문/fallback엔 False). LLM 스트림 경로는 finalize가 항상 첨부. 이번 턴 전용
     response_stream: Optional[AsyncIterator[str]]                    # 스트리밍 청크 제너레이터 — JSON 직렬화 불가, 절대 영속화 금지
 
 

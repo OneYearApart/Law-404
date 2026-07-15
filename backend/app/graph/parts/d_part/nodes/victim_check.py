@@ -164,6 +164,7 @@ async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
 
     if slots.has_relief_measure:
         state["final_answer"] = _EXCLUSION_MESSAGE
+        state["disclaimer_required"] = True  # 지원대상 제외 판정(법률 정보) → finalize가 면책 첨부
         state["victim_judgment"] = None
         state["victim_flow_closed"] = True
     else:

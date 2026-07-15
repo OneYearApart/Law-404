@@ -41,4 +41,5 @@ async def match_special_case(state: DPartGraphState) -> DPartGraphState:
 
     category = state["special_case_matched"]
     state["final_answer"] = _SPECIAL_CASE_GUIDANCE[category]
+    state["disclaimer_required"] = True  # 법률 정보 안내 → finalize가 면책 첨부
     return state

@@ -5,6 +5,7 @@ LLM/RAG 호출은 전부 monkeypatch로 흉내내고 DB 접근 없음.
 import pytest
 
 from app.graph.parts.d_part import graph as graph_module
+from app.graph.parts.d_part.nodes._disclaimer import DISCLAIMER
 from app.graph.parts.d_part.nodes import (
     general_scenario,
     open_qa,
@@ -75,8 +76,9 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
 
     assert result["victim_judgment"] == VictimJudgment.HIGH
     assert result["response_stream"] is not None
-    chunks = [c async for c in result["response_stream"]]
-    assert chunks == ["판단 응답"]
+    joined = "".join([c async for c in result["response_stream"]])
+    assert joined.startswith("판단 응답")
+    assert joined.endswith(DISCLAIMER)  # 법률 정보 응답 → 면책 첨부
 
 
 @pytest.mark.asyncio
@@ -106,8 +108,9 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
 
     assert result["general_topic_matched"] == "전-①등기부등본_위험신호"
     assert result["response_stream"] is not None
-    chunks = [c async for c in result["response_stream"]]
-    assert chunks == ["일반 시나리오 응답"]
+    joined = "".join([c async for c in result["response_stream"]])
+    assert joined.startswith("일반 시나리오 응답")
+    assert joined.endswith(DISCLAIMER)
 
 
 @pytest.mark.asyncio
@@ -138,8 +141,9 @@ async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(mo
     result = await graph_module.graph.ainvoke(initial_state)
 
     assert result["general_topic_matched"] == "전-③다가구_선순위보증금"
-    chunks = [c async for c in result["response_stream"]]
-    assert "".join(chunks) == "다가구주택 답변"
+    joined = "".join([c async for c in result["response_stream"]])
+    assert joined.startswith("다가구주택 답변")
+    assert joined.endswith(DISCLAIMER)
 
 
 @pytest.mark.asyncio
@@ -168,9 +172,9 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
 
     result = await graph_module.graph.ainvoke(initial_state)
 
-    chunks = [c async for c in result["response_stream"]]
-    joined = "".join(chunks)
-    assert joined == "open_qa 응답"
+    joined = "".join([c async for c in result["response_stream"]])
+    assert joined.startswith("open_qa 응답")
+    assert joined.endswith(DISCLAIMER)
     assert "안내드릴 내용이 없습니다" not in joined
 
 
@@ -251,7 +255,8 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
     # 종결 플래그는 victim_check를 거치지 않는 턴에도 그대로 살아남아 다음 턴에 재저장돼야 한다
     assert result["victim_flow_closed"] is True
     joined = "".join([c async for c in result["response_stream"]])
-    assert joined == "보증보험 안내"
+    assert joined.startswith("보증보험 안내")
+    assert joined.endswith(DISCLAIMER)
     assert "안내드릴 내용이 없습니다" not in joined
 
 
@@ -299,7 +304,7 @@ async def test_stage_confirmation_reply_does_not_lose_original_question(monkeypa
     assert turn2_result["stage_confirmed"] is True
     assert turn2_result["general_topic_matched"] == "전-①등기부등본_위험신호"
     assert turn2_result["response_stream"] is not None
-    chunks = [c async for c in turn2_result["response_stream"]]
-    joined = "".join(chunks)
-    assert joined == "등기부등본 답변"
+    joined = "".join([c async for c in turn2_result["response_stream"]])
+    assert joined.startswith("등기부등본 답변")
+    assert joined.endswith(DISCLAIMER)
     assert "안내드릴 내용이 없습니다" not in joined
