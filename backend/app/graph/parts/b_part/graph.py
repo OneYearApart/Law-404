@@ -1,16 +1,21 @@
 """
 B파트 계약 중 분쟁 MVP 그래프.
 
-현재 단계에서는 LangGraph StateGraph 대신 같은 인터페이스의 얇은 클래스를 둡니다.
-FastAPI 라우터가 기대하는 graph.ainvoke(request)를 제공하면서,
-질문 의도 분류 -> 부족 정보 확인 -> Retriever 검색 -> GPT 답변 생성을 순서대로 실행합니다.
+FastAPI 라우터가 기대하는 graph.ainvoke(request) 인터페이스를 유지하면서,
+내부 실행은 LangGraph StateGraph를 통해 수행합니다.
+
+현재 1차 전환에서는 기존 B파트 파이프라인을 StateGraph의 호환 노드로 감싸고,
+후속 작업에서 Context Resolver, Intent Planner, Rule Engine, Retriever 등을
+개별 노드로 점진 분리할 수 있게 구조를 마련합니다.
 """
 
 from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Any
+from typing import Any, TypedDict
+
+from langgraph.graph import END, START, StateGraph
 
 from app.llm.b_part import generate_b_part_answer, stream_text
 from app.llm.b_part_context import analyze_b_part_context
@@ -474,13 +479,89 @@ def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]
     return questions[:3]
 
 
+class BPartGraphState(TypedDict, total=False):
+    """B파트 LangGraph 실행 상태입니다."""
+
+    request: dict[str, Any]
+    original_question: str
+    question: str
+    conversation_id: str | None
+    history_messages: list[dict[str, Any]]
+    history_text: str
+    context_result: dict[str, Any]
+    memory_meta: dict[str, Any]
+    categories: list[str]
+    keyword_categories: list[str]
+    planner_result: dict[str, Any]
+    scope_result: dict[str, Any] | None
+    intent_result: dict[str, Any] | None
+    rule_results: list[dict[str, Any]]
+    calendar_events: list[dict[str, Any]]
+    pending_action: dict[str, Any] | None
+    top_k: int
+    retrieved: list[dict[str, Any]]
+    retrieval_quality: dict[str, Any]
+    final_state: dict[str, Any]
+
+
 class BPartMVPGraph:
-    """FastAPI 라우터와 맞추기 위한 최소 graph 인터페이스입니다."""
+    """FastAPI 라우터와 호환되는 B파트 LangGraph 어댑터입니다."""
 
     def __init__(self) -> None:
         self.retriever = BPartRetriever()
+        self._compiled_graph = self._build_state_graph()
+
+    def _build_state_graph(self):
+        """B파트 처리 흐름을 LangGraph StateGraph로 컴파일합니다."""
+        builder = StateGraph(BPartGraphState)
+        builder.add_node("prepare_context", self._prepare_context_node)
+        builder.add_node("check_keyword_scope", self._check_keyword_scope_node)
+        builder.add_node("handle_calendar_confirmation", self._handle_calendar_confirmation_node)
+        builder.add_node("plan", self._plan_node)
+        builder.add_node("missing_scope", self._missing_scope_node)
+        builder.add_node("compute", self._compute_node)
+        builder.add_node("retrieve", self._retrieve_node)
+        builder.add_node("answer", self._answer_node)
+        builder.add_edge(START, "prepare_context")
+        builder.add_edge("prepare_context", "check_keyword_scope")
+        builder.add_conditional_edges(
+            "check_keyword_scope",
+            self._route_after_keyword_scope,
+            {
+                "end": END,
+                "continue": "handle_calendar_confirmation",
+            },
+        )
+        builder.add_conditional_edges(
+            "handle_calendar_confirmation",
+            self._route_after_calendar_confirmation,
+            {
+                "end": END,
+                "continue": "plan",
+            },
+        )
+        builder.add_edge("plan", "missing_scope")
+        builder.add_conditional_edges(
+            "missing_scope",
+            self._route_after_missing_scope,
+            {
+                "end": END,
+                "continue": "compute",
+            },
+        )
+        builder.add_edge("compute", "retrieve")
+        builder.add_edge("retrieve", "answer")
+        builder.add_edge("answer", END)
+        return builder.compile()
 
     async def ainvoke(self, request: dict[str, Any]) -> dict[str, Any]:
+        """외부 호출 인터페이스는 유지하고 내부적으로 LangGraph를 실행합니다."""
+        state = await self._compiled_graph.ainvoke({"request": request})
+        return state["final_state"]
+
+    async def _prepare_context_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 사용자 입력과 이전 대화 맥락을 정리합니다."""
+        request = state.get("request", {})
         original_question = extract_user_question(request)
         conversation_id = extract_conversation_id(request)
         history_messages = (
@@ -488,6 +569,7 @@ class BPartMVPGraph:
             if conversation_id
             else []
         )
+        history_text = build_history_text(history_messages)
         question, memory_meta = build_contextual_question(
             current_question=original_question,
             history_messages=history_messages,
@@ -495,7 +577,7 @@ class BPartMVPGraph:
 
         context_result = analyze_b_part_context(
             current_message=original_question,
-            history_text=build_history_text(history_messages),
+            history_text=history_text,
             fallback_question=question,
         )
         if context_result.get("source") == "llm":
@@ -516,75 +598,132 @@ class BPartMVPGraph:
         if conversation_id:
             memory_meta["state"] = memory_store.get_state(conversation_id)
 
-        out_of_scope = detect_out_of_scope_reason(original_question)
-        if out_of_scope:
-            answer = (
-                "이 질문은 현재 계약 중 범위인 '주택임대차 계약 중 분쟁'에는 포함되지 않습니다.\n\n"
-                f"감지된 범위 밖 주제: {out_of_scope['reason']}\n\n"
-                "계약 중 범위에서는 실제 거주 중 발생하는 계약갱신, 계약갱신요구권, 묵시적 갱신, "
-                "월세·보증금 증감, 전월세전환, 임대인의무, 수선의무, 계약 중도해지, "
-                "계약 중 손해배상 문제를 다룹니다."
-            )
+        return {
+            **state,
+            "original_question": original_question,
+            "question": question,
+            "conversation_id": conversation_id,
+            "history_messages": history_messages,
+            "history_text": history_text,
+            "context_result": context_result,
+            "memory_meta": memory_meta,
+        }
 
-            final_state = {
-                "question": question,
-                "categories": [],
-                "context_result": context_result,
-                "planner_result": None,
-                "intent_result": None,
-                "scope_result": {
-                    "source": "keyword",
-                    "scope": "out_of_scope",
-                    "reason": out_of_scope["reason"],
-                    "suggested_categories": [],
-                    "clarification_question": "",
-                },
-                "rule_results": [],
-                "calendar_events": [],
-                "pending_action": None,
-                "calendar_registration": None,
-                "missing_questions": [],
-                "retrieved": [],
-                "retrieval_quality": {
-                    "is_out_of_scope": True,
-                    "reason": out_of_scope["reason"],
-                },
-                "memory": memory_meta,
-                "final_answer": answer,
-                "response_stream": stream_text(answer),
-            }
-            self._save_turn(conversation_id, original_question, answer)
-            return final_state
+    async def _check_keyword_scope_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 명확한 B파트 범위 밖 질문을 빠르게 종료합니다."""
+        original_question = state["original_question"]
+        question = state["question"]
+        conversation_id = state.get("conversation_id")
+        context_result = state["context_result"]
+        memory_meta = state["memory_meta"]
+
+        out_of_scope = detect_out_of_scope_reason(original_question)
+        if not out_of_scope:
+            return state
+
+        answer = (
+            "이 질문은 현재 계약 중 범위인 '주택임대차 계약 중 분쟁'에는 포함되지 않습니다.\n\n"
+            f"감지된 범위 밖 주제: {out_of_scope['reason']}\n\n"
+            "계약 중 범위에서는 실제 거주 중 발생하는 계약갱신, 계약갱신요구권, 묵시적 갱신, "
+            "월세·보증금 증감, 전월세전환, 임대인의무, 수선의무, 계약 중도해지, "
+            "계약 중 손해배상 문제를 다룹니다."
+        )
+
+        final_state = {
+            "question": question,
+            "categories": [],
+            "context_result": context_result,
+            "planner_result": None,
+            "intent_result": None,
+            "scope_result": {
+                "source": "keyword",
+                "scope": "out_of_scope",
+                "reason": out_of_scope["reason"],
+                "suggested_categories": [],
+                "clarification_question": "",
+            },
+            "rule_results": [],
+            "calendar_events": [],
+            "pending_action": None,
+            "calendar_registration": None,
+            "missing_questions": [],
+            "retrieved": [],
+            "retrieval_quality": {
+                "is_out_of_scope": True,
+                "reason": out_of_scope["reason"],
+            },
+            "memory": memory_meta,
+            "final_answer": answer,
+            "response_stream": stream_text(answer),
+        }
+        self._save_turn(conversation_id, original_question, answer)
+        return {**state, "final_state": final_state}
+
+    def _route_after_keyword_scope(self, state: BPartGraphState) -> str:
+        """keyword scope 노드 이후 다음 경로를 결정합니다."""
+        if state.get("final_state"):
+            return "end"
+        return "continue"
+
+    async def _handle_calendar_confirmation_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 사용자의 캘린더 등록 승인 메시지를 처리합니다."""
+        request = state.get("request", {})
+        original_question = state["original_question"]
+        question = state["question"]
+        conversation_id = state.get("conversation_id")
+        context_result = state["context_result"]
+        memory_meta = state["memory_meta"]
 
         pending_action = request.get("pending_action")
-        if isinstance(pending_action, dict) and is_calendar_registration_approved(original_question):
-            calendar_registration = build_calendar_registration_ready_action(pending_action)
-            if calendar_registration:
-                answer = (
-                    "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
-                    "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
-                    "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
-                )
+        if not (
+            isinstance(pending_action, dict)
+            and is_calendar_registration_approved(original_question)
+        ):
+            return state
 
-                final_state = {
-                    "question": question,
-                    "categories": [],
-                    "context_result": context_result,
-                    "planner_result": None,
-                    "intent_result": None,
-                    "scope_result": None,
-                    "rule_results": [],
-                    "calendar_events": calendar_registration.get("events", []),
-                    "pending_action": None,
-                    "calendar_registration": calendar_registration,
-                    "missing_questions": [],
-                    "retrieved": [],
-                    "memory": memory_meta,
-                    "final_answer": answer,
-                    "response_stream": stream_text(answer),
-                }
-                self._save_turn(conversation_id, original_question, answer)
-                return final_state
+        calendar_registration = build_calendar_registration_ready_action(pending_action)
+        if not calendar_registration:
+            return state
+
+        answer = (
+            "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
+            "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
+            "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
+        )
+
+        final_state = {
+            "question": question,
+            "categories": [],
+            "context_result": context_result,
+            "planner_result": None,
+            "intent_result": None,
+            "scope_result": None,
+            "rule_results": [],
+            "calendar_events": calendar_registration.get("events", []),
+            "pending_action": None,
+            "calendar_registration": calendar_registration,
+            "missing_questions": [],
+            "retrieved": [],
+            "memory": memory_meta,
+            "final_answer": answer,
+            "response_stream": stream_text(answer),
+        }
+        self._save_turn(conversation_id, original_question, answer)
+        return {**state, "final_state": final_state}
+
+    def _route_after_calendar_confirmation(self, state: BPartGraphState) -> str:
+        """calendar confirmation 노드 이후 다음 경로를 결정합니다."""
+        if state.get("final_state"):
+            return "end"
+        return "continue"
+
+    async def _plan_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 질문 의도와 B파트 카테고리를 계획합니다."""
+        request = state.get("request", {})
+        original_question = state["original_question"]
+        question = state["question"]
+        history_text = state.get("history_text", "")
+        context_result = state["context_result"]
 
         categories = request.get("categories") or request.get("category")
         if isinstance(categories, str):
@@ -601,7 +740,7 @@ class BPartMVPGraph:
         planner_result = analyze_b_part_plan(
             current_message=original_question,
             resolved_question=question,
-            history_text=build_history_text(history_messages),
+            history_text=history_text,
             context_result=context_result,
             keyword_categories=keyword_categories,
         )
@@ -609,6 +748,55 @@ class BPartMVPGraph:
             categories,
             planner_result.get("categories", []),
         )
+
+        return {
+            **state,
+            "categories": categories,
+            "keyword_categories": keyword_categories,
+            "planner_result": planner_result,
+        }
+
+    async def _compute_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: Rule Engine 계산과 캘린더 후보 생성을 수행합니다."""
+        question = state["question"]
+        categories = state.get("categories", [])
+
+        rule_results = run_b_part_rules(question=question, categories=categories)
+        intent_result: dict[str, Any] | None = None
+
+        if should_call_llm_intent(
+            question=question,
+            categories=categories,
+            rule_results=rule_results,
+        ):
+            intent_result = analyze_b_part_intent(question)
+            categories = merge_categories(
+                categories,
+                intent_result.get("categories", []),
+            )
+            rule_results = run_b_part_rules(question=question, categories=categories)
+
+        calendar_events = build_calendar_event_candidates(rule_results)
+        pending_action = build_calendar_pending_action(calendar_events)
+
+        return {
+            **state,
+            "categories": categories,
+            "intent_result": intent_result,
+            "rule_results": rule_results,
+            "calendar_events": calendar_events,
+            "pending_action": pending_action,
+        }
+
+    async def _missing_scope_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 추가 정보 요청, 부분 날짜 처리, LLM Scope 확인을 수행합니다."""
+        original_question = state["original_question"]
+        conversation_id = state.get("conversation_id")
+        question = state["question"]
+        context_result = state["context_result"]
+        memory_meta = state["memory_meta"]
+        categories = state.get("categories", [])
+        planner_result = state["planner_result"]
 
         memory_state = (
             memory_store.get_state(conversation_id)
@@ -636,32 +824,26 @@ class BPartMVPGraph:
                             f"{pending_year}년 {pending_month}월에는 {day}일이 없습니다. "
                             "계약서에 적힌 정확한 계약 종료일을 다시 알려주세요."
                         )
-                        final_state = {
-                            "question": question,
-                            "categories": categories,
-                            "context_result": context_result,
-                            "planner_result": planner_result,
-                            "intent_result": None,
-                            "scope_result": None,
-                            "rule_results": [],
-                            "calendar_events": [],
-                            "pending_action": None,
-                            "calendar_registration": None,
-                            "missing_questions": [answer],
-                            "retrieved": [],
-                            "retrieval_quality": {
+                        final_state = self._build_early_final_state(
+                            question=question,
+                            categories=categories,
+                            context_result=context_result,
+                            planner_result=planner_result,
+                            intent_result=None,
+                            scope_result=None,
+                            missing_questions=[answer],
+                            retrieval_quality={
                                 "skipped": True,
                                 "reason": "invalid_contract_end_day",
                             },
-                            "memory": {
+                            memory_meta={
                                 **memory_meta,
                                 "state": memory_store.get_state(conversation_id),
                             },
-                            "final_answer": answer,
-                            "response_stream": stream_text(answer),
-                        }
+                            answer=answer,
+                        )
                         self._save_turn(conversation_id, original_question, answer)
-                        return final_state
+                        return {**state, "final_state": final_state}
 
                     memory_store.clear_state_fields(
                         conversation_id,
@@ -687,32 +869,26 @@ class BPartMVPGraph:
                         int(pending_year),
                         int(pending_month),
                     )
-                    final_state = {
-                        "question": question,
-                        "categories": categories,
-                        "context_result": context_result,
-                        "planner_result": planner_result,
-                        "intent_result": None,
-                        "scope_result": None,
-                        "rule_results": [],
-                        "calendar_events": [],
-                        "pending_action": None,
-                        "calendar_registration": None,
-                        "missing_questions": [answer],
-                        "retrieved": [],
-                        "retrieval_quality": {
+                    final_state = self._build_early_final_state(
+                        question=question,
+                        categories=categories,
+                        context_result=context_result,
+                        planner_result=planner_result,
+                        intent_result=None,
+                        scope_result=None,
+                        missing_questions=[answer],
+                        retrieval_quality={
                             "skipped": True,
                             "reason": "waiting_for_contract_end_day",
                         },
-                        "memory": {
+                        memory_meta={
                             **memory_meta,
                             "state": memory_store.get_state(conversation_id),
                         },
-                        "final_answer": answer,
-                        "response_stream": stream_text(answer),
-                    }
+                        answer=answer,
+                    )
                     self._save_turn(conversation_id, original_question, answer)
-                    return final_state
+                    return {**state, "final_state": final_state}
 
         if renewal_slot_context and not has_date_in_text(question):
             year_month = (
@@ -730,44 +906,40 @@ class BPartMVPGraph:
                     },
                 )
                 answer = build_contract_end_day_question(year, month)
-                final_state = {
-                    "question": question,
-                    "categories": categories,
-                    "context_result": {
-                        **context_result,
-                        "response_mode": "ask_missing_info",
-                        "required_missing_questions": [answer],
-                        "partial_facts": {
-                            "contract_end_year": year,
-                            "contract_end_month": month,
-                            "missing": ["contract_end_day"],
-                        },
+                next_context_result = {
+                    **context_result,
+                    "response_mode": "ask_missing_info",
+                    "required_missing_questions": [answer],
+                    "partial_facts": {
+                        "contract_end_year": year,
+                        "contract_end_month": month,
+                        "missing": ["contract_end_day"],
                     },
-                    "planner_result": planner_result,
-                    "intent_result": None,
-                    "scope_result": None,
-                    "rule_results": [],
-                    "calendar_events": [],
-                    "pending_action": None,
-                    "calendar_registration": None,
-                    "missing_questions": [answer],
-                    "retrieved": [],
-                    "retrieval_quality": {
+                }
+                final_state = self._build_early_final_state(
+                    question=question,
+                    categories=categories,
+                    context_result=next_context_result,
+                    planner_result=planner_result,
+                    intent_result=None,
+                    scope_result=None,
+                    missing_questions=[answer],
+                    retrieval_quality={
                         "skipped": True,
                         "reason": "partial_contract_end_date",
                     },
-                    "memory": {
+                    memory_meta={
                         **memory_meta,
                         "state": memory_store.get_state(conversation_id),
                     },
-                    "final_answer": answer,
-                    "response_stream": stream_text(answer),
-                }
+                    answer=answer,
+                )
                 self._save_turn(conversation_id, original_question, answer)
-                return final_state
-
-        top_k = int(request.get("top_k", 5))
-        scope_result: dict[str, Any] | None = None
+                return {
+                    **state,
+                    "context_result": next_context_result,
+                    "final_state": final_state,
+                }
 
         required_missing_questions = context_result.get("required_missing_questions", [])
         if (
@@ -776,29 +948,23 @@ class BPartMVPGraph:
             and required_missing_questions
         ):
             answer = "\n".join(str(question) for question in required_missing_questions)
-            final_state = {
-                "question": question,
-                "categories": categories,
-                "context_result": context_result,
-                "planner_result": planner_result,
-                "intent_result": None,
-                "scope_result": None,
-                "rule_results": [],
-                "calendar_events": [],
-                "pending_action": None,
-                "calendar_registration": None,
-                "missing_questions": required_missing_questions,
-                "retrieved": [],
-                "retrieval_quality": {
+            final_state = self._build_early_final_state(
+                question=question,
+                categories=categories,
+                context_result=context_result,
+                planner_result=planner_result,
+                intent_result=None,
+                scope_result=None,
+                missing_questions=required_missing_questions,
+                retrieval_quality={
                     "skipped": True,
                     "reason": "required_missing_information",
                 },
-                "memory": memory_meta,
-                "final_answer": answer,
-                "response_stream": stream_text(answer),
-            }
+                memory_meta=memory_meta,
+                answer=answer,
+            )
             self._save_turn(conversation_id, original_question, answer)
-            return final_state
+            return {**state, "final_state": final_state}
 
         planner_missing_questions = build_planner_missing_questions(planner_result)
         if (
@@ -807,82 +973,81 @@ class BPartMVPGraph:
             and planner_missing_questions
         ):
             answer = "\n".join(planner_missing_questions)
-            final_state = {
-                "question": question,
-                "categories": categories,
-                "context_result": context_result,
-                "planner_result": planner_result,
-                "intent_result": None,
-                "scope_result": None,
-                "rule_results": [],
-                "calendar_events": [],
-                "pending_action": None,
-                "calendar_registration": None,
-                "missing_questions": planner_missing_questions,
-                "retrieved": [],
-                "retrieval_quality": {
+            final_state = self._build_early_final_state(
+                question=question,
+                categories=categories,
+                context_result=context_result,
+                planner_result=planner_result,
+                intent_result=None,
+                scope_result=None,
+                missing_questions=planner_missing_questions,
+                retrieval_quality={
                     "skipped": True,
                     "reason": "planner_required_missing_information",
                 },
-                "memory": memory_meta,
-                "final_answer": answer,
-                "response_stream": stream_text(answer),
-            }
+                memory_meta=memory_meta,
+                answer=answer,
+            )
             self._save_turn(conversation_id, original_question, answer)
-            return final_state
+            return {**state, "final_state": final_state}
 
+        scope_result: dict[str, Any] | None = None
         if should_call_scope_analyzer(question=question, categories=categories):
             scope_result = analyze_b_part_scope(question)
             scope = scope_result.get("scope")
             if scope in {"out_of_scope", "ambiguous"}:
                 answer = build_scope_guidance_answer(scope_result)
-                final_state = {
-                    "question": question,
-                    "categories": scope_result.get("suggested_categories", []),
-                    "context_result": context_result,
-                    "planner_result": planner_result,
-                    "intent_result": None,
-                    "scope_result": scope_result,
-                    "rule_results": [],
-                    "calendar_events": [],
-                    "pending_action": None,
-                    "calendar_registration": None,
-                    "missing_questions": [scope_result.get("clarification_question", "")],
-                    "retrieved": [],
-                    "retrieval_quality": {
+                final_state = self._build_early_final_state(
+                    question=question,
+                    categories=scope_result.get("suggested_categories", []),
+                    context_result=context_result,
+                    planner_result=planner_result,
+                    intent_result=None,
+                    scope_result=scope_result,
+                    missing_questions=[scope_result.get("clarification_question", "")],
+                    retrieval_quality={
                         "is_out_of_scope": scope == "out_of_scope",
                         "is_ambiguous_scope": scope == "ambiguous",
                         "reason": scope_result.get("reason"),
                     },
-                    "memory": memory_meta,
-                    "final_answer": answer,
-                    "response_stream": stream_text(answer),
-                }
+                    memory_meta=memory_meta,
+                    answer=answer,
+                )
                 self._save_turn(conversation_id, original_question, answer)
-                return final_state
+                return {**state, "final_state": final_state}
 
             categories = merge_categories(
                 categories,
                 scope_result.get("suggested_categories", []),
             )
 
-        rule_results = run_b_part_rules(question=question, categories=categories)
-        intent_result: dict[str, Any] | None = None
+        return {
+            **state,
+            "question": question,
+            "categories": categories,
+            "context_result": context_result,
+            "memory_meta": memory_meta,
+            "scope_result": scope_result,
+        }
 
-        if should_call_llm_intent(
-            question=question,
-            categories=categories,
-            rule_results=rule_results,
-        ):
-            intent_result = analyze_b_part_intent(question)
-            categories = merge_categories(
-                categories,
-                intent_result.get("categories", []),
-            )
-            rule_results = run_b_part_rules(question=question, categories=categories)
+    def _route_after_missing_scope(self, state: BPartGraphState) -> str:
+        """missing/scope 노드 이후 다음 경로를 결정합니다."""
+        if state.get("final_state"):
+            return "end"
+        return "continue"
 
-        calendar_events = build_calendar_event_candidates(rule_results)
-        pending_action = build_calendar_pending_action(calendar_events)
+    async def _retrieve_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: PGVector 검색과 검색 품질 보정을 수행합니다."""
+        request = state.get("request", {})
+        question = state["question"]
+        categories = state.get("categories", [])
+        intent_result = state.get("intent_result")
+        top_k = int(request.get("top_k", 5))
+
+        rule_results = state.get("rule_results", [])
+        calendar_events = state.get("calendar_events", [])
+        pending_action = state.get("pending_action")
+
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
         retrieval_quality = evaluate_retrieval_quality(retrieved)
 
@@ -904,6 +1069,40 @@ class BPartMVPGraph:
             retrieval_quality["refined_by_llm"] = True
         else:
             retrieval_quality["refined_by_llm"] = False
+
+        return {
+            **state,
+            "categories": categories,
+            "intent_result": intent_result,
+            "rule_results": rule_results,
+            "calendar_events": calendar_events,
+            "pending_action": pending_action,
+            "top_k": top_k,
+            "retrieved": retrieved,
+            "retrieval_quality": retrieval_quality,
+        }
+
+    async def _answer_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: 검색/계산 결과를 바탕으로 최종 답변을 생성합니다."""
+        final_state = await self._generate_final_answer(state)
+        return {"final_state": final_state}
+
+    async def _generate_final_answer(self, state: BPartGraphState) -> dict[str, Any]:
+        """GPT 답변 생성, 캘린더 후보 문구 추가, 대화 저장을 수행합니다."""
+        original_question = state["original_question"]
+        conversation_id = state.get("conversation_id")
+        question = state["question"]
+        context_result = state["context_result"]
+        memory_meta = state["memory_meta"]
+        categories = state.get("categories", [])
+        planner_result = state["planner_result"]
+        intent_result = state.get("intent_result")
+        rule_results = state.get("rule_results", [])
+        calendar_events = state.get("calendar_events", [])
+        pending_action = state.get("pending_action")
+        retrieved = state.get("retrieved", [])
+        retrieval_quality = state.get("retrieval_quality", {})
+        scope_result = state.get("scope_result")
 
         missing_questions = find_missing_questions(question, categories)
 
@@ -937,6 +1136,40 @@ class BPartMVPGraph:
         }
         self._save_turn(conversation_id, original_question, answer)
         return final_state
+
+    def _build_early_final_state(
+        self,
+        *,
+        question: str,
+        categories: list[str],
+        context_result: dict[str, Any],
+        planner_result: dict[str, Any] | None,
+        intent_result: dict[str, Any] | None,
+        scope_result: dict[str, Any] | None,
+        missing_questions: list[Any],
+        retrieval_quality: dict[str, Any],
+        memory_meta: dict[str, Any],
+        answer: str,
+    ) -> dict[str, Any]:
+        """조기 종료 노드에서 공통으로 사용하는 final_state를 만듭니다."""
+        return {
+            "question": question,
+            "categories": categories,
+            "context_result": context_result,
+            "planner_result": planner_result,
+            "intent_result": intent_result,
+            "scope_result": scope_result,
+            "rule_results": [],
+            "calendar_events": [],
+            "pending_action": None,
+            "calendar_registration": None,
+            "missing_questions": missing_questions,
+            "retrieved": [],
+            "retrieval_quality": retrieval_quality,
+            "memory": memory_meta,
+            "final_answer": answer,
+            "response_stream": stream_text(answer),
+        }
 
     def _save_turn(
         self,
