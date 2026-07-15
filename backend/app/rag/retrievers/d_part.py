@@ -31,6 +31,13 @@ _STATUTE_TOP_K = 3
 _TOPIC_TOP_K = 3                                        # 판례/HUG사례집 각각
 _MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
 
+# 단위 28: open_qa(트리 밖 자유질의) 전용 균형 검색. source_type별 쿼터로 한 종류(주로 판례)가
+# 컨텍스트를 독점해 조문이 없어도 원문→해설→상황적용을 지어내는 것을 막고, distance 임계값으로
+# 무관 문서를 배제한다. _MAX_DISTANCE는 현 코퍼스(1616청크, text-embedding-3-small) 실측 분포로
+# 정함: 관련 문서 ~0.36~0.57, 무관 질의("날씨") 0.75+ → 0.65(어휘 갭 여유는 주되 무관은 배제).
+_OPEN_QA_QUOTA = {"법령원문": 2, "판례": 2, "HUG사례집": 2, "HUG규정": 1}
+_MAX_DISTANCE = 0.65
+
 
 class DPartRetriever(BaseRetriever):
     def __init__(self):
@@ -70,6 +77,24 @@ class DPartRetriever(BaseRetriever):
 
         rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
+
+    async def search_balanced(
+        self, query: str, quota: Optional[dict[str, int]] = None
+    ) -> list[Chunk]:
+        """open_qa 자유질의 전용 균형 검색. source_type별 쿼터(기본 _OPEN_QA_QUOTA)로
+        한 종류가 컨텍스트를 독점하지 않게 하고, distance 임계값(_MAX_DISTANCE)을 넘는
+        무관 청크는 제외한다. query는 한 번만 임베딩해 각 source_type 검색에 재사용한다.
+        반환이 비면(관련 근거 없음) 호출부(open_qa)가 '근거 없음' 경로로 빠진다."""
+        quota = quota or _OPEN_QA_QUOTA
+        query_vector = await embed(query)
+        merged: list[Chunk] = []
+        for source_type, top_k in quota.items():
+            merged.extend(await self.search(
+                query, top_k=top_k, source_type=source_type, query_vector=query_vector
+            ))
+        filtered = [c for c in merged if c.distance is not None and c.distance < _MAX_DISTANCE]
+        filtered.sort(key=lambda c: c.distance)
+        return filtered
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
         """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문 + 판례/HUG사례집을 조회한다.
