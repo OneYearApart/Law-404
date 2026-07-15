@@ -468,10 +468,116 @@ def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]
         key = str(fact).strip()
         question = question_map.get(key)
         if not question:
-            question = f"{key} 정보를 알려주세요."
+            continue
         if question not in questions:
             questions.append(question)
     return questions[:3]
+
+
+def should_continue_despite_missing_info(
+    question: str,
+    categories: list[str],
+) -> bool:
+    """
+    LLM이 추가 정보를 요구하더라도 현재 정보만으로 Rule/RAG 진행이 가능한지 확인합니다.
+
+    예:
+    - 월세 50만 원 -> 60만 원: 인상률 계산 가능
+    - 계약 종료일 2027년 3월 6일 + 캘린더/갱신 질문: 갱신요구 기간 계산 가능
+    """
+    category_set = set(categories)
+    has_two_money_values = len(parse_money_values_from_text(question)) >= 2
+    if category_set & {"차임증감", "전월세전환"} and has_two_money_values:
+        return True
+
+    has_renewal_category = bool(category_set & RENEWAL_SLOT_CATEGORIES)
+    if has_renewal_category and has_date_in_text(question):
+        return True
+
+    return False
+
+
+def get_planner_tools(planner_result: dict[str, Any]) -> set[str]:
+    """Planner가 제안한 도구 목록을 set으로 반환합니다."""
+    tools = planner_result.get("tools_to_use")
+    if not isinstance(tools, list):
+        return set()
+    return {str(tool) for tool in tools}
+
+
+def is_planner_available(planner_result: dict[str, Any]) -> bool:
+    """Planner 결과를 실행 제어에 사용할 수 있는지 확인합니다."""
+    return planner_result.get("source") == "llm"
+
+
+def should_run_rule_engine_by_plan(
+    question: str,
+    planner_result: dict[str, Any],
+) -> bool:
+    """
+    Rule Engine 실행 여부를 결정합니다.
+
+    Planner가 정상 동작하면 tools_to_use를 우선 반영하되,
+    날짜/금액이 명확한 질문은 기존 fallback으로 계산을 유지합니다.
+    """
+    planner_tools = get_planner_tools(planner_result)
+    if "rule_engine" in planner_tools:
+        return True
+    if not is_planner_available(planner_result):
+        return True
+
+    has_calculable_signal = has_date_in_text(question) or len(parse_money_values_from_text(question)) >= 2
+    return has_calculable_signal
+
+
+def should_run_retriever_by_plan(planner_result: dict[str, Any]) -> bool:
+    """
+    Retriever 실행 여부를 결정합니다.
+
+    Planner가 정상 동작하고 tools_to_use가 비어 있지 않으면 retriever 포함 여부를 따릅니다.
+    Planner가 실패하거나 도구 힌트가 없으면 기존처럼 검색합니다.
+    """
+    if not is_planner_available(planner_result):
+        return True
+
+    planner_tools = get_planner_tools(planner_result)
+    if not planner_tools:
+        return True
+
+    return "retriever" in planner_tools
+
+
+def should_build_calendar_by_plan(
+    planner_result: dict[str, Any],
+    rule_results: list[dict[str, Any]],
+) -> bool:
+    """Calendar 후보 생성 여부를 결정합니다."""
+    if not rule_results:
+        return False
+    planner_tools = get_planner_tools(planner_result)
+    if "calendar_candidate" in planner_tools:
+        return True
+    return not is_planner_available(planner_result)
+
+
+def build_execution_plan(
+    planner_result: dict[str, Any],
+    rule_engine_executed: bool,
+    retriever_executed: bool,
+    calendar_candidate_executed: bool,
+    skipped_reason: str = "",
+) -> dict[str, Any]:
+    """Planner 기반 실행 제어 결과를 디버깅/평가용으로 정리합니다."""
+    return {
+        "planner_available": is_planner_available(planner_result),
+        "requested_tools": sorted(get_planner_tools(planner_result)),
+        "executed_tools": {
+            "rule_engine": rule_engine_executed,
+            "retriever": retriever_executed,
+            "calendar_candidate": calendar_candidate_executed,
+        },
+        "skipped_reason": skipped_reason,
+    }
 
 
 class BPartMVPGraph:
@@ -769,11 +875,62 @@ class BPartMVPGraph:
         top_k = int(request.get("top_k", 5))
         scope_result: dict[str, Any] | None = None
 
+        if (
+            is_planner_available(planner_result)
+            and (
+                planner_result.get("scope") in {"out_of_scope", "ambiguous"}
+                or planner_result.get("intent") == "ambiguous"
+            )
+        ):
+            planner_scope = str(planner_result.get("scope"))
+            if planner_result.get("intent") == "ambiguous":
+                planner_scope = "ambiguous"
+            scope_result = {
+                "source": "planner",
+                "scope": planner_scope,
+                "reason": planner_result.get("reason") or "Planner가 B파트 범위를 벗어나거나 애매한 질문으로 판단했습니다.",
+                "suggested_categories": [],
+                "clarification_question": "주택임대차 계약 중 어떤 문제인지 조금 더 구체적으로 알려주세요.",
+            }
+            answer = build_scope_guidance_answer(scope_result)
+            final_state = {
+                "question": question,
+                "categories": [],
+                "context_result": context_result,
+                "planner_result": planner_result,
+                "execution_plan": build_execution_plan(
+                    planner_result=planner_result,
+                    rule_engine_executed=False,
+                    retriever_executed=False,
+                    calendar_candidate_executed=False,
+                    skipped_reason=f"planner_{planner_scope}",
+                ),
+                "intent_result": None,
+                "scope_result": scope_result,
+                "rule_results": [],
+                "calendar_events": [],
+                "pending_action": None,
+                "calendar_registration": None,
+                "missing_questions": [scope_result.get("clarification_question", "")],
+                "retrieved": [],
+                "retrieval_quality": {
+                    "is_out_of_scope": planner_scope == "out_of_scope",
+                    "is_ambiguous_scope": planner_scope == "ambiguous",
+                    "reason": scope_result.get("reason"),
+                },
+                "memory": memory_meta,
+                "final_answer": answer,
+                "response_stream": stream_text(answer),
+            }
+            self._save_turn(conversation_id, original_question, answer)
+            return final_state
+
         required_missing_questions = context_result.get("required_missing_questions", [])
         if (
             context_result.get("source") == "llm"
             and context_result.get("response_mode") == "ask_missing_info"
             and required_missing_questions
+            and not should_continue_despite_missing_info(question, categories)
         ):
             answer = "\n".join(str(question) for question in required_missing_questions)
             final_state = {
@@ -805,6 +962,7 @@ class BPartMVPGraph:
             planner_result.get("source") == "llm"
             and planner_result.get("answer_mode") == "ask_missing_info"
             and planner_missing_questions
+            and not should_continue_despite_missing_info(question, categories)
         ):
             answer = "\n".join(planner_missing_questions)
             final_state = {
@@ -812,6 +970,13 @@ class BPartMVPGraph:
                 "categories": categories,
                 "context_result": context_result,
                 "planner_result": planner_result,
+                "execution_plan": build_execution_plan(
+                    planner_result=planner_result,
+                    rule_engine_executed=False,
+                    retriever_executed=False,
+                    calendar_candidate_executed=False,
+                    skipped_reason="planner_required_missing_information",
+                ),
                 "intent_result": None,
                 "scope_result": None,
                 "rule_results": [],
@@ -866,7 +1031,14 @@ class BPartMVPGraph:
                 scope_result.get("suggested_categories", []),
             )
 
-        rule_results = run_b_part_rules(question=question, categories=categories)
+        rule_engine_executed = should_run_rule_engine_by_plan(
+            question=question,
+            planner_result=planner_result,
+        )
+        if rule_engine_executed:
+            rule_results = run_b_part_rules(question=question, categories=categories)
+        else:
+            rule_results = []
         intent_result: dict[str, Any] | None = None
 
         if should_call_llm_intent(
@@ -879,14 +1051,34 @@ class BPartMVPGraph:
                 categories,
                 intent_result.get("categories", []),
             )
-            rule_results = run_b_part_rules(question=question, categories=categories)
+            if rule_engine_executed:
+                rule_results = run_b_part_rules(question=question, categories=categories)
 
-        calendar_events = build_calendar_event_candidates(rule_results)
+        calendar_candidate_executed = should_build_calendar_by_plan(
+            planner_result=planner_result,
+            rule_results=rule_results,
+        )
+        calendar_events = (
+            build_calendar_event_candidates(rule_results)
+            if calendar_candidate_executed
+            else []
+        )
         pending_action = build_calendar_pending_action(calendar_events)
-        retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
-        retrieval_quality = evaluate_retrieval_quality(retrieved)
+        retriever_executed = should_run_retriever_by_plan(planner_result)
+        if retriever_executed:
+            retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+            retrieval_quality = evaluate_retrieval_quality(retrieved)
+        else:
+            retrieved = []
+            retrieval_quality = {
+                "skipped": True,
+                "reason": "planner_skipped_retriever",
+                "max_similarity": 0.0,
+                "average_similarity": 0.0,
+                "threshold": RETRIEVAL_MIN_TOP_SIMILARITY,
+            }
 
-        if should_refine_intent_after_retrieval(
+        if retriever_executed and should_refine_intent_after_retrieval(
             retrieval_quality=retrieval_quality,
             intent_result=intent_result,
         ):
@@ -896,8 +1088,17 @@ class BPartMVPGraph:
                 categories,
                 intent_result.get("categories", []),
             )
-            rule_results = run_b_part_rules(question=question, categories=categories)
-            calendar_events = build_calendar_event_candidates(rule_results)
+            if rule_engine_executed:
+                rule_results = run_b_part_rules(question=question, categories=categories)
+            calendar_candidate_executed = should_build_calendar_by_plan(
+                planner_result=planner_result,
+                rule_results=rule_results,
+            )
+            calendar_events = (
+                build_calendar_event_candidates(rule_results)
+                if calendar_candidate_executed
+                else []
+            )
             pending_action = build_calendar_pending_action(calendar_events)
             retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
             retrieval_quality = evaluate_retrieval_quality(retrieved)
@@ -923,6 +1124,12 @@ class BPartMVPGraph:
             "categories": categories,
             "context_result": context_result,
             "planner_result": planner_result,
+            "execution_plan": build_execution_plan(
+                planner_result=planner_result,
+                rule_engine_executed=rule_engine_executed,
+                retriever_executed=retriever_executed,
+                calendar_candidate_executed=calendar_candidate_executed,
+            ),
             "intent_result": intent_result,
             "scope_result": scope_result,
             "rule_results": rule_results,
