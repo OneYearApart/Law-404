@@ -145,6 +145,82 @@ class DocumentDatabaseRepository:
                     ),
                 )
 
+    def delete_document(
+        self,
+        *,
+        conversation_id: str,
+        document_id: str,
+    ) -> bool:
+        with self.connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM a_part_documents
+                    WHERE conversation_id = %s AND document_id = %s
+                    """,
+                    (conversation_id, document_id),
+                )
+                return bool(cursor.rowcount)
+
+    def delete_conversation_artifacts(
+        self,
+        *,
+        conversation_id: str,
+    ) -> dict[str, int]:
+        """상담의 문서 원본·추출·분석·비교 결과를 한 트랜잭션에서 삭제한다."""
+
+        normalized = str(conversation_id or "").strip()
+        if not normalized:
+            raise ValueError("conversation_id는 빈 문자열일 수 없습니다.")
+
+        with self.connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM a_part_document_comparisons
+                    WHERE conversation_id = %s
+                    """,
+                    (normalized,),
+                )
+                comparisons = int(cursor.rowcount)
+
+                cursor.execute(
+                    """
+                    DELETE FROM a_part_document_analyses
+                    WHERE conversation_id = %s
+                    """,
+                    (normalized,),
+                )
+                analyses = int(cursor.rowcount)
+
+                cursor.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM a_part_document_extractions AS extraction
+                    JOIN a_part_documents AS document
+                      ON document.document_id = extraction.document_id
+                    WHERE document.conversation_id = %s
+                    """,
+                    (normalized,),
+                )
+                extractions = int(cursor.fetchone()[0])
+
+                cursor.execute(
+                    """
+                    DELETE FROM a_part_documents
+                    WHERE conversation_id = %s
+                    """,
+                    (normalized,),
+                )
+                documents = int(cursor.rowcount)
+
+        return {
+            "documents": documents,
+            "extractions": extractions,
+            "analyses": analyses,
+            "comparisons": comparisons,
+        }
+
     def upsert_extraction(self, extraction: Any) -> None:
         payload = _json_value(extraction)
         with self.connect() as conn:
