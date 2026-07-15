@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -251,6 +252,31 @@ class FileDocumentRepository:
             raise DocumentNotFoundError(
                 f"저장된 원본 파일을 찾을 수 없습니다: {document_id}"
             ) from error
+
+    def delete_conversation(
+        self,
+        conversation_id: str,
+    ) -> list[UploadedDocument]:
+        """상담에 연결된 원본·파생 파일과 메타데이터 디렉터리를 삭제한다."""
+
+        normalized = self.validate_conversation_id(conversation_id)
+        directory = (self.root / normalized).resolve()
+        if self.root not in directory.parents:
+            raise DocumentStorageError("안전하지 않은 문서 저장 경로입니다.")
+
+        with self._lock:
+            if not directory.exists():
+                return []
+
+            documents = self._load_index(normalized)
+            try:
+                shutil.rmtree(directory)
+            except OSError as error:
+                raise DocumentStorageError(
+                    "상담에 연결된 문서 파일을 삭제하지 못했습니다."
+                ) from error
+
+            return [item.model_copy(deep=True) for item in documents]
 
     def delete(
         self,
