@@ -21,6 +21,21 @@ RENEWAL_CATEGORIES = {"계약갱신", "계약갱신요구권"}
 RENT_INCREASE_CATEGORIES = {"차임증감"}
 
 
+def normalize_year(year_text: str) -> int:
+    """
+    2자리/4자리 연도를 4자리 연도로 정규화합니다.
+
+    MVP에서는 00~69는 2000년대, 70~99는 1900년대로 해석합니다.
+    예:
+        26 -> 2026
+        2026 -> 2026
+    """
+    year = int(year_text)
+    if len(year_text) == 2:
+        return 2000 + year if year <= 69 else 1900 + year
+    return year
+
+
 def subtract_months(base_date: date, months: int) -> date:
     """
     기준 날짜에서 months개월을 뺍니다.
@@ -49,15 +64,19 @@ def parse_date_from_text(text: str) -> date | None:
     """
     사용자 질문에서 날짜를 추출합니다.
 
-    우선 지원하는 형식:
+    지원하는 형식:
     - 2027-03-01
+    - 27-03-01
     - 2027.03.01
+    - 27.03.01
     - 2027/03/01
+    - 27/03/01
     - 2027년 3월 1일
+    - 27년 3월 1일
     """
     patterns = [
-        r"(?P<year>\d{4})[-./](?P<month>\d{1,2})[-./](?P<day>\d{1,2})",
-        r"(?P<year>\d{4})년\s*(?P<month>\d{1,2})월\s*(?P<day>\d{1,2})일",
+        r"(?P<year>\d{2,4})[-./](?P<month>\d{1,2})[-./](?P<day>\d{1,2})",
+        r"(?P<year>\d{2,4})년\s*(?P<month>\d{1,2})월\s*(?P<day>\d{1,2})일",
     ]
 
     for pattern in patterns:
@@ -65,7 +84,7 @@ def parse_date_from_text(text: str) -> date | None:
         if not match:
             continue
 
-        year = int(match.group("year"))
+        year = normalize_year(match.group("year"))
         month = int(match.group("month"))
         day = int(match.group("day"))
 
@@ -75,6 +94,61 @@ def parse_date_from_text(text: str) -> date | None:
             return None
 
     return None
+
+
+def parse_year_month_from_text(text: str) -> tuple[int, int] | None:
+    """
+    사용자 질문에서 연도와 월만 추출합니다.
+
+    지원하는 형식:
+    - 2026년 9월
+    - 26년 9월
+    - 2026-09
+    - 26.09
+
+    일자까지 있는 완전한 날짜는 parse_date_from_text()가 담당합니다.
+    이 함수는 "2026년 9월입니다"처럼 날짜 계산에 필요한 일자가 빠진 상태를
+    별도로 감지하기 위해 사용합니다.
+    """
+    patterns = [
+        r"(?P<year>\d{2,4})년\s*(?P<month>\d{1,2})월(?!\s*\d{1,2}\s*일)",
+        r"(?P<year>\d{2,4})[-./](?P<month>\d{1,2})(?![-./]\d{1,2})",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+
+        year = normalize_year(match.group("year"))
+        month = int(match.group("month"))
+        if 1 <= month <= 12:
+            return year, month
+
+    return None
+
+
+def parse_day_from_text(text: str) -> int | None:
+    """
+    사용자 답변에서 일자만 추출합니다.
+
+    예:
+    - 10일
+    - 10일입니다
+    """
+    match = re.search(r"(?P<day>\d{1,2})\s*일", text)
+    if not match:
+        return None
+
+    day = int(match.group("day"))
+    if 1 <= day <= 31:
+        return day
+    return None
+
+
+def has_date_in_text(text: str) -> bool:
+    """사용자 입력에 실제 날짜가 포함되어 있는지 확인합니다."""
+    return parse_date_from_text(text) is not None
 
 
 def calculate_renewal_request_period(contract_end_date: date) -> dict[str, Any]:
