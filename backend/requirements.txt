@@ -9,9 +9,13 @@ sqlalchemy
 alembic
 pydantic
 pydantic-settings
+python-dotenv
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
-pdfplumber
 tiktoken
+PyMuPDF
+Pillow
+pytesseract
+pdfplumber
 httpx

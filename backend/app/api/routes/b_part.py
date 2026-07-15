@@ -22,11 +22,22 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
         # 판단 단계(전/중/후, 위험신호 감지 등)는 내부적으로 동기 실행
         final_state = await b_graph.ainvoke(request)
 
+        meta_data = {
+            "pending_action": final_state.get("pending_action"),
+            "calendar_events": final_state.get("calendar_events", []),
+            "calendar_registration": final_state.get("calendar_registration"),
+            "memory": final_state.get("memory"),
+        }
+        yield f"data: {StreamEvent(type=EventType.META, data=meta_data).model_dump_json()}\n\n"
+
         # 최종 답변만 토큰 단위로 스트리밍
         async for chunk in final_state["response_stream"]:
             yield f"data: {StreamEvent(type=EventType.TOKEN, data=chunk).model_dump_json()}\n\n"
 
-        await save_message(user.id, "b", "assistant", final_state.get("final_answer", ""))
+        try:
+            await save_message(user.id, "b", "assistant", final_state.get("final_answer", ""))
+        except NotImplementedError:
+            pass
 
         yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
 
