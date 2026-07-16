@@ -1,0 +1,58 @@
+.messageRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+}
+
+.assistantRow {
+  justify-content: flex-start;
+}
+
+.userRow {
+  justify-content: flex-end;
+}
+
+.avatar {
+  width: 3.6rem;
+  height: 3.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-white);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  background: var(--color-primary);
+  border-radius: var(--radius-medium);
+}
+
+.avatar svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.userBubble {
+  max-width: min(72rem, 78%);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-14) var(--space-16);
+  color: var(--color-white);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+  background: var(--color-primary);
+  border-radius: var(--radius-large) var(--radius-small) var(--radius-large) var(--radius-large);
+}
+
+.inlineIcon {
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  .userBubble {
+    max-width: 86%;
+  }
+}

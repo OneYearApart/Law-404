@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 가상환경
+venv/
+.venv/
+env/
+eduvenv/
+
+# 환경변수 / 시크릿
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
+
+# Node
+node_modules/
+
+# Claude Code / AI 도구 설정
+.claude.md
+.claude/
+CLAUDE.md
+
+# DB 관련
+*.sqlite3
+pgdata/
+
+# A파트 사용자 업로드 원본과 OCR·분석 산출물
+storage/a_part/uploads/
+
+# 삭제된 과거 테스트 산출물 경로가 다시 생성돼도 Git에 포함하지 않음
+tests/a_part/results/
+data/a_part/evaluation/

@@ -1,0 +1,1 @@
+-- app/conversations/schema.sql 과 동일 (마이그레이션 관리용)

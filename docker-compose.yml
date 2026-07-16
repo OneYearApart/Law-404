@@ -1,0 +1,22 @@
+services:
+  db:
+    image: ankane/pgvector
+    container_name: law404_db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: edu
+      POSTGRES_PASSWORD: "1234"
+      POSTGRES_DB: edudb
+    volumes:
+      - law404_vpg:/var/lib/postgresql/data
+      - ./backend/app/db/schema:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edu -d edudb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  law404_vpg:
