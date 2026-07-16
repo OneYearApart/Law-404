@@ -8,8 +8,17 @@ from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import get_current_user
 from app.api.events import StreamEvent, EventType
-from app.conversations.repository import save_message
+from app.conversations.repository import (
+    get_session_state,
+    load_conversation,
+    save_message,
+    update_session_state,
+)
 from app.graph.parts.b_part.graph import graph as b_graph
+from app.graph.parts.b_part.memory import (
+    build_persistable_session_state,
+    seed_memory_from_persisted_data,
+)
 
 router = APIRouter(prefix="/chat/b", tags=["b_part"])
 
@@ -32,8 +41,30 @@ def _parse_db_conversation_id(request: dict) -> int | None:
 
 @router.post("/")
 async def chat_b(request: dict, user=Depends(get_current_user)):
+    conversation_id = _parse_db_conversation_id(request)
+    persisted_state = None
+    persisted_messages = []
+    if conversation_id is not None:
+        persisted_state = await get_session_state(conversation_id, user.id)
+        persisted_messages = await load_conversation(conversation_id, user.id)
+
     async def event_generator():
         yield f"data: {StreamEvent(type=EventType.LOADING).model_dump_json()}\n\n"
+
+        if conversation_id is not None:
+            session_id = str(conversation_id)
+            seed_memory_from_persisted_data(
+                session_id,
+                messages=persisted_messages,
+                state=persisted_state,
+            )
+            await save_message(
+                user.id,
+                "b",
+                "user",
+                str(request.get("message", request.get("user_input", ""))),
+                conversation_id,
+            )
 
         # 판단 단계(전/중/후, 위험신호 감지 등)는 내부적으로 동기 실행
         final_state = await b_graph.ainvoke(request)
@@ -51,7 +82,6 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
         async for chunk in final_state["response_stream"]:
             yield f"data: {StreamEvent(type=EventType.TOKEN, data=chunk).model_dump_json()}\n\n"
 
-        conversation_id = _parse_db_conversation_id(request)
         if conversation_id is not None:
             try:
                 await save_message(
@@ -60,6 +90,14 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
                     "assistant",
                     final_state.get("final_answer", ""),
                     conversation_id,
+                )
+                await update_session_state(
+                    conversation_id,
+                    user.id,
+                    build_persistable_session_state(
+                        str(conversation_id),
+                        final_state,
+                    ),
                 )
             except Exception:
                 pass

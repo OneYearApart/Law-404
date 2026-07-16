@@ -63,6 +63,18 @@ class BPartInMemoryChatMessageHistory:
     def get_state(self, session_id: str) -> dict[str, Any]:
         return dict(self._state.get(session_id, {}))
 
+    def replace_messages(self, session_id: str, messages: list[BPartChatMessage]) -> None:
+        """외부 저장소에서 읽은 메시지 목록으로 현재 세션 메시지를 교체합니다."""
+        if not session_id:
+            return
+        self._store[session_id] = list(messages[-MAX_HISTORY_MESSAGES:])
+
+    def replace_state(self, session_id: str, state: dict[str, Any] | None) -> None:
+        """외부 저장소에서 읽은 state로 현재 세션 상태를 교체합니다."""
+        if not session_id:
+            return
+        self._state[session_id] = dict(state or {})
+
     def update_state(self, session_id: str, updates: dict[str, Any]) -> None:
         if not session_id:
             return
@@ -82,6 +94,66 @@ class BPartInMemoryChatMessageHistory:
 
 
 memory_store = BPartInMemoryChatMessageHistory()
+
+
+def seed_memory_from_persisted_data(
+    session_id: str,
+    *,
+    messages: list[Any] | None = None,
+    state: dict[str, Any] | None = None,
+) -> None:
+    """DB에 저장된 messages/state를 B파트 InMemory store에 주입합니다."""
+    if not session_id:
+        return
+
+    restored_messages: list[BPartChatMessage] = []
+    for message in messages or []:
+        role = getattr(message, "role", None)
+        content = getattr(message, "content", None)
+        created_at = getattr(message, "created_at", None)
+        if not isinstance(role, str) or not isinstance(content, str):
+            continue
+        restored_messages.append(
+            BPartChatMessage(
+                role=role,
+                content=content,
+                created_at=(
+                    created_at.isoformat(timespec="seconds")
+                    if hasattr(created_at, "isoformat")
+                    else str(created_at or "")
+                ),
+            )
+        )
+
+    memory_state = {}
+    if isinstance(state, dict):
+        raw_memory_state = state.get("memory_state", state)
+        if isinstance(raw_memory_state, dict):
+            memory_state = raw_memory_state
+
+    memory_store.replace_messages(session_id, restored_messages)
+    memory_store.replace_state(session_id, memory_state)
+
+
+def build_persistable_session_state(
+    session_id: str,
+    final_state: dict[str, Any],
+) -> dict[str, Any]:
+    """B파트 graph 실행 결과 중 턴 간 유지할 값만 conversations.state에 저장합니다."""
+    memory = final_state.get("memory")
+    if not isinstance(memory, dict):
+        memory = {}
+
+    return {
+        "memory_state": memory_store.get_state(session_id),
+        "pending_action": final_state.get("pending_action"),
+        "calendar_events": final_state.get("calendar_events", []),
+        "last_categories": final_state.get("categories", []),
+        "last_missing_questions": final_state.get("missing_questions", []),
+        "last_contextual_question": memory.get("contextual_question"),
+        "last_original_question": memory.get("original_question"),
+        "last_used_memory": memory.get("used_memory"),
+    }
 
 
 def extract_conversation_id(request: dict[str, Any]) -> str | None:
