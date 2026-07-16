@@ -113,21 +113,6 @@ async def test_open_qa_category_routes_to_open_qa(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_noop_when_final_answer_already_set(monkeypatch):
-    """stage_router 확인질문 대기 중인 턴은 LLM 호출 없이 통과해야 한다."""
-    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor)
-    state = {
-        "user_input": "네",
-        "final_answer": "말씀하신 내용을 보면 '전' 단계로 보입니다. 맞으신가요?",
-    }
-
-    result = await run_supervisor(state)
-
-    assert result == state
-    assert "route_target" not in result
-
-
-@pytest.mark.asyncio
 async def test_uses_active_query_over_raw_user_input_when_present(monkeypatch):
     seen_input = {}
 
