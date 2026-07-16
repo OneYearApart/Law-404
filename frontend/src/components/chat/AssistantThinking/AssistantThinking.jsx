@@ -1,53 +1,101 @@
-import { motion } from 'framer-motion';
+import { useMemo, useState } from 'react';
 
 import styles from './AssistantThinking.module.css';
 
-const DOT_DELAYS = [0, 0.18, 0.36];
+function normalizeItems(items = []) {
+  return items
+    .map((item) => {
+      if (typeof item === 'string') {
+        return { label: item, displayValue: '' };
+      }
+      return {
+        label: String(item?.label || '').trim(),
+        displayValue: String(item?.display_value || item?.displayValue || '').trim(),
+      };
+    })
+    .filter((item) => item.label);
+}
 
-function AssistantThinking({
-  title = '답변을 생각하고 있어요',
-  description = '질문과 관련 근거를 확인하고 있습니다.',
-}) {
+function ItemRows({ items }) {
   return (
-    <motion.div
-      className={styles.thinkingRow}
-      role="status"
-      aria-live="polite"
-      initial={{ opacity: 0, x: -18, y: 8 }}
-      animate={{ opacity: 1, x: 0, y: 0 }}
-      exit={{ opacity: 0, x: -10, y: -4 }}
-      transition={{ duration: 0.28, ease: 'easeOut' }}
-    >
-      <motion.div
-        className={styles.character}
-        aria-hidden="true"
-        animate={{ y: [0, -4, 0] }}
-        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-      >
+    <div className={styles.itemRows}>
+      {items.map((item) => (
+        <div key={`${item.label}-${item.displayValue}`}>
+          <span>{item.label}</span>
+          {item.displayValue && <strong>{item.displayValue}</strong>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AssistantThinking({ progress = null, fallbackItems = [] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const confirmedItems = useMemo(
+    () => normalizeItems(progress?.confirmed_items || []),
+    [progress],
+  );
+  const unresolvedItems = useMemo(
+    () => normalizeItems(progress?.unresolved_items || []),
+    [progress],
+  );
+  const remainingItems = useMemo(() => {
+    const sourceItems = [
+      ...(progress?.conflict_items || []),
+      ...(progress?.remaining_items || []),
+    ];
+    return normalizeItems(sourceItems.length ? sourceItems : fallbackItems);
+  }, [fallbackItems, progress]);
+
+  return (
+    <div className={styles.thinkingRow} role="status" aria-live="polite">
+      <span className={styles.avatar} aria-hidden="true">
         <img src="/images/thinking.png" alt="" />
-      </motion.div>
+      </span>
 
       <div className={styles.bubble}>
-        <div className={styles.titleLine}>
-          <strong>{title}</strong>
-          <span className={styles.dots} aria-hidden="true">
-            {DOT_DELAYS.map((delay) => (
-              <motion.span
-                key={delay}
-                animate={{ opacity: [0.25, 1, 0.25], y: [0, -3, 0] }}
-                transition={{
-                  duration: 0.9,
-                  repeat: Infinity,
-                  ease: 'easeInOut',
-                  delay,
-                }}
-              />
-            ))}
-          </span>
-        </div>
-        <p>{description}</p>
+        <button
+          type="button"
+          className={styles.toggleButton}
+          onClick={() => setIsOpen((current) => !current)}
+          aria-expanded={isOpen}
+        >
+          <span>생각 중</span>
+          <i aria-hidden="true" />
+        </button>
+
+        {isOpen && (
+          <div className={styles.details}>
+            <h3>계약 전 확인 중</h3>
+
+            <section>
+              <strong>현재 확인된 정보</strong>
+              {confirmedItems.length ? (
+                <ItemRows items={confirmedItems} />
+              ) : (
+                <p>아직 확인된 정보가 없습니다.</p>
+              )}
+            </section>
+
+            {unresolvedItems.length > 0 && (
+              <section>
+                <strong>확인하지 못한 정보</strong>
+                <ItemRows items={unresolvedItems} />
+              </section>
+            )}
+
+            <section>
+              <strong>남은 확인 항목 {remainingItems.length}개</strong>
+              {remainingItems.length ? (
+                <ItemRows items={remainingItems} />
+              ) : (
+                <p>모든 질문에 답했습니다.</p>
+              )}
+            </section>
+          </div>
+        )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 

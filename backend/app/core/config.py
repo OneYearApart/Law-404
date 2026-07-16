@@ -16,6 +16,10 @@ PROJECT_ROOT = BACKEND_ROOT.parent
 class Settings(BaseSettings):
     database_url: str = "postgresql://edu:1234@localhost:5433/edudb"
     OPENAI_API_KEY: str
+
+    @property
+    def openai_api_key(self) -> str:
+        return self.OPENAI_API_KEY
     #openai_api_key: str
     @property
     def openai_api_key(self) -> str:

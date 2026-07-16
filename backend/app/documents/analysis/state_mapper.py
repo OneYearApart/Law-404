@@ -410,6 +410,13 @@ def apply_document_analysis_to_state(
                 slot.conflicting_values = []
                 slot.source = FactSource.DOCUMENT
         else:
+            if (
+                previous_status == SlotStatus.CONFIRMED
+                and slot.source == FactSource.USER
+            ):
+                # 사용자가 원문을 직접 확인해 확정한 값은 이후의 모호한 OCR 결과로
+                # 덮어쓰거나 conflict로 올리지 않는다.
+                continue
             if previous_status == SlotStatus.CONFIRMED:
                 slot.status = SlotStatus.CONFLICT
                 slot.value = None

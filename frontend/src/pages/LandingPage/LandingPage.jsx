@@ -8,9 +8,10 @@ import {
   FiLogIn,
   FiMessageCircle,
 } from 'react-icons/fi';
-import { Link } from 'react-router';
+import { Link, Navigate } from 'react-router';
 
 import { CHAT_ROUTES, ROUTES } from '../../constants/routes.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import styles from './LandingPage.module.css';
 
 const descriptions = {
@@ -28,6 +29,18 @@ const categoryIcons = {
 };
 
 function LandingPage() {
+  const { status } = useAuth();
+
+  if (status === 'loading') {
+    return null;
+  }
+
+  if (status === 'authenticated') {
+    return <Navigate to={ROUTES.CHAT_BEFORE_CONTRACT} replace />;
+  }
+
+  const showLoginButton = status === 'anonymous';
+
   return (
     <main className={styles.page}>
       <section className={styles.hero}>
@@ -55,12 +68,14 @@ function LandingPage() {
                 상담 시작
               </Link>
             </motion.div>
-            <motion.div whileHover={{ y: -3, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-              <Link className={styles.secondaryButton} to={ROUTES.LOGIN}>
-                <FiLogIn aria-hidden="true" />
-                로그인
-              </Link>
-            </motion.div>
+            {showLoginButton && (
+              <motion.div whileHover={{ y: -3, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Link className={styles.secondaryButton} to={ROUTES.LOGIN}>
+                  <FiLogIn aria-hidden="true" />
+                  로그인
+                </Link>
+              </motion.div>
+            )}
           </div>
         </motion.div>
       </section>
