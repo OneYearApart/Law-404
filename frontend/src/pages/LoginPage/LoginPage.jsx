@@ -1,25 +1,43 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { FiInfo, FiLock, FiLogIn, FiUser } from 'react-icons/fi';
-import { Link } from 'react-router';
+import { FiAlertTriangle, FiLoader, FiLock, FiLogIn, FiUser } from 'react-icons/fi';
+import { Link, useLocation, useNavigate } from 'react-router';
 
 import AuthField from '../../components/auth/AuthField/AuthField.jsx';
 import { ROUTES } from '../../constants/routes.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import styles from './LoginPage.module.css';
 
 function LoginPage() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [form, setForm] = useState({ userId: '', password: '' });
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
-    setNotice('');
+    setError('');
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    setNotice('로그인 API는 팀 인증 기능이 연결된 뒤 적용됩니다. 현재 A 상담은 로그인 없이 테스트할 수 있습니다.');
+    if (isSubmitting) return;
+
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await login({ username: form.userId, password: form.password });
+      const redirectTo = location.state?.from?.pathname ?? ROUTES.LANDING;
+      navigate(redirectTo, { replace: true });
+    } catch (submitError) {
+      setError(submitError?.message ?? '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -54,25 +72,30 @@ function LoginPage() {
           Icon={FiLock}
         />
 
-        {notice && (
+        {error && (
           <motion.p
-            className={styles.success}
+            className={styles.error}
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <FiInfo aria-hidden="true" />
-            <span>{notice}</span>
+            <FiAlertTriangle aria-hidden="true" />
+            <span>{error}</span>
           </motion.p>
         )}
 
         <motion.button
           className={styles.submitButton}
           type="submit"
-          whileHover={{ y: -2, scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
+          disabled={isSubmitting}
+          whileHover={isSubmitting ? undefined : { y: -2, scale: 1.01 }}
+          whileTap={isSubmitting ? undefined : { scale: 0.98 }}
         >
-          <FiLogIn aria-hidden="true" />
-          <span>로그인</span>
+          {isSubmitting ? (
+            <FiLoader className={styles.spinner} aria-hidden="true" />
+          ) : (
+            <FiLogIn aria-hidden="true" />
+          )}
+          <span>{isSubmitting ? '로그인 중…' : '로그인'}</span>
         </motion.button>
       </form>
 

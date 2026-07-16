@@ -8,14 +8,14 @@ from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
-from backend.app.documents.analysis.models import (
+from app.documents.analysis.models import (
     ANALYSIS_VERSION,
     DocumentComparisonResult,
     LeaseAnalysisResult,
     RegistryAnalysisResult,
 )
-from backend.app.documents.models import DocumentType, UploadedDocument
-from backend.app.documents.storage import DocumentStorageError, FileDocumentRepository
+from app.documents.models import DocumentType, UploadedDocument
+from app.documents.storage import DocumentStorageError, FileDocumentRepository
 
 
 class AnalysisResultNotFoundError(DocumentStorageError):

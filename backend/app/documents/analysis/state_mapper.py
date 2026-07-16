@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.app.consultation.a_part.models import (
+from app.consultation.a_part.models import (
     ConversationState,
     FactSource,
     SlotStatus,
     add_issue_to_state,
     utc_now,
 )
-from backend.app.consultation.a_part.state_policy import evaluate_conversation_risk
-from backend.app.documents.analysis.models import (
+from app.consultation.a_part.state_policy import evaluate_conversation_risk
+from app.documents.analysis.models import (
     AnalysisValueStatus,
     AnalyzedField,
     ComparisonStatus,

@@ -20,31 +20,31 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from backend.app.api.a_part_errors import (
+from app.api.a_part_errors import (
     APartAPIError,
     ConversationAccessDeniedError,
     translate_a_part_exception,
 )
-from backend.app.consultation.a_part.chatbot_service import (
+from app.consultation.a_part.chatbot_service import (
     APartChatbotService,
     ChatbotTurnRequest,
     ChatbotTurnResult,
 )
-from backend.app.consultation.a_part.input_validation import (
+from app.consultation.a_part.input_validation import (
     normalize_chat_input,
     requests_document_review,
 )
-from backend.app.consultation.a_part.models import (
+from app.consultation.a_part.models import (
     ConversationState,
     create_conversation_state,
 )
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.store import PostgresConversationStore
-from backend.app.consultation.a_part.document_service import APartDocumentUploadService
-from backend.app.core.config import settings
-from backend.app.consultation.a_part.state_updater import ExtractedSlotUpdate
-from backend.app.documents.models import DocumentType
-from backend.app.documents.db_storage import DocumentDatabaseRepository
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.store import PostgresConversationStore
+from app.consultation.a_part.document_service import APartDocumentUploadService
+from app.core.config import settings
+from app.consultation.a_part.state_updater import ExtractedSlotUpdate
+from app.documents.models import DocumentType
+from app.documents.db_storage import DocumentDatabaseRepository
 
 
 router = APIRouter(prefix="/chat/a", tags=["a_part"])

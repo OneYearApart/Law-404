@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from backend.app.documents.models import DocumentFormat
+from app.documents.models import DocumentFormat
 
 
 DEFAULT_MAX_UPLOAD_BYTES = 20 * 1024 * 1024

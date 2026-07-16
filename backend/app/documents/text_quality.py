@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from backend.app.documents.text_metrics import normalize_text
+from app.documents.text_metrics import normalize_text
 
 
 @dataclass(frozen=True, slots=True)

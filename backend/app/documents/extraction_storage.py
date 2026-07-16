@@ -8,9 +8,9 @@ from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
-from backend.app.documents.extraction_models import DocumentExtractionResult
-from backend.app.documents.models import UploadedDocument
-from backend.app.documents.storage import DocumentStorageError, FileDocumentRepository
+from app.documents.extraction_models import DocumentExtractionResult
+from app.documents.models import UploadedDocument
+from app.documents.storage import DocumentStorageError, FileDocumentRepository
 
 
 class ExtractionResultNotFoundError(DocumentStorageError):
