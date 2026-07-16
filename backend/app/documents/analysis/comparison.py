@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.app.documents.analysis.models import (
+from app.documents.analysis.models import (
     AnalysisValueStatus,
     ComparisonItem,
     ComparisonStatus,
@@ -10,7 +10,7 @@ from backend.app.documents.analysis.models import (
     LeaseAnalysisResult,
     RegistryAnalysisResult,
 )
-from backend.app.documents.analysis.normalization import (
+from app.documents.analysis.normalization import (
     compare_addresses_safely,
     normalize_name,
 )

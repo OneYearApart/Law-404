@@ -6,12 +6,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from backend.app.documents.analysis.models import (
+from app.documents.analysis.models import (
     AnalysisEvidence,
     AnalysisValueStatus,
     AnalyzedField,
 )
-from backend.app.documents.extraction_models import ExtractionMethod, PageExtractionResult
+from app.documents.extraction_models import ExtractionMethod, PageExtractionResult
 
 
 Normalizer = Callable[[str], Any | None]

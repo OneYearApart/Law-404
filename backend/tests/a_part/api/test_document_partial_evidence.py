@@ -1,9 +1,9 @@
-from backend.app.consultation.a_part.chatbot_service import APartChatbotService
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.state_updater import SlotExtractionResult
-from backend.app.consultation.a_part.store import MemoryConversationStore
-from backend.app.documents.analysis.models import ConversationDocumentAnalysisResponse
-from backend.app.llm.a_part import (
+from app.consultation.a_part.chatbot_service import APartChatbotService
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.state_updater import SlotExtractionResult
+from app.consultation.a_part.store import MemoryConversationStore
+from app.documents.analysis.models import ConversationDocumentAnalysisResponse
+from app.llm.a_part import (
     APartAnswer,
     APartRAGResponse,
     ConsultationContext,

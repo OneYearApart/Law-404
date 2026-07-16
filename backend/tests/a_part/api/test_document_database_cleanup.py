@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.documents.db_storage import DocumentDatabaseRepository
+from app.documents.db_storage import DocumentDatabaseRepository
 
 
 class FakeCursor:

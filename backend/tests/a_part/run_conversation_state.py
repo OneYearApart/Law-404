@@ -10,12 +10,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from pydantic import BaseModel, Field
 
-from backend.app.consultation.a_part.models import SlotStatus, create_conversation_state
-from backend.app.consultation.a_part.question_builder import build_follow_up_questions
-from backend.app.consultation.a_part.router import route_issues
-from backend.app.consultation.a_part.service import APartConversationService, ConversationRAGContext
-from backend.app.consultation.a_part.state_updater import ExtractedSlotUpdate, apply_slot_updates
-from backend.app.consultation.a_part.store import ConversationNotFoundError, MemoryConversationStore
+from app.consultation.a_part.models import SlotStatus, create_conversation_state
+from app.consultation.a_part.question_builder import build_follow_up_questions
+from app.consultation.a_part.router import route_issues
+from app.consultation.a_part.service import APartConversationService, ConversationRAGContext
+from app.consultation.a_part.state_updater import ExtractedSlotUpdate, apply_slot_updates
+from app.consultation.a_part.store import ConversationNotFoundError, MemoryConversationStore
 
 
 class FakeAnswer(BaseModel):

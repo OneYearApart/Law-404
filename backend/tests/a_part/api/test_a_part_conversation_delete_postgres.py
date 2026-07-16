@@ -18,15 +18,15 @@ from fastapi.testclient import TestClient
 from app.api.routes.a_part import get_a_part_chatbot_service
 from app.auth.dependencies import get_current_user
 from app.main import app
-from backend.app.consultation.a_part.chatbot_service import APartChatbotService
-from backend.app.consultation.a_part.document_service import APartDocumentUploadService
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.state_updater import SlotExtractionResult
-from backend.app.consultation.a_part.store import PostgresConversationStore
-from backend.app.core.config import settings
-from backend.app.documents.db_storage import DocumentDatabaseRepository
-from backend.app.documents.service import DocumentUploadService
-from backend.app.llm.a_part import (
+from app.consultation.a_part.chatbot_service import APartChatbotService
+from app.consultation.a_part.document_service import APartDocumentUploadService
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.state_updater import SlotExtractionResult
+from app.consultation.a_part.store import PostgresConversationStore
+from app.core.config import settings
+from app.documents.db_storage import DocumentDatabaseRepository
+from app.documents.service import DocumentUploadService
+from app.llm.a_part import (
     APartAnswer,
     APartRAGResponse,
     ConsultationContext,

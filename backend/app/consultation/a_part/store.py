@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from threading import RLock
 
-from backend.app.consultation.a_part.models import ConversationState
+from app.consultation.a_part.models import ConversationState
 
 
 class ConversationStoreError(RuntimeError):

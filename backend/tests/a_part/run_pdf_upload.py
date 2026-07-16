@@ -9,14 +9,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.app.consultation.a_part.document_service import APartDocumentUploadService
-from backend.app.consultation.a_part.models import create_conversation_state
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.store import ConversationNotFoundError, MemoryConversationStore
-from backend.app.documents.models import DocumentFormat, DocumentType
-from backend.app.documents.service import DocumentUploadService
-from backend.app.documents.storage import DuplicateDocumentTypeConflictError
-from backend.app.documents.validation import (
+from app.consultation.a_part.document_service import APartDocumentUploadService
+from app.consultation.a_part.models import create_conversation_state
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.store import ConversationNotFoundError, MemoryConversationStore
+from app.documents.models import DocumentFormat, DocumentType
+from app.documents.service import DocumentUploadService
+from app.documents.storage import DuplicateDocumentTypeConflictError
+from app.documents.validation import (
     DocumentTooLargeError,
     DocumentTypeMismatchError,
     EmptyDocumentError,

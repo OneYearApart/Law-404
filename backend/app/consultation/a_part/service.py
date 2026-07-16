@@ -7,41 +7,41 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from backend.app.consultation.a_part.models import (
+from app.consultation.a_part.models import (
     ConversationState,
     MessageRole,
     add_issue_to_state,
     create_conversation_state,
 )
-from backend.app.consultation.a_part.question_builder import (
+from app.consultation.a_part.question_builder import (
     FollowUpQuestion,
     build_follow_up_questions,
     confirmed_fact_sentences,
     conflict_fact_labels,
     missing_fact_labels,
 )
-from backend.app.consultation.a_part.router import (
+from app.consultation.a_part.router import (
     UnsupportedConsultationIssueError,
     detect_primary_issue_id,
     route_issues,
 )
-from backend.app.consultation.a_part.state_policy import (
+from app.consultation.a_part.state_policy import (
     ConversationRiskAssessment,
     apply_state_policy_to_response,
 )
-from backend.app.consultation.a_part.state_updater import (
+from app.consultation.a_part.state_updater import (
     AppliedSlotUpdate,
     ExtractedSlotUpdate,
     OpenAISlotUpdateExtractor,
     SlotUpdateExtractor,
     apply_slot_updates,
 )
-from backend.app.consultation.a_part.store import (
+from app.consultation.a_part.store import (
     DEFAULT_CONVERSATION_STORE,
     MemoryConversationStore,
     PostgresConversationStore,
 )
-from backend.app.documents.models import UploadedDocument
+from app.documents.models import UploadedDocument
 
 
 RAGAnswerer = Callable[..., Any]
@@ -100,13 +100,13 @@ class APartConversationService:
 
     def _get_rag_answerer(self) -> RAGAnswerer:
         if self._rag_answerer is None:
-            from backend.app.llm.a_part import answer_with_rag_guarded
+            from app.llm.a_part import answer_with_rag_guarded
             self._rag_answerer = answer_with_rag_guarded
         return self._rag_answerer
 
     def _build_rag_context(self, known_facts: list[str]) -> Any:
         if self._uses_default_rag:
-            from backend.app.llm.a_part import ConsultationContext
+            from app.llm.a_part import ConsultationContext
             return ConsultationContext(known_facts=known_facts)
         return ConversationRAGContext(known_facts=known_facts)
 

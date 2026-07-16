@@ -5,30 +5,30 @@ from __future__ import annotations
 import hashlib
 import re
 
-from backend.app.documents.analysis.comparison import compare_documents
-from backend.app.documents.analysis.lease_analyzer import analyze_lease_contract
-from backend.app.documents.analysis.models import (
+from app.documents.analysis.comparison import compare_documents
+from app.documents.analysis.lease_analyzer import analyze_lease_contract
+from app.documents.analysis.models import (
     ANALYSIS_VERSION,
     ConversationDocumentAnalysisResponse,
     LeaseAnalysisResult,
     RegistryAnalysisResult,
 )
-from backend.app.documents.analysis.registry_analyzer import analyze_registry
-from backend.app.documents.analysis.storage import DocumentAnalysisStorage
-from backend.app.documents.extraction_models import (
+from app.documents.analysis.registry_analyzer import analyze_registry
+from app.documents.analysis.storage import DocumentAnalysisStorage
+from app.documents.extraction_models import (
     DocumentExtractionResult,
     ExtractionMethod,
     PageExtractionStatus,
 )
-from backend.app.documents.extraction_storage import DocumentExtractionStorage
-from backend.app.documents.models import (
+from app.documents.extraction_storage import DocumentExtractionStorage
+from app.documents.models import (
     DocumentAnalysisStatus,
     DocumentProcessingStatus,
     DocumentType,
     UploadedDocument,
     utc_now,
 )
-from backend.app.documents.storage import FileDocumentRepository
+from app.documents.storage import FileDocumentRepository
 
 
 class UnsupportedAnalysisDocumentTypeError(ValueError):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.consultation.a_part.issues import get_issue_definition
+from app.consultation.a_part.issues import get_issue_definition
 
 
 class UnsupportedConsultationIssueError(ValueError):
