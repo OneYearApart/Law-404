@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from backend.app.rag.retrievers.a_part import search_documents
+def search_documents(**kwargs: Any):
+    """RAG 의존성을 실제 검색 시점까지 지연 로드한다."""
+    from backend.app.rag.retrievers.a_part import search_documents as _search
+    return _search(**kwargs)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -240,6 +243,15 @@ class EvidenceStatus(str, Enum):
     INSUFFICIENT = "insufficient"
 
 
+class RAGGenerationStatus(str, Enum):
+    COMPLETED = "completed"
+    PARTIAL_EVIDENCE = "partial_evidence"
+    EVIDENCE_NOT_FOUND = "evidence_not_found"
+    SEARCH_FAILED = "search_failed"
+    GENERATION_FAILED = "generation_failed"
+    VALIDATION_FAILED = "validation_failed"
+
+
 class ConsultationContext(BaseModel):
     contract_stage: str = "잘 모르겠음"
     payment_status: str = "잘 모르겠음"
@@ -277,6 +289,17 @@ class ReferenceItem(BaseModel):
     text_preview: str
 
 
+class DocumentSummarySection(BaseModel):
+    title: str
+    items: list[str] = Field(default_factory=list)
+
+
+class DocumentSummary(BaseModel):
+    source_count: int = Field(default=0, ge=0)
+    sections: list[DocumentSummarySection] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class APartAnswer(BaseModel):
     risk_level: str
     core_judgment: str
@@ -287,6 +310,7 @@ class APartAnswer(BaseModel):
     references: list[ReferenceItem]
     follow_up_questions: list[str]
     confirmation_message: str | None = None
+    document_summary: DocumentSummary | None = None
 
 
 class APartRAGResponse(BaseModel):
@@ -294,14 +318,51 @@ class APartRAGResponse(BaseModel):
     answer_code_version: str
     consultation_context: ConsultationContext
     evidence_status: EvidenceStatus
+    generation_status: RAGGenerationStatus = RAGGenerationStatus.COMPLETED
     answer: APartAnswer
     selected_evidence: list[ReferenceItem]
     search_result_count: int
     search_code_version: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 DEFAULT_CHAT_MODEL = "gpt-4o-mini"
-ANSWER_CODE_VERSION = "answer-v16-final-service-evidence"
+ANSWER_CODE_VERSION = "answer-v19-generic-document-summary"
+
+
+class RAGExecutionError(RuntimeError):
+    generation_status = RAGGenerationStatus.VALIDATION_FAILED
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        search_result_count: int = 0,
+        search_code_version: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.search_result_count = search_result_count
+        self.search_code_version = search_code_version
+
+
+class RAGSearchUnavailableError(RAGExecutionError):
+    generation_status = RAGGenerationStatus.SEARCH_FAILED
+
+
+class RAGEvidenceNotFoundError(RAGExecutionError):
+    generation_status = RAGGenerationStatus.EVIDENCE_NOT_FOUND
+
+
+class RAGEvidenceInsufficientError(RAGExecutionError):
+    generation_status = RAGGenerationStatus.EVIDENCE_NOT_FOUND
+
+
+class RAGAnswerGenerationError(RAGExecutionError):
+    generation_status = RAGGenerationStatus.GENERATION_FAILED
+
+
+class RAGAnswerValidationError(RAGExecutionError):
+    generation_status = RAGGenerationStatus.VALIDATION_FAILED
 
 
 def _require_openai_settings() -> tuple[str, str]:
@@ -573,6 +634,55 @@ def _question_evidence_profile(
         ]
     ):
         return "owner_proxy"
+
+    has_broker_document = any(
+        keyword in normalized_query
+        for keyword in [
+            "중개대상물 확인설명서",
+            "중개대상물 확인·설명서",
+            "중개대상물 확인ㆍ설명서",
+            "확인설명서",
+            "확인·설명서",
+            "확인ㆍ설명서",
+        ]
+    )
+    has_registry_document = any(
+        keyword in normalized_query
+        for keyword in [
+            "등기부등본",
+            "등기부",
+            "등기사항증명서",
+            "등기사항",
+        ]
+    )
+    has_rights_topic = any(
+        keyword in normalized_query
+        for keyword in [
+            "소유권 외 권리",
+            "소유권외 권리",
+            "권리사항",
+            "권리 관계",
+            "권리관계",
+        ]
+    )
+    has_comparison_intent = any(
+        keyword in normalized_query
+        for keyword in [
+            "비교",
+            "확인",
+            "다르",
+            "불일치",
+            "없다고",
+            "없음",
+        ]
+    )
+    if (
+        has_broker_document
+        and has_registry_document
+        and has_rights_topic
+        and has_comparison_intent
+    ):
+        return "broker_registry_comparison"
 
     if (
         "주소" in normalized_query
@@ -1031,6 +1141,63 @@ def _profile_body_hits(
             return []
 
         return [*multiunit_hits, *senior_hits, *value_or_rights_hits]
+
+    if profile == "broker_registry_comparison":
+        broker_keywords = [
+            "중개대상물 확인설명서",
+            "중개대상물 확인·설명서",
+            "중개대상물 확인ㆍ설명서",
+            "확인설명서",
+            "확인·설명서",
+            "확인ㆍ설명서",
+        ]
+        rights_keywords = [
+            "소유권 외의 권리사항",
+            "소유권 외 권리사항",
+            "소유권외의권리사항",
+            "권리관계",
+            "등기부",
+            "등기사항증명서",
+            "저당권",
+            "근저당권",
+        ]
+        verification_keywords = [
+            "확인·설명 의무",
+            "확인ㆍ설명 의무",
+            "성실",
+            "정확하게 설명",
+            "조사한 후",
+            "자료요구에 불응",
+            "기재하여야",
+            "제시하고",
+        ]
+
+        broker_hits = [
+            keyword
+            for keyword in broker_keywords
+            if keyword in combined
+        ]
+        rights_hits = [
+            keyword
+            for keyword in rights_keywords
+            if keyword in substantive
+            or keyword in combined
+        ]
+        verification_hits = [
+            keyword
+            for keyword in verification_keywords
+            if keyword in substantive
+            or keyword in combined
+        ]
+
+        if not broker_hits or not rights_hits:
+            return []
+
+        return [
+            *broker_hits,
+            *rights_hits,
+            *verification_hits,
+        ]
 
     if profile == "registry_restriction":
         risk_keywords = [
@@ -1565,6 +1732,48 @@ def _profile_coverage_groups(
         ):
             groups.add("value_or_rights")
 
+    elif profile == "broker_registry_comparison":
+        if any(
+            keyword in combined
+            for keyword in [
+                "중개대상물 확인설명서",
+                "중개대상물 확인·설명서",
+                "중개대상물 확인ㆍ설명서",
+                "확인설명서",
+                "확인·설명서",
+                "확인ㆍ설명서",
+            ]
+        ):
+            groups.add("broker_document")
+        if any(
+            keyword in combined
+            for keyword in [
+                "소유권 외의 권리사항",
+                "소유권 외 권리사항",
+                "소유권외의권리사항",
+                "등기부",
+                "등기사항증명서",
+                "권리관계",
+                "저당권",
+                "근저당권",
+            ]
+        ):
+            groups.add("registry_rights")
+        if any(
+            keyword in combined
+            for keyword in [
+                "확인·설명 의무",
+                "확인ㆍ설명 의무",
+                "성실",
+                "정확하게 설명",
+                "조사한 후",
+                "자료요구에 불응",
+                "기재하여야",
+                "제시하고",
+            ]
+        ):
+            groups.add("verification_duty")
+
     elif profile == "registry_restriction":
         if any(
             keyword in combined
@@ -1747,6 +1956,9 @@ def _answer_evidence_score(
 
     title = _normalize_text(result.get("title")).lower()
     body = _normalize_text(result.get("text")).lower()
+    source_type = _normalize_text(
+        result.get("source_type")
+    ).lower()
     profile_bonus = 0.0
     profile_penalty = 0.0
 
@@ -1839,6 +2051,26 @@ def _answer_evidence_score(
             profile_bonus += 0.20
         if profile == "multiunit_priority" and issue_id == "04_multiunit_priority":
             profile_bonus += 0.22
+
+    elif profile == "broker_registry_comparison":
+        coverage = _profile_coverage_groups(
+            result,
+            profile,
+        )
+        profile_bonus += min(
+            len(coverage) * 0.20,
+            0.60,
+        )
+        if any(
+            keyword in title
+            for keyword in [
+                "공인중개사법 시행규칙",
+                "주택임대차 표준계약서",
+            ]
+        ):
+            profile_bonus += 0.24
+        if source_type == "precedent":
+            profile_bonus += 0.16
 
     elif profile == "registry_restriction":
         if "등기부 위험 신호" in body:
@@ -2008,6 +2240,7 @@ def select_answer_evidence(
         "account_change": 3,
         "mortgage": 3,
         "multiunit_priority": 3,
+        "broker_registry_comparison": 3,
         "registry_restriction": 3,
         "trust_registry": 3,
         "opposability": 3,
@@ -2037,6 +2270,7 @@ def select_answer_evidence(
         "account_change",
         "mortgage",
         "multiunit_priority",
+        "broker_registry_comparison",
         "after_contract_procedure",
         "guarantee_precheck",
         "registry_restriction",
@@ -2323,6 +2557,30 @@ def determine_evidence_status(
         ):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
+            return EvidenceStatus.PARTIAL
+        return EvidenceStatus.INSUFFICIENT
+
+    if profile == "broker_registry_comparison":
+        coverage = set().union(
+            *[
+                _profile_coverage_groups(
+                    item,
+                    profile,
+                )
+                for item in direct_items
+            ]
+        ) if direct_items else set()
+
+        if (
+            len(direct_items) >= 2
+            and {
+                "broker_document",
+                "registry_rights",
+                "verification_duty",
+            }.issubset(coverage)
+        ):
+            return EvidenceStatus.SUFFICIENT
+        if direct_items:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
@@ -2643,6 +2901,12 @@ def _generate_structured_answer(
     selected_evidence: list[dict[str, Any]],
 ) -> GeneratedAnswerBody:
     api_key, chat_model = _require_openai_settings()
+    try:
+        from openai import OpenAI
+    except ImportError as error:
+        raise RuntimeError(
+            "openai 패키지가 설치되지 않아 답변 생성을 실행할 수 없습니다."
+        ) from error
     client = OpenAI(api_key=api_key)
 
     try:
@@ -3650,6 +3914,43 @@ def _apply_server_side_safety_rules(
     return GeneratedAnswerBody.model_validate(data)
 
 
+def _search_code_version(search_results: list[dict[str, Any]]) -> str | None:
+    if not search_results:
+        return None
+    return _normalize_text(search_results[0].get("code_version")) or None
+
+
+def _validate_grounded_response(response: APartRAGResponse) -> None:
+    if response.search_result_count <= 0:
+        raise RAGAnswerValidationError("검색 결과가 없는 답변은 완료 상태로 반환할 수 없습니다.")
+    if not response.selected_evidence or not response.answer.references:
+        raise RAGAnswerValidationError(
+            "선택 근거와 references가 없는 답변은 완료 상태로 반환할 수 없습니다.",
+            search_result_count=response.search_result_count,
+            search_code_version=response.search_code_version,
+        )
+    if response.evidence_status == EvidenceStatus.INSUFFICIENT:
+        raise RAGAnswerValidationError(
+            "근거 상태가 insufficient인 답변은 생성 완료로 반환할 수 없습니다.",
+            search_result_count=response.search_result_count,
+            search_code_version=response.search_code_version,
+        )
+    selected_ids = {item.evidence_id for item in response.selected_evidence}
+    reference_ids = {item.evidence_id for item in response.answer.references}
+    if not reference_ids.issubset(selected_ids):
+        raise RAGAnswerValidationError(
+            "답변 references가 선택된 RAG 근거와 일치하지 않습니다.",
+            search_result_count=response.search_result_count,
+            search_code_version=response.search_code_version,
+        )
+    if not response.answer.core_judgment.strip():
+        raise RAGAnswerValidationError(
+            "핵심 판단이 비어 있습니다.",
+            search_result_count=response.search_result_count,
+            search_code_version=response.search_code_version,
+        )
+
+
 def answer_with_rag(
     query: str,
     consultation_context: ConsultationContext | None = None,
@@ -3659,39 +3960,72 @@ def answer_with_rag(
     min_similarity: float = 0.30,
     candidate_k: int = 80,
 ) -> APartRAGResponse:
-    normalized_query = query.strip()
+    """근거가 충분할 때만 LLM 답변을 생성하는 strict 함수다."""
 
+    normalized_query = query.strip()
     if not normalized_query:
         raise ValueError("query는 빈 문자열일 수 없습니다.")
-
     context = consultation_context or ConsultationContext()
 
-    search_results = search_documents(
-        query=normalized_query,
-        top_k=search_top_k,
-        collections=collections,
-        min_similarity=min_similarity,
-        candidate_k=candidate_k,
-    )
+    try:
+        search_results = search_documents(
+            query=normalized_query,
+            top_k=search_top_k,
+            collections=collections,
+            min_similarity=min_similarity,
+            candidate_k=candidate_k,
+        )
+    except Exception as error:
+        raise RAGSearchUnavailableError(
+            f"RAG 검색 실행에 실패했습니다: {error}"
+        ) from error
+
+    search_code_version = _search_code_version(search_results)
+    if not search_results:
+        raise RAGEvidenceNotFoundError(
+            "RAG 검색 결과가 없어 답변 생성을 중단했습니다.",
+            search_result_count=0,
+            search_code_version=search_code_version,
+        )
 
     selected_evidence = select_answer_evidence(
         query=normalized_query,
         search_results=search_results,
         max_items=answer_evidence_count,
     )
+    if not selected_evidence:
+        raise RAGEvidenceNotFoundError(
+            "검색 결과 중 답변에 사용할 수 있는 근거를 선택하지 못했습니다.",
+            search_result_count=len(search_results),
+            search_code_version=search_code_version,
+        )
 
     evidence_status = determine_evidence_status(
         query=normalized_query,
         selected_evidence=selected_evidence,
         search_results=search_results,
     )
+    if evidence_status == EvidenceStatus.INSUFFICIENT:
+        raise RAGEvidenceInsufficientError(
+            "검색 결과는 있으나 질문에 직접 답할 근거가 부족해 답변 생성을 중단했습니다.",
+            search_result_count=len(search_results),
+            search_code_version=search_code_version,
+        )
 
-    generated = _generate_structured_answer(
-        query=normalized_query,
-        consultation_context=context,
-        evidence_status=evidence_status,
-        selected_evidence=selected_evidence,
-    )
+    try:
+        generated = _generate_structured_answer(
+            query=normalized_query,
+            consultation_context=context,
+            evidence_status=evidence_status,
+            selected_evidence=selected_evidence,
+        )
+    except Exception as error:
+        raise RAGAnswerGenerationError(
+            f"근거 기반 답변 생성에 실패했습니다: {error}",
+            search_result_count=len(search_results),
+            search_code_version=search_code_version,
+        ) from error
+
     generated = _apply_server_side_safety_rules(
         query=normalized_query,
         generated=generated,
@@ -3699,9 +4033,7 @@ def answer_with_rag(
         consultation_context=context,
         search_results=search_results,
     )
-
     references = _build_reference_items(selected_evidence)
-
     answer = APartAnswer(
         risk_level=generated.risk_level,
         core_judgment=generated.core_judgment,
@@ -3713,23 +4045,101 @@ def answer_with_rag(
         follow_up_questions=generated.follow_up_questions,
         confirmation_message=generated.confirmation_message,
     )
-
-    search_code_version = None
-    if search_results:
-        search_code_version = _normalize_text(
-            search_results[0].get("code_version")
-        ) or None
-
-    return APartRAGResponse(
+    response = APartRAGResponse(
         query=normalized_query,
         answer_code_version=ANSWER_CODE_VERSION,
         consultation_context=context,
         evidence_status=evidence_status,
+        generation_status=(
+            RAGGenerationStatus.PARTIAL_EVIDENCE
+            if evidence_status == EvidenceStatus.PARTIAL
+            else RAGGenerationStatus.COMPLETED
+        ),
         answer=answer,
         selected_evidence=references,
         search_result_count=len(search_results),
         search_code_version=search_code_version,
     )
+    _validate_grounded_response(response)
+    return response
+
+
+def _guarded_failure_response(
+    *,
+    query: str,
+    context: ConsultationContext,
+    error: RAGExecutionError,
+) -> APartRAGResponse:
+    status = error.generation_status
+    if status == RAGGenerationStatus.SEARCH_FAILED:
+        judgment = "RAG 검색 자체가 실패해 근거 기반 결론을 생성하지 않았습니다."
+        action = "잠시 후 같은 질문으로 근거 검색을 다시 실행합니다."
+    elif status == RAGGenerationStatus.EVIDENCE_NOT_FOUND:
+        judgment = "검증 가능한 RAG 근거를 찾지 못해 근거 기반 결론을 생성하지 않았습니다."
+        action = "질문의 핵심 사실과 문서 상태를 더 구체적으로 확인한 뒤 다시 검색합니다."
+    elif status == RAGGenerationStatus.GENERATION_FAILED:
+        judgment = "검색 근거는 확인했지만 답변 생성이 실패해 결론을 반환하지 않았습니다."
+        action = "동일한 선택 근거로 답변 생성을 다시 시도합니다."
+    else:
+        judgment = "생성된 답변의 근거 연결을 검증하지 못해 결론을 반환하지 않았습니다."
+        action = "검색 근거와 답변 references를 다시 검증합니다."
+
+    return APartRAGResponse(
+        query=query,
+        answer_code_version=ANSWER_CODE_VERSION,
+        consultation_context=context,
+        evidence_status=EvidenceStatus.INSUFFICIENT,
+        generation_status=status,
+        answer=APartAnswer(
+            risk_level="확인 필요",
+            core_judgment=judgment,
+            immediate_actions=[action],
+            hold_actions=[],
+            reasons=[str(error)],
+            required_information=["질문과 직접 연결되는 공식 근거"],
+            references=[],
+            follow_up_questions=[],
+            confirmation_message=None,
+        ),
+        selected_evidence=[],
+        search_result_count=error.search_result_count,
+        search_code_version=error.search_code_version,
+        warnings=[str(error)],
+    )
+
+
+def answer_with_rag_guarded(
+    query: str,
+    consultation_context: ConsultationContext | None = None,
+    **options: Any,
+) -> APartRAGResponse:
+    """검색 실패·근거 부족을 구조화해 반환하되 법률 결론은 만들지 않는다."""
+
+    normalized_query = query.strip()
+    if not normalized_query:
+        raise ValueError("query는 빈 문자열일 수 없습니다.")
+    if consultation_context is None:
+        context = ConsultationContext()
+    elif isinstance(consultation_context, ConsultationContext):
+        context = consultation_context
+    elif hasattr(consultation_context, "model_dump"):
+        context = ConsultationContext.model_validate(
+            consultation_context.model_dump(mode="python")
+        )
+    else:
+        context = ConsultationContext.model_validate(consultation_context)
+    try:
+        return answer_with_rag(
+            query=normalized_query,
+            consultation_context=context,
+            **options,
+        )
+    except RAGExecutionError as error:
+        return _guarded_failure_response(
+            query=normalized_query,
+            context=context,
+            error=error,
+        )
 
 
 def format_answer_for_console(response: APartRAGResponse) -> str:
@@ -3740,14 +4150,32 @@ def format_answer_for_console(response: APartRAGResponse) -> str:
         f"답변 코드 버전: {response.answer_code_version}",
         f"검색 코드 버전: {response.search_code_version}",
         f"검색 결과 수: {response.search_result_count}",
+        f"선택 근거 수: {len(response.selected_evidence)}",
         f"근거 상태: {response.evidence_status.value}",
+        f"생성 상태: {response.generation_status.value}",
         "-" * 100,
+    ]
+
+    if answer.document_summary is not None:
+        lines.append("문서 요약")
+        for section in answer.document_summary.sections:
+            lines.append(f"[{section.title}]")
+            if section.items:
+                lines.extend(f"- {item}" for item in section.items)
+            else:
+                lines.append("- 확인된 내용 없음")
+        if answer.document_summary.warnings:
+            lines.append("[확인 필요]")
+            lines.extend(f"- {item}" for item in answer.document_summary.warnings)
+        lines.append("")
+
+    lines.extend([
         f"위험 수준\n→ {answer.risk_level}",
         "",
         f"핵심 판단\n→ {answer.core_judgment}",
         "",
         "지금 해야 할 행동",
-    ]
+    ])
 
     if answer.immediate_actions:
         lines.extend(

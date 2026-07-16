@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 class EventType(str, Enum):
     LOADING = "loading"
+    META = "meta"
     TOKEN = "token"
     DONE = "done"
 
