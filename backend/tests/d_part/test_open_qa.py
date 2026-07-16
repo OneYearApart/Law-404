@@ -76,6 +76,26 @@ async def test_no_evidence_when_no_statute(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_no_evidence_clears_retrieved_chunks(monkeypatch):
+    """법령원문이 없어 '근거 없음'으로 빠지면 판례/HUG가 걸렸어도 retrieved_chunks를 비운다
+    — 라우트가 META 근거 카드를 안 내보내 '근거 없음' 메시지와 모순되지 않게(단위 46)."""
+
+    async def _fake_search_balanced(query: str, quota=None):
+        return [
+            Chunk(id=1, source_type="판례", content="판례만"),
+            Chunk(id=2, source_type="HUG규정", content="규정만"),
+        ]
+
+    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
+
+    state = {"user_input": "판례만 걸리는 질문"}
+    result = await open_qa.handle_open_qa(state)
+
+    assert result["retrieved_chunks"] == []             # 카드 미노출 조건
+
+
+@pytest.mark.asyncio
 async def test_uses_active_query_over_raw_user_input(monkeypatch):
     """확인게이트 대기 중 스택된 active_query를 raw user_input보다 우선해 검색한다."""
     seen = {}

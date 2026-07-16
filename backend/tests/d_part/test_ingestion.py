@@ -24,7 +24,37 @@ async def test_row_counts(ingested):
     assert counts["법령원문"] == 932  # 시행령 3종(38) + 민사절차 3법(39) 포함
     assert counts.get("HUG사례집", 0) + counts.get("HUG규정", 0) == 176
     assert counts["정부자료"] == 21  # 깡통전세 유형/예방 8 + 실태조사 섹션 13 (작업단위 37)
-    assert counts["생활법령"] == 20  # easylaw 전세사기 피해자 지원 20페이지 (작업단위 40)
+    assert counts["생활법령"] == 52  # 전세사기 지원 20p(40) + 주택임대차 booklet 31p→분할 후 32행(작업단위 50)
+
+
+@pytest.mark.asyncio
+async def test_hug_regulation_gets_topic_tags(ingested):
+    """작업단위 48: HUG규정도 enrich 대상이라 키워드 매칭 청크는 topic_tags가 채워진다.
+    (topic_tags는 ingest 시점 컬럼이라 임베딩 NULL 상태의 conftest에서도 검증 가능)"""
+    with get_engine().connect() as conn:
+        n = conn.execute(text(
+            "SELECT count(*) FROM d_part_embeddings "
+            "WHERE source_type = 'HUG규정' "
+            "AND topic_tags IS NOT NULL AND array_length(topic_tags, 1) > 0"
+        )).scalar()
+    assert n > 0
+
+
+@pytest.mark.asyncio
+async def test_easylaw_has_item_type_metadata(ingested):
+    """작업단위 50: easylaw_docs_d가 다중 JSON을 읽고 metadata.항목유형(책자/백문백답)을 부여한다.
+    주택임대차 booklet(csmSeq 629) 추가분이 실제 적재됐는지도 함께 확인."""
+    with get_engine().connect() as conn:
+        booklet = conn.execute(text(
+            "SELECT count(*) FROM d_part_embeddings "
+            "WHERE source_type = '생활법령' AND metadata->>'항목유형' = '책자'"
+        )).scalar()
+        from_629 = conn.execute(text(
+            "SELECT count(*) FROM d_part_embeddings "
+            "WHERE source_type = '생활법령' AND metadata->>'원본' = 'easylaw_629.json'"
+        )).scalar()
+    assert booklet > 0
+    assert from_629 > 0            # 주택임대차 booklet 편입 확인
 
 
 @pytest.mark.asyncio

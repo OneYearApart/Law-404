@@ -47,8 +47,8 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
     async def _unreachable_call_supervisor(user_input: str) -> dict:
         raise AssertionError("진행 중인 흐름이 있을 땐 supervisor가 LLM을 호출하면 안 된다")
 
-    async def _fake_search_by_requirement(slots):
-        return {"statute": [Chunk(id=1, source_type="법령원문", content="제3조")], "case_law": [], "cases": []}
+    async def _fake_search_by_requirement(slots, situation_query=None):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="제3조")], "case_law": [], "cases": [], "guides": []}
 
     async def _fake_generate_response(context: str):
         yield "판단 응답"

@@ -14,11 +14,15 @@ def _make_chunk(source_type: str, content: str) -> Chunk:
 
 @pytest.mark.asyncio
 async def test_assembles_response_when_judgment_just_computed(monkeypatch):
-    async def _fake_search_by_requirement(slots):
+    seen = {}
+
+    async def _fake_search_by_requirement(slots, situation_query=None):
+        seen["situation_query"] = situation_query
         return {
             "statute": [_make_chunk("법령원문", "제3조 요건")],
             "case_law": [_make_chunk("판례", "판례 내용")],
             "cases": [],
+            "guides": [_make_chunk("생활법령", "상황적용 안내")],   # 작업단위 51 상황적용 grounding
         }
 
     async def _fake_generate_response(context: str):
@@ -40,6 +44,7 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
         "victim_judgment": VictimJudgment.HIGH,
         "needs_response_assembly": True,
         "final_answer": None,
+        "user_input": "임차권등기명령은 어떻게 신청하나요",
     }
 
     result = await response_assembly.assemble_response(state)
@@ -50,7 +55,10 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
     # final_answer는 일부러 None으로 남겨둠 — 전체 텍스트 조립은 스트림을 소비하는
     # 호출부(routes/d_part.py) 책임 (ainvoke() 반환값은 사후 state 변경을 못 봄)
     assert result["final_answer"] is None
-    assert len(result["retrieved_chunks"]) == 2
+    # 상황적용 grounding(생활법령)이 retrieved_chunks에 합쳐짐 → 근거 카드(46)에도 노출
+    assert len(result["retrieved_chunks"]) == 3
+    assert any(c.source_type == "생활법령" for c in result["retrieved_chunks"])
+    assert seen["situation_query"] == "임차권등기명령은 어떻게 신청하나요"   # 사용자 발화 전달
 
 
 @pytest.mark.asyncio
@@ -82,9 +90,9 @@ async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
     응답을 재생성하던 비용/지연 버그의 회귀 테스트."""
     calls = {"retrieve": 0, "generate": 0}
 
-    async def _counting_search_by_requirement(slots):
+    async def _counting_search_by_requirement(slots, situation_query=None):
         calls["retrieve"] += 1
-        return {"statute": [], "case_law": [], "cases": []}
+        return {"statute": [], "case_law": [], "cases": [], "guides": []}
 
     async def _counting_generate_response(context: str):
         calls["generate"] += 1

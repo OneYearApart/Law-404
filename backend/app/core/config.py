@@ -38,6 +38,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @property
+    def openai_api_key(self) -> str:
+        """소문자 별칭. 필드가 OPENAI_API_KEY로 리네임(feature/#28)되며 깨진 소문자 참조
+        (rag/embeddings/base.py, llm/d_part.py)를 복구한다 — 대/소문자 참조가 공존한다."""
+        return self.OPENAI_API_KEY
+
 settings = Settings()
 
 

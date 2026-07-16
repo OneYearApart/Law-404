@@ -98,3 +98,52 @@ async def test_clean_response_logs_no_warning(caplog):
         await _collect(result)
 
     assert not [rec for rec in caplog.records if "금칙어" in rec.message]
+
+
+# --- 단위 44: 지원절차 액션플랜 첨부(스트림 경로) -----------------------------------
+
+@pytest.mark.asyncio
+async def test_action_plan_appended_before_disclaimer_on_stream_path():
+    """판정 확정 턴: 본문 → 액션플랜 → 면책 순으로 붙는다."""
+    async def _body():
+        yield "원문 해설 상황적용"
+
+    state = {
+        "response_stream": _body(),
+        "appendix_text": "■ 지금 확인·실행하실 점\n- ...",
+    }
+
+    out = await _collect(await finalize_response(state))
+
+    assert out.index("상황적용") < out.index("■ 지금 확인") < out.index(DISCLAIMER)
+
+
+@pytest.mark.asyncio
+async def test_no_appendix_text_yields_body_then_disclaimer_only():
+    """appendix_text가 없으면 기존과 동일하게 본문 → 면책만(회귀 없음)."""
+    async def _body():
+        yield "본문"
+
+    state = {"response_stream": _body()}          # appendix_text 없음
+
+    out = await _collect(await finalize_response(state))
+
+    assert out.startswith("본문")
+    assert DISCLAIMER in out
+    assert "■" not in out                          # 액션플랜 블록 없음
+
+
+@pytest.mark.asyncio
+async def test_fixed_text_path_unaffected_by_action_plan():
+    """고정 텍스트 경로(special_cases 등)는 appendix_text가 실수로 있어도 붙이지 않는다."""
+    state = {
+        "final_answer": "특수상황 안내문",
+        "disclaimer_required": True,
+        "appendix_text": "붙으면 안 되는 텍스트",
+    }
+
+    out = await _collect(await finalize_response(state))
+
+    assert "특수상황 안내문" in out
+    assert "붙으면 안 되는 텍스트" not in out       # 스트림 경로에서만 첨부
+    assert DISCLAIMER in out
