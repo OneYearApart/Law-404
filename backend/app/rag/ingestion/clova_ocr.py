@@ -1,5 +1,3 @@
-
-
 import base64
 import json
 import logging
@@ -92,11 +90,11 @@ class ClovaOCR:
             raise RuntimeError("OCR 처리 시간이 초과되었습니다. 다시 시도해 주세요.")
 
         except requests.exceptions.RequestException as e:
-            # 【디버깅】응답 본문을 출력 (원인 파악용)
+            # ⚠️ 에러 응답 본문에 이미지/개인정보가 포함될 수 있으므로
+            #    status code만 로깅합니다.
             status = getattr(e.response, 'status_code', '?')
-            body = getattr(e.response, 'text', '')
-            logger.error(f"[ClovaOCR] API 오류 {status}: {body}")
-            raise RuntimeError(f"OCR 오류 {status}: {body}")
+            logger.error(f"[ClovaOCR] API 오류: {status}")
+            raise RuntimeError("OCR 처리 중 오류가 발생했습니다. 다시 시도해 주세요.")
 
         # 【응답 파싱】
         result = response.json()
