@@ -10,7 +10,7 @@ from typing import Protocol
 
 from PIL import Image, ImageOps
 
-from backend.app.documents.extraction_models import TesseractEnvironment
+from app.documents.extraction_models import TesseractEnvironment
 
 
 class OCRError(RuntimeError):

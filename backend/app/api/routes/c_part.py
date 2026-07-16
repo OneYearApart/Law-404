@@ -16,7 +16,7 @@ from app.rag.ingestion.clova_ocr import ClovaOCR
 
 import json
 from fastapi import UploadFile, File, Form
-from app.graph.parts.c_part.agents.ocr import ContractOCR
+#from app.graph.parts.c_part.agents.ocr import ContractOCR
 
 from app.graph.parts.c_part.agents.document_agent import (
     DocumentAgent,

@@ -17,18 +17,18 @@ from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT / "backend" / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
 
-from backend.app.consultation.a_part.chatbot_service import (
+from app.consultation.a_part.chatbot_service import (
     APartChatbotService,
     ChatbotProcessingStatus,
     ChatbotTurnRequest,
 )
-from backend.app.consultation.a_part.document_service import APartDocumentUploadService
-from backend.app.consultation.a_part.models import SlotStatus, create_conversation_state
-from backend.app.consultation.a_part.question_builder import FollowUpQuestion
-from backend.app.consultation.a_part.router import route_issues
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.state_updater import SlotExtractionResult
-from backend.app.consultation.a_part.store import MemoryConversationStore
+from app.consultation.a_part.document_service import APartDocumentUploadService
+from app.consultation.a_part.models import SlotStatus, create_conversation_state
+from app.consultation.a_part.question_builder import FollowUpQuestion
+from app.consultation.a_part.router import route_issues
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.state_updater import SlotExtractionResult
+from app.consultation.a_part.store import MemoryConversationStore
 from backend.tests.a_part.run_search_answer20 import EVAL_CASES
 from backend.tests.a_part.run_pdf_documents import (
     build_cases as build_pdf_cases,

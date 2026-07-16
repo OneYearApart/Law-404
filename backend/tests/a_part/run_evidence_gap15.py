@@ -15,8 +15,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import psycopg2
 
-import backend.app.rag.retrievers.a_part as retriever_module
-from backend.app.rag.retrievers.a_part import search_documents
+import app.rag.retrievers.a_part as retriever_module
+from app.rag.retrievers.a_part import search_documents
 
 
 

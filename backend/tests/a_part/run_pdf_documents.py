@@ -29,20 +29,20 @@ except ImportError as exc:
 load_dotenv(ROOT / "backend" / ".env")
 load_dotenv(ROOT / ".env")
 
-from backend.app.consultation.a_part.chatbot_service import (
+from app.consultation.a_part.chatbot_service import (
     APartChatbotService,
     ChatbotProcessingStatus,
     ChatbotTurnRequest,
 )
-from backend.app.consultation.a_part.document_service import APartDocumentUploadService
-from backend.app.consultation.a_part.models import create_conversation_state
-from backend.app.consultation.a_part.router import route_issues
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.state_updater import SlotExtractionResult
-from backend.app.consultation.a_part.store import MemoryConversationStore
-from backend.app.documents.analysis.models import AnalysisValueStatus, ComparisonStatus
-from backend.app.documents.models import DocumentProcessingStatus, DocumentType
-from backend.app.llm.a_part import (
+from app.consultation.a_part.document_service import APartDocumentUploadService
+from app.consultation.a_part.models import create_conversation_state
+from app.consultation.a_part.router import route_issues
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.state_updater import SlotExtractionResult
+from app.consultation.a_part.store import MemoryConversationStore
+from app.documents.analysis.models import AnalysisValueStatus, ComparisonStatus
+from app.documents.models import DocumentProcessingStatus, DocumentType
+from app.llm.a_part import (
     EvidenceStatus,
     RAGGenerationStatus,
     format_answer_for_console,

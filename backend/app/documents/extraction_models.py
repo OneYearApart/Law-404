@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.app.documents.models import (
+from app.documents.models import (
     DocumentProcessingStatus,
     UploadedDocument,
     utc_now,

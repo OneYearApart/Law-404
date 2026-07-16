@@ -8,25 +8,25 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from backend.app.consultation.a_part.document_service import (
+from app.consultation.a_part.document_service import (
     APartDocumentUploadService,
 )
-from backend.app.consultation.a_part.models import (
+from app.consultation.a_part.models import (
     MessageRole,
     add_issue_to_state,
     create_conversation_state,
 )
-from backend.app.consultation.a_part.router import route_issues
-from backend.app.consultation.a_part.service import (
+from app.consultation.a_part.router import route_issues
+from app.consultation.a_part.service import (
     APartConversationService,
     ConsultationTurnResponse,
 )
-from backend.app.consultation.a_part.state_updater import ExtractedSlotUpdate
-from backend.app.documents.analysis.models import (
+from app.consultation.a_part.state_updater import ExtractedSlotUpdate
+from app.documents.analysis.models import (
     ComparisonStatus,
     ConversationDocumentAnalysisResponse,
 )
-from backend.app.documents.analysis.normalization import repair_address_ocr
+from app.documents.analysis.normalization import repair_address_ocr
 
 
 

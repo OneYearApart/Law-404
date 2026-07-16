@@ -9,8 +9,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-from backend.app.consultation.a_part.issues import get_issue_definition
-from backend.app.documents.models import UploadedDocument
+from app.consultation.a_part.issues import get_issue_definition
+from app.documents.models import UploadedDocument
 
 
 def utc_now() -> datetime:
