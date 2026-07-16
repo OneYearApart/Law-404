@@ -54,47 +54,47 @@ class ConversationAccessDeniedError(PermissionError):
 def translate_a_part_exception(error: Exception) -> APartAPIError:
     """내부 예외를 프론트엔드가 처리할 수 있는 안정적인 오류로 바꾼다."""
 
-    from backend.app.consultation.a_part.input_validation import (
+    from app.consultation.a_part.input_validation import (
         ChatInputValidationError,
     )
-    from backend.app.consultation.a_part.router import (
+    from app.consultation.a_part.router import (
         UnsupportedConsultationIssueError,
     )
-    from backend.app.consultation.a_part.store import (
+    from app.consultation.a_part.store import (
         ConversationAlreadyExistsError,
         ConversationNotFoundError,
         ConversationStoreError,
     )
-    from backend.app.documents.analysis.service import (
+    from app.documents.analysis.service import (
         ExtractionRequiredError,
         UnsupportedAnalysisDocumentTypeError,
     )
-    from backend.app.documents.ocr import (
+    from app.documents.ocr import (
         OCRError,
         OCRLanguageMissingError,
         OCRTimeoutError,
         OCRUnavailableError,
     )
-    from backend.app.documents.pdf_extractor import (
+    from app.documents.pdf_extractor import (
         CorruptedPDFError,
         EncryptedPDFError,
         PDFExtractionError,
         RenderedPageTooLargeError,
         TooManyPagesError,
     )
-    from backend.app.documents.storage import (
+    from app.documents.storage import (
         DocumentNotFoundError,
         DocumentStorageError,
         DuplicateDocumentTypeConflictError,
     )
-    from backend.app.documents.validation import (
+    from app.documents.validation import (
         DocumentTooLargeError,
         DocumentTypeMismatchError,
         DocumentValidationError,
         EmptyDocumentError,
         UnsupportedDocumentFormatError,
     )
-    from backend.app.llm.a_part import (
+    from app.llm.a_part import (
         RAGAnswerGenerationError,
         RAGAnswerValidationError,
         RAGEvidenceInsufficientError,

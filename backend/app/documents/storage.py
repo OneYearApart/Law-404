@@ -10,8 +10,8 @@ from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
-from backend.app.documents.models import DocumentType, UploadedDocument
-from backend.app.documents.validation import ValidatedUpload
+from app.documents.models import DocumentType, UploadedDocument
+from app.documents.validation import ValidatedUpload
 
 
 SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")

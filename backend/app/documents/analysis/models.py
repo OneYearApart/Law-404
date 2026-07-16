@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.app.documents.models import utc_now
+from app.documents.models import utc_now
 
 
 ANALYSIS_VERSION = "document-analysis-v11-generic-document-summary"

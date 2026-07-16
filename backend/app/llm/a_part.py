@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 def search_documents(**kwargs: Any):
     """RAG 의존성을 실제 검색 시점까지 지연 로드한다."""
-    from backend.app.rag.retrievers.a_part import search_documents as _search
+    from app.rag.retrievers.a_part import search_documents as _search
     return _search(**kwargs)
 
 

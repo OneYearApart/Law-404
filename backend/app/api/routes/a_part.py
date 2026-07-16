@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import (
@@ -19,35 +20,42 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from app.auth.dependencies import get_current_user
-from backend.app.api.a_part_errors import (
+from app.api.a_part_errors import (
     APartAPIError,
     ConversationAccessDeniedError,
     translate_a_part_exception,
 )
-from backend.app.consultation.a_part.chatbot_service import (
+from app.consultation.a_part.chatbot_service import (
     APartChatbotService,
     ChatbotTurnRequest,
     ChatbotTurnResult,
 )
-from backend.app.consultation.a_part.input_validation import (
+from app.consultation.a_part.input_validation import (
     normalize_chat_input,
     requests_document_review,
 )
-from backend.app.consultation.a_part.models import (
+from app.consultation.a_part.models import (
     ConversationState,
     create_conversation_state,
 )
-from backend.app.consultation.a_part.service import APartConversationService
-from backend.app.consultation.a_part.store import PostgresConversationStore
-from backend.app.consultation.a_part.document_service import APartDocumentUploadService
-from backend.app.core.config import settings
-from backend.app.consultation.a_part.state_updater import ExtractedSlotUpdate
-from backend.app.documents.models import DocumentType
-from backend.app.documents.db_storage import DocumentDatabaseRepository
+from app.consultation.a_part.service import APartConversationService
+from app.consultation.a_part.store import PostgresConversationStore
+from app.consultation.a_part.document_service import APartDocumentUploadService
+from app.core.config import settings
+from app.consultation.a_part.state_updater import ExtractedSlotUpdate
+from app.documents.models import DocumentType
+from app.documents.db_storage import DocumentDatabaseRepository
 
 
 router = APIRouter(prefix="/chat/a", tags=["a_part"])
+
+# A파트 단독 시나리오 검증용 임시 사용자다.
+# 팀 인증 API가 연결되면 각 라우트의 의존성을 get_current_user로 되돌린다.
+_A_PART_GUEST_USER_ID = 0
+
+
+def get_a_part_guest_user() -> SimpleNamespace:
+    return SimpleNamespace(id=_A_PART_GUEST_USER_ID)
 
 _SUPPORTED_DOCUMENT_TYPES = {
     DocumentType.LEASE_CONTRACT,
@@ -165,7 +173,7 @@ async def _call(function, /, *args, **kwargs):
 @router.post("/conversations", response_model=SuccessEnvelope, status_code=201)
 async def create_a_part_conversation(
     request: ConversationCreateRequest,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     """파일 업로드 전에 사용할 빈 A파트 상담 상태를 만든다."""
@@ -185,7 +193,7 @@ async def create_a_part_conversation(
 @router.post("/turn", response_model=SuccessEnvelope)
 async def handle_a_part_turn(
     request: ChatTurnAPIRequest,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     """자연어 질문과 기존 문서·상담 상태를 결합해 한 턴을 처리한다."""
@@ -243,7 +251,7 @@ async def handle_a_part_turn(
 )
 async def get_a_part_conversation(
     conversation_id: str,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     try:
@@ -263,7 +271,7 @@ async def get_a_part_conversation(
 )
 async def delete_a_part_conversation(
     conversation_id: str,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     """상담 상태와 연결된 파일·문서 처리 DB 결과를 함께 삭제한다."""
@@ -304,7 +312,7 @@ async def upload_a_part_document(
     file: UploadFile = File(...),
     extract_text: bool = Query(default=True),
     force_extraction: bool = Query(default=False),
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     """계약서 또는 등기부등본 PDF를 저장하고 기본적으로 텍스트까지 추출한다."""
@@ -375,7 +383,7 @@ async def upload_a_part_document(
 )
 async def list_a_part_documents(
     conversation_id: str,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     try:
@@ -397,7 +405,7 @@ async def list_a_part_documents(
 async def delete_a_part_document(
     conversation_id: str,
     document_id: str,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     try:
@@ -426,7 +434,7 @@ async def extract_a_part_document(
     conversation_id: str,
     document_id: str,
     force: bool = Query(default=False),
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     try:
@@ -455,7 +463,7 @@ async def extract_a_part_document(
 async def analyze_a_part_documents(
     conversation_id: str,
     request: AnalyzeDocumentsRequest,
-    user=Depends(get_current_user),
+    user=Depends(get_a_part_guest_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
     try:
