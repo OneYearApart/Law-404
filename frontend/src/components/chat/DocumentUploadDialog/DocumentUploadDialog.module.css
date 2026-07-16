@@ -1,0 +1,198 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 2.4rem;
+  background: rgb(15 23 42 / 48%);
+  backdrop-filter: blur(0.2rem);
+}
+
+.dialog {
+  width: min(68rem, 100%);
+  max-height: min(76rem, calc(100dvh - 4.8rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-white);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-large);
+  box-shadow: 0 2.4rem 7rem rgb(2 43 165 / 20%);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.header h2 {
+  color: var(--color-text-primary);
+  font-size: 2rem;
+  font-weight: var(--font-weight-bold);
+}
+
+.header p {
+  margin-top: var(--space-6);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-small);
+}
+
+.closeButton,
+.removeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+}
+
+.closeButton {
+  width: 3.6rem;
+  height: 3.6rem;
+  font-size: 2.1rem;
+  border-radius: 50%;
+}
+
+.fileList {
+  min-height: 0;
+  display: grid;
+  gap: var(--space-12);
+  overflow-y: auto;
+  padding: var(--space-20) var(--space-24);
+}
+
+.fileRow {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) minmax(18rem, 24rem) 3.6rem;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-14);
+  background: var(--color-surface-subtle);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-medium);
+}
+
+.fileIcon {
+  width: 4rem;
+  height: 4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  font-size: 2rem;
+  background: var(--color-white);
+  border-radius: var(--radius-medium);
+}
+
+.fileInfo {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.fileInfo strong {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileInfo span,
+.typeField > span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+}
+
+.typeField {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.typeField select {
+  width: 100%;
+  height: 3.8rem;
+  padding: 0 var(--space-10);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-small);
+  background: var(--color-white);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.removeButton {
+  width: 3.6rem;
+  height: 3.6rem;
+  color: #b42318;
+  font-size: 1.8rem;
+  border-radius: 50%;
+}
+
+.guide {
+  margin: 0 var(--space-24);
+  padding: var(--space-12) var(--space-14);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+  background: var(--color-light-blue);
+  border-radius: var(--radius-medium);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-10);
+  padding: var(--space-20) var(--space-24) var(--space-24);
+}
+
+.cancelButton,
+.uploadButton {
+  min-width: 10rem;
+  height: 4.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  padding: 0 var(--space-18);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-medium);
+}
+
+.cancelButton {
+  color: var(--color-text-primary);
+  background: var(--color-white);
+  border: var(--border-width) solid var(--color-border);
+}
+
+.uploadButton {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.uploadButton:disabled,
+.cancelButton:disabled,
+.closeButton:disabled,
+.removeButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (max-width: 720px) {
+  .backdrop {
+    padding: var(--space-12);
+  }
+
+  .fileRow {
+    grid-template-columns: 4rem minmax(0, 1fr) 3.6rem;
+  }
+
+  .typeField {
+    grid-column: 1 / -1;
+  }
+}

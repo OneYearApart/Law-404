@@ -1,0 +1,107 @@
+:root {
+  /* Brand Colors */
+  --color-primary-blue: #0140bf;
+  --color-secondary-blue: #1b6bef;
+  --color-deep-blue: #022ba5;
+  --color-light-blue: #eaf2ff;
+  --color-sky-blue: #d7e8ff;
+  --color-border-blue: #dce5f3;
+  --color-white: #ffffff;
+  --color-text: #171b26;
+  --color-sub-text: #667085;
+
+  /* Semantic Colors */
+  --color-primary: var(--color-primary-blue);
+  --color-primary-hover: var(--color-deep-blue);
+  --color-secondary: var(--color-secondary-blue);
+  --color-background: var(--color-white);
+  --color-surface: var(--color-white);
+  --color-surface-subtle: var(--color-light-blue);
+  --color-surface-highlight: var(--color-sky-blue);
+  --color-text-primary: var(--color-text);
+  --color-text-secondary: var(--color-sub-text);
+  --color-border: var(--color-border-blue);
+  --color-border-strong: #b8c9e5;
+  --color-placeholder: #98a2b3;
+  --color-input-background: #f8faff;
+  --color-chat-background: #f5f8fd;
+  --color-chat-message-background: #fbfcff;
+  --color-assistant-bubble: #f1f5fb;
+  --color-footer-text: #c7d0e0;
+  --color-hero-background: #f8faff;
+  --color-auth-badge-border: rgb(215 232 255 / 45%);
+  --color-auth-chip: rgb(255 255 255 / 12%);
+
+  /* Font Family */
+  --font-family-base:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Font Weight */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Font Size: 10px = 1rem */
+  --font-size-caption: 1.2rem;
+  --font-size-body-small: 1.4rem;
+  --font-size-body: 1.6rem;
+  --font-size-body-large: 1.8rem;
+  --font-size-subtitle: 2rem;
+  --font-size-title: 2.4rem;
+  --font-size-heading-2: 2.8rem;
+  --font-size-heading-1: 3.2rem;
+  --font-size-display: 4.8rem;
+  --font-size-display-large: 5.6rem;
+
+  /* Line Height */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.7;
+
+  /* Letter Spacing */
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.02em;
+
+  /* Spacing */
+  --space-2: 0.2rem;
+  --space-4: 0.4rem;
+  --space-6: 0.6rem;
+  --space-8: 0.8rem;
+  --space-10: 1rem;
+  --space-12: 1.2rem;
+  --space-14: 1.4rem;
+  --space-16: 1.6rem;
+  --space-20: 2rem;
+  --space-24: 2.4rem;
+  --space-32: 3.2rem;
+  --space-40: 4rem;
+  --space-48: 4.8rem;
+  --space-64: 6.4rem;
+  --space-80: 8rem;
+  --space-96: 9.6rem;
+
+  /* Border */
+  --border-width: 0.1rem;
+  --radius-small: 0.8rem;
+  --radius-medium: 1.2rem;
+  --radius-large: 1.6rem;
+  --radius-xlarge: 2.4rem;
+  --radius-round: 999rem;
+
+  /* Layout */
+  --layout-max-width: 120rem;
+  --layout-wide-width: 144rem;
+  --auth-card-width: 44rem;
+  --sidebar-width: 25.6rem;
+
+  /* Shadow */
+  --shadow-card: 0 1.2rem 3.2rem rgb(23 27 38 / 8%);
+  --shadow-composer: 0 0.8rem 2.4rem rgb(23 27 38 / 8%);
+  --focus-ring: 0 0 0 0.3rem rgb(27 107 239 / 14%);
+
+  /* Transition */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+}
