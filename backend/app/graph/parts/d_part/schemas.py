@@ -95,6 +95,8 @@ class DPartGraphState(TypedDict, total=False):
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     needs_response_assembly: bool                                     # victim_check가 이번 턴에 판단을 새로 확정했는지 —
                                                                         # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
+    action_plan_text: Optional[str]                                   # 판정 확정 턴에 조립된 지원절차 액션플랜.
+                                                                        # finalize가 스트림 말미(면책 앞)에 첨부. 이번 턴 전용(carryover 아님)
     special_case_matched: Optional[str]                          # 매칭된 특수상황
     general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(13개 항목 키) — 매 턴 재분류, carryover 아님
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
