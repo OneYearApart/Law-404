@@ -77,6 +77,23 @@ async def node_topic_classifier(
         # 【2】카테고리3 범위인지 판단
         result = await agent.classify_topic(question=state["question"])
 
+        intent = result.get("intent", "consultation")
+
+        # 【DEFINITION】용어 정의 → 상담 그래프 안 거치고 여기서 끝
+        if intent == "definition":
+            logger.info("[Classifier] 용어 정의 질문 → 간단 답변")
+            definition = await agent.answer_definition(state["question"])
+            return {
+                "classifier_result": result,
+                "deposit_amount": deposit,
+                "answer": {
+                    "is_definition": True,
+                    "message": definition["content"],
+                    "confidence_score": 0.9,
+                    "generated_at": datetime.now().isoformat(),
+                },
+            }
+
         # 【Off-topic】7단계를 건너뛰고 즉시 종료
         # → GPT 호출 8회 → 1회. 비용 8배 절감.
         if not result["is_relevant"]:
