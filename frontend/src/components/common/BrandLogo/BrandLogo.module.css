@@ -1,0 +1,19 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.image {
+  width: 12rem;
+  height: 4.2rem;
+  object-fit: contain;
+  object-position: left center;
+}
+
+@media (max-width: 520px) {
+  .image {
+    width: 10.4rem;
+    height: 3.8rem;
+  }
+}
