@@ -255,8 +255,11 @@ class AnswerGeneratorAgent:
         response = await self.llm.ainvoke(prompt)
         content = response.content.strip().upper()
 
-        # 【의도 파싱】
-        if "DOCUMENT" in content:
+        # 【의도 파싱】4분류
+        if "DEFINITION" in content:
+            intent = "definition"
+            is_relevant = True
+        elif "DOCUMENT" in content:
             intent = "document"
             is_relevant = True
         elif "CONSULTATION" in content:
@@ -266,19 +269,17 @@ class AnswerGeneratorAgent:
             intent = "irrelevant"
             is_relevant = False
         else:
-            intent = "consultation"
+            intent = "consultation"   # 폴백: 애매하면 상담
             is_relevant = True
 
-        # 【신뢰도
-        matched = any(
-            kw in content
-            for kw in ["DOCUMENT", "CONSULTATION", "IRRELEVANT"]
-        )
+        matched = any(kw in content for kw in
+                      ["DEFINITION", "DOCUMENT", "CONSULTATION", "IRRELEVANT"])
 
         reason_map = {
-            "consultation": "카테고리3 상담 (보증금·경매·배당)",
-            "document": "문서 작성 요청 (내용증명 등)",
-            "irrelevant": "카테고리3 범위 외 질문",
+            "definition": "용어 정의 질문",
+            "consultation": "카테고리3 상담",
+            "document": "문서 작성 요청",
+            "irrelevant": "카테고리3 범위 외",
         }
 
         return {
@@ -286,6 +287,23 @@ class AnswerGeneratorAgent:
             "intent": intent,
             "confidence": 0.95 if matched else 0.6,
             "reason": reason_map[intent],
+        }
+    
+    async def answer_definition(self, question: str) -> dict:
+        """
+        【정의 답변】용어 설명만. LLM 1회.
+
+        """
+        from app.llm.c_part.prompts import format_definition_prompt
+
+        logger.info("[Definition] 용어 정의 생성")
+
+        prompt = format_definition_prompt(question)
+        response = await self.llm.ainvoke(prompt)
+
+        return {
+            "content": response.content,
+            "type": "definition",
         }
     # ────────────────────────────────────────────────────────────────────────
     # 【Node 1】상황 진단
