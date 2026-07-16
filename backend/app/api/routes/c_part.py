@@ -11,17 +11,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from app.graph.parts.c_part.builder import get_c_part_graph
-<<<<<<< HEAD
-=======
-from app.rag.retrievers.c_part import CPartRetriever
-from app.rag.repositories.cost_repository import CostRepository
-from app.rag.ingestion.clova_ocr import ClovaOCR
-
-import json
-from fastapi import UploadFile, File, Form
-#from app.graph.parts.c_part.agents.ocr import ContractOCR
-
->>>>>>> develop
 from app.graph.parts.c_part.agents.document_agent import (
     DocumentAgent,
     REQUIRED_FIELDS,
@@ -29,6 +18,7 @@ from app.graph.parts.c_part.agents.document_agent import (
 )
 from app.rag.retrievers.c_part import CPartRetriever
 from app.rag.repositories.cost_repository import CostRepository
+
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
 
