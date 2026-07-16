@@ -28,7 +28,6 @@ from app.graph.parts.b_part.calendar_events import (
     build_calendar_pending_action,
     build_calendar_registration_ready_action,
     format_calendar_events_for_answer,
-    is_calendar_registration_approved,
 )
 from app.graph.parts.b_part.calendar_tool import run_calendar_registration
 from app.graph.parts.b_part.memory import (
@@ -161,6 +160,28 @@ def has_schedule_signal(question: str) -> bool:
 
 def detect_out_of_scope_reason(question: str) -> dict[str, Any] | None:
     """B파트 담당 범위를 벗어난 질문인지 먼저 확인합니다."""
+    normalized_question = question.replace(" ", "")
+
+    has_deposit_return_signal = "보증금" in question and any(
+        keyword in normalized_question
+        for keyword in [
+            "안줘",
+            "안주",
+            "안돌려",
+            "못받",
+            "돌려주지",
+            "반환",
+            "돈안",
+            "돈을안",
+            "돈주지",
+        ]
+    )
+    if has_deposit_return_signal:
+        return {
+            "is_out_of_scope": True,
+            "reason": "계약 종료 후/보증금 반환",
+        }
+
     out_of_scope_keywords = {
         "계약 전/전세사기 위험 분석": [
             "전세사기",
@@ -177,6 +198,13 @@ def detect_out_of_scope_reason(question: str) -> dict[str, Any] | None:
             "보증금을 안 돌려",
             "보증금 안 돌려",
             "보증금을 못 받",
+            "보증금 못 받",
+            "보증금 안 줘",
+            "보증금을 안 줘",
+            "보증금 안 주",
+            "보증금을 안 주",
+            "보증금 돌려주지",
+            "보증금을 돌려주지",
             "임차권등기명령",
             "임차권 등기",
         ],
@@ -643,7 +671,10 @@ class BPartMVPGraph:
         context_result = state["context_result"]
         memory_meta = state["memory_meta"]
 
-        out_of_scope = detect_out_of_scope_reason(original_question)
+        out_of_scope = (
+            detect_out_of_scope_reason(original_question)
+            or detect_out_of_scope_reason(question)
+        )
         if not out_of_scope:
             return state
 
@@ -704,10 +735,7 @@ class BPartMVPGraph:
         memory_meta = state["memory_meta"]
 
         pending_action = request.get("pending_action")
-        if not (
-            isinstance(pending_action, dict)
-            and is_calendar_registration_approved(original_question)
-        ):
+        if not isinstance(pending_action, dict):
             return state
 
         calendar_registration = build_calendar_registration_ready_action(pending_action)

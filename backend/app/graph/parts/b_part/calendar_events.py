@@ -99,46 +99,6 @@ def build_calendar_pending_action(calendar_events: list[dict[str, Any]]) -> dict
     }
 
 
-def is_calendar_registration_approved(message: str) -> bool:
-    """
-    사용자의 답변이 캘린더 등록 승인 의사인지 간단한 키워드로 판단합니다.
-
-    현재 단계에서는 MVP용 규칙 기반 판단입니다.
-    이후에는 LLM Intent Analyzer나 명시적인 버튼 UI로 교체할 수 있습니다.
-    """
-    normalized_message = message.strip().replace(" ", "")
-
-    if not normalized_message:
-        return False
-
-    approval_keywords = [
-        "응",
-        "네",
-        "예",
-        "좋아",
-        "그래",
-        "등록",
-        "등록해줘",
-        "추가해줘",
-        "일정추가",
-        "캘린더에등록",
-        "캘린더등록",
-    ]
-    rejection_keywords = [
-        "아니",
-        "아니야",
-        "하지마",
-        "등록하지마",
-        "취소",
-        "괜찮아",
-    ]
-
-    if any(keyword in normalized_message for keyword in rejection_keywords):
-        return False
-
-    return any(keyword in normalized_message for keyword in approval_keywords)
-
-
 def build_calendar_registration_ready_action(
     pending_action: dict[str, Any],
 ) -> dict[str, Any] | None:
