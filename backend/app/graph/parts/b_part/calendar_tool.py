@@ -125,3 +125,101 @@ def dry_run_calendar_registration(
         "event_count": len(converted_events),
         "events": converted_events,
     }
+
+
+def register_google_calendar_events(
+    calendar_registration: dict[str, Any] | None,
+    *,
+    calendar_id: str = "primary",
+) -> dict[str, Any]:
+    """
+    Google Calendar MCP 실제 등록을 위한 Adapter 진입점입니다.
+
+    현재 코드에는 실제 MCP 클라이언트가 주입되어 있지 않으므로,
+    payload 검증과 변환까지만 수행하고 실제 호출 위치를 TODO로 남깁니다.
+
+    필요한 작업:
+    1. Google Calendar MCP 연결 또는 플러그인/서버 설정
+    2. 아래 converted_events를 Google Calendar MCP create event 호출에 전달
+    3. MCP 응답에서 event id/htmlLink 등을 registered_events에 저장
+    4. 일부 실패 시 partial_success 형태로 반환
+    """
+    dry_run_result = dry_run_calendar_registration(calendar_registration)
+    if dry_run_result.get("status") != "dry_run":
+        return {
+            **dry_run_result,
+            "provider": "google_calendar",
+        }
+
+    converted_events = dry_run_result["events"]
+
+    # TODO(Google Calendar MCP):
+    # 여기에 실제 Google Calendar MCP 호출을 연결하세요.
+    #
+    # 예상 호출 흐름 예시:
+    # registered_events = []
+    # for event in converted_events:
+    #     result = google_calendar_mcp.create_event(
+    #         calendar_id=calendar_id,
+    #         summary=event["summary"],
+    #         description=event["description"],
+    #         start=event["start"],
+    #         end=event["end"],
+    #     )
+    #     registered_events.append(
+    #         {
+    #             "summary": event["summary"],
+    #             "date": event["start"]["date"],
+    #             "provider_event_id": result["id"],
+    #             "html_link": result.get("htmlLink"),
+    #         }
+    #     )
+    #
+    # 실제 MCP 연결 전에는 외부 상태 변경을 막기 위해 not_configured를 반환합니다.
+    return {
+        "status": "not_configured",
+        "provider": "google_calendar",
+        "reason": "google_calendar_mcp_not_connected",
+        "calendar_id": calendar_id,
+        "event_count": len(converted_events),
+        "events": converted_events,
+        "registered_event_count": 0,
+        "registered_events": [],
+    }
+
+
+def run_calendar_registration(
+    calendar_registration: dict[str, Any] | None,
+    *,
+    mode: str = "dry_run",
+    provider: str = "google_calendar",
+    calendar_id: str = "primary",
+) -> dict[str, Any]:
+    """
+    calendar_registration을 실행 모드에 맞게 처리합니다.
+
+    mode:
+    - dry_run: 실제 등록 없이 payload 검증과 변환만 수행
+    - live: provider별 실제 등록 함수 호출
+    """
+    normalized_mode = (mode or "dry_run").strip().lower()
+    normalized_provider = (provider or "google_calendar").strip().lower()
+
+    if normalized_mode != "live":
+        return dry_run_calendar_registration(calendar_registration)
+
+    if normalized_provider == "google_calendar":
+        return register_google_calendar_events(
+            calendar_registration,
+            calendar_id=calendar_id or "primary",
+        )
+
+    return {
+        "status": "failed",
+        "provider": normalized_provider,
+        "reason": "unsupported_calendar_provider",
+        "event_count": 0,
+        "events": [],
+        "registered_event_count": 0,
+        "registered_events": [],
+    }

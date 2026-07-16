@@ -30,7 +30,7 @@ from app.graph.parts.b_part.calendar_events import (
     format_calendar_events_for_answer,
     is_calendar_registration_approved,
 )
-from app.graph.parts.b_part.calendar_tool import dry_run_calendar_registration
+from app.graph.parts.b_part.calendar_tool import run_calendar_registration
 from app.graph.parts.b_part.memory import (
     build_contextual_question,
     extract_conversation_id,
@@ -713,13 +713,26 @@ class BPartMVPGraph:
         calendar_registration = build_calendar_registration_ready_action(pending_action)
         if not calendar_registration:
             return state
-        calendar_tool_result = dry_run_calendar_registration(calendar_registration)
-
-        answer = (
-            "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
-            "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
-            "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
+        calendar_tool_result = run_calendar_registration(
+            calendar_registration,
+            mode=str(request.get("calendar_mode", "dry_run")),
+            provider=str(request.get("calendar_provider", "google_calendar")),
+            calendar_id=str(request.get("calendar_id", "primary")),
         )
+
+        if calendar_tool_result.get("status") == "registered":
+            answer = "좋습니다. 아래 일정들을 Google Calendar에 등록했습니다."
+        elif calendar_tool_result.get("status") == "not_configured":
+            answer = (
+                "좋습니다. 아래 일정들은 Google Calendar에 등록할 수 있는 형식으로 검증되었습니다.\n"
+                "다만 현재 Google Calendar MCP 연결 코드가 아직 설정되지 않아 실제 등록은 수행하지 않았습니다."
+            )
+        else:
+            answer = (
+                "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
+                "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
+                "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
+            )
 
         final_state = {
             "question": question,
