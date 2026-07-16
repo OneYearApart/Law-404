@@ -92,6 +92,60 @@ CATEGORY_GROUPS = {
     "묵시적갱신": ["묵시적갱신", "계약갱신", "계약갱신요구권"],
 }
 
+OUT_OF_SCOPE_RULES = [
+    {
+        "reason": "계약 전/전세사기 위험 분석",
+        "patterns": [
+            r"전세\s*사기",
+            r"깡통\s*전세",
+            r"등기부\s*등본",
+            r"신탁",
+            r"선순위",
+            r"근저당",
+            r"전입\s*신고\s*전",
+            r"계약\s*전",
+        ],
+    },
+    {
+        "reason": "계약 종료 후/보증금 반환",
+        "patterns": [
+            r"보증금.*(반환|안\s*줘|안\s*주|안\s*돌려|못\s*받|돌려주지|돈\s*안|돈을\s*안|돈\s*주지)",
+            r"임차권\s*등기\s*명령",
+            r"임차권\s*등기",
+        ],
+    },
+    {
+        "reason": "권리분석/경매·배당",
+        "patterns": [
+            r"대항력",
+            r"우선\s*변제권",
+            r"최우선\s*변제권",
+            r"경매",
+            r"배당",
+            r"확정\s*일자\s*순위",
+        ],
+    },
+    {
+        "reason": "계약 종료 후/명도·원상회복",
+        "patterns": [
+            r"명도",
+            r"원상\s*회복",
+            r"퇴거\s*후",
+            r"이사\s*후",
+        ],
+    },
+    {
+        "reason": "비주택 임대차",
+        "patterns": [
+            r"상가",
+            r"점포",
+            r"사무실",
+            r"공장",
+            r"토지\s*임대차",
+        ],
+    },
+]
+
 
 def extract_user_question(request: dict[str, Any]) -> str:
     """라우터에서 넘어온 여러 형태의 요청에서 사용자 질문을 꺼냅니다."""
@@ -160,82 +214,11 @@ def has_schedule_signal(question: str) -> bool:
 
 def detect_out_of_scope_reason(question: str) -> dict[str, Any] | None:
     """B파트 담당 범위를 벗어난 질문인지 먼저 확인합니다."""
-    normalized_question = question.replace(" ", "")
-
-    has_deposit_return_signal = "보증금" in question and any(
-        keyword in normalized_question
-        for keyword in [
-            "안줘",
-            "안주",
-            "안돌려",
-            "못받",
-            "돌려주지",
-            "반환",
-            "돈안",
-            "돈을안",
-            "돈주지",
-        ]
-    )
-    if has_deposit_return_signal:
-        return {
-            "is_out_of_scope": True,
-            "reason": "계약 종료 후/보증금 반환",
-        }
-
-    out_of_scope_keywords = {
-        "계약 전/전세사기 위험 분석": [
-            "전세사기",
-            "깡통전세",
-            "등기부등본",
-            "신탁",
-            "선순위",
-            "근저당",
-            "전입신고 전",
-            "계약 전",
-        ],
-        "계약 종료 후/보증금 반환": [
-            "보증금 반환",
-            "보증금을 안 돌려",
-            "보증금 안 돌려",
-            "보증금을 못 받",
-            "보증금 못 받",
-            "보증금 안 줘",
-            "보증금을 안 줘",
-            "보증금 안 주",
-            "보증금을 안 주",
-            "보증금 돌려주지",
-            "보증금을 돌려주지",
-            "임차권등기명령",
-            "임차권 등기",
-        ],
-        "권리분석/경매·배당": [
-            "대항력",
-            "우선변제권",
-            "최우선변제권",
-            "경매",
-            "배당",
-            "확정일자 순위",
-        ],
-        "계약 종료 후/명도·원상회복": [
-            "명도",
-            "원상회복",
-            "퇴거 후",
-            "이사 후",
-        ],
-        "비주택 임대차": [
-            "상가",
-            "점포",
-            "사무실",
-            "공장",
-            "토지 임대차",
-        ],
-    }
-
-    for reason, keywords in out_of_scope_keywords.items():
-        if any(keyword in question for keyword in keywords):
+    for rule in OUT_OF_SCOPE_RULES:
+        if any(re.search(pattern, question) for pattern in rule["patterns"]):
             return {
                 "is_out_of_scope": True,
-                "reason": reason,
+                "reason": rule["reason"],
             }
 
     return None
