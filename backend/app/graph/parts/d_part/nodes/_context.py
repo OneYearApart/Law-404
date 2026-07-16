@@ -60,3 +60,23 @@ def format_chunks(chunks: list[Chunk]) -> str:
             header += " (발췌 일부)"
         blocks.append(f"{header}\n{chunk.content}")
     return "\n\n".join(blocks)
+
+
+def build_citation_cards(chunks: list[Chunk]) -> list[dict]:
+    """retrieved_chunks를 META로 내보낼 근거 카드로 결정론적 변환한다(단위 46).
+    content는 DB 원문 그대로(verbatim) — LLM을 거치지 않아 조문번호·사건번호가 틀릴 수 없다(§14-19).
+    노출 순서: 법령원문 → 판례 → 기타(HUG/생활법령/정부자료) — '법령·판례 먼저'를 보장.
+    label은 format_chunks와 동일한 _source_label을 재사용하고, 서브청크는 is_excerpt=True로
+    표기해 프론트가 전문으로 오인하지 않게 한다.
+    """
+    order = {"법령원문": 0, "판례": 1}
+    ordered = sorted(chunks, key=lambda c: order.get(c.source_type, 2))
+    return [
+        {
+            "source_type": c.source_type,
+            "label": _source_label(c),
+            "content": c.content,
+            "is_excerpt": (c.metadata or {}).get("chunk_seq") is not None,
+        }
+        for c in ordered
+    ]
