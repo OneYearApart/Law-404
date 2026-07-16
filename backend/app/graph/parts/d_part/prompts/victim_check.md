@@ -5,7 +5,10 @@
 1. 전입신고 + 확정일자 여부
 2. 보증금 5억 이하 여부 (최대 7억 상향 가능)
 3. 2인 이상 피해(예상) 여부
-4. 반환의도 없음을 의심할 상당한 이유
+4. 반환의도 없음을 의심할 상당한 이유 — 임대인의 기망, 보증금 반환능력이 없는 자에게 소유권 양도,
+   반환능력 없이 다수 주택 취득 같은 **구체적 정황**이 이번 발화에 드러난 경우에만 filled입니다.
+   "보증금을 못 받고 있다", "돌려주지 않는다", "연락이 안 된다" 같은 반환 지연·미반환 사실 자체는
+   피해 결과일 뿐 이 요건의 근거가 아닙니다 — unclear로 두세요.
 
 각 슬롯에 대해 [충족 / 불충족 / 불명확] 중 하나로 판정하고, 근거를 함께 제시하세요.
 아래 "응답 형식"에 정의된 filled/unfilled/unclear 세 값 외에 다른 값(예: 높음/있음/추가확인 같은
@@ -28,7 +31,7 @@
   "moved_in_and_fixed_date": "filled",
   "deposit_under_limit": "unfilled",
   "multiple_victims": "unclear",
-  "no_intent_to_return": "filled",
+  "no_intent_to_return": "unclear",
   "multiple_victims_reason": "근거 텍스트 또는 null",
   "auction_completed": null
 }
