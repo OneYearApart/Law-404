@@ -36,28 +36,29 @@ async def _stream_text(text: str) -> AsyncGenerator[str, None]:
 
 
 async def _with_appendix(
-    stream: AsyncIterator[str], action_plan_text: str | None
+    stream: AsyncIterator[str], appendix_text: str | None
 ) -> AsyncGenerator[str, None]:
-    """LLM 응답 스트림을 그대로 흘려보내고, 말미에 액션플랜(있으면)과 면책 문구를 차례로 붙인다.
+    """LLM 응답 스트림을 그대로 흘려보내고, 말미에 첨부 텍스트(있으면)와 면책 문구를 차례로 붙인다.
+    첨부 텍스트는 미인지형 액션플랜(43~45)/인지형 지원절차 개요(49)가 공유하는 결정론 슬롯이다.
     스트림이라 finalize 시점엔 전체 텍스트를 알 수 없으므로 소진하며 모아 금칙어를 로깅한다.
-    액션플랜 텍스트는 단위 43에서 금칙어가 없도록 큐레이션됐지만, 방어적으로 로깅 대상에 함께 포함한다."""
+    첨부 텍스트는 큐레이션돼 금칙어가 없지만, 방어적으로 로깅 대상에 함께 포함한다."""
     collected = []
     async for token in stream:
         collected.append(token)
         yield token
-    if action_plan_text:
-        collected.append(action_plan_text)
-        yield f"\n\n{action_plan_text}"
+    if appendix_text:
+        collected.append(appendix_text)
+        yield f"\n\n{appendix_text}"
     _log_banned_judgment("".join(collected))
     yield f"\n\n{DISCLAIMER}"
 
 
 async def finalize_response(state: DPartGraphState) -> DPartGraphState:
     # LLM 생성 응답(원문→해설→상황적용) — 항상 법률 정보이므로 면책 첨부.
-    # 판정 확정 턴이면 action_plan_text가 채워져 있어 면책 앞에 함께 붙는다.
+    # 판정 확정 턴이면 appendix_text가 채워져 있어 면책 앞에 함께 붙는다.
     if state.get("response_stream") is not None:
         state["response_stream"] = _with_appendix(
-            state["response_stream"], state.get("action_plan_text")
+            state["response_stream"], state.get("appendix_text")
         )
         return state
 

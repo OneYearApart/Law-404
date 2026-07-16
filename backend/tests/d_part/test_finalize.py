@@ -110,7 +110,7 @@ async def test_action_plan_appended_before_disclaimer_on_stream_path():
 
     state = {
         "response_stream": _body(),
-        "action_plan_text": "■ 지금 확인·실행하실 점\n- ...",
+        "appendix_text": "■ 지금 확인·실행하실 점\n- ...",
     }
 
     out = await _collect(await finalize_response(state))
@@ -119,12 +119,12 @@ async def test_action_plan_appended_before_disclaimer_on_stream_path():
 
 
 @pytest.mark.asyncio
-async def test_no_action_plan_text_yields_body_then_disclaimer_only():
-    """action_plan_text가 없으면 기존과 동일하게 본문 → 면책만(회귀 없음)."""
+async def test_no_appendix_text_yields_body_then_disclaimer_only():
+    """appendix_text가 없으면 기존과 동일하게 본문 → 면책만(회귀 없음)."""
     async def _body():
         yield "본문"
 
-    state = {"response_stream": _body()}          # action_plan_text 없음
+    state = {"response_stream": _body()}          # appendix_text 없음
 
     out = await _collect(await finalize_response(state))
 
@@ -135,11 +135,11 @@ async def test_no_action_plan_text_yields_body_then_disclaimer_only():
 
 @pytest.mark.asyncio
 async def test_fixed_text_path_unaffected_by_action_plan():
-    """고정 텍스트 경로(special_cases 등)는 action_plan_text가 실수로 있어도 붙이지 않는다."""
+    """고정 텍스트 경로(special_cases 등)는 appendix_text가 실수로 있어도 붙이지 않는다."""
     state = {
         "final_answer": "특수상황 안내문",
         "disclaimer_required": True,
-        "action_plan_text": "붙으면 안 되는 텍스트",
+        "appendix_text": "붙으면 안 되는 텍스트",
     }
 
     out = await _collect(await finalize_response(state))
