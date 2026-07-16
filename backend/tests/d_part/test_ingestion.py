@@ -6,6 +6,8 @@ embed_enabled=False로 실행되므로 embedding 컬럼은 전부 NULL이다 —
 스키마/파싱/링크 단계(row count)와, 임베딩 없이도 동작하는 조회 경로
 (search_by_requirement의 직접 조문 매칭 + 링크 조인)만 검증한다.
 """
+from collections import Counter
+
 import pytest
 from sqlalchemy import text
 
@@ -101,7 +103,7 @@ async def test_civil_procedure_statutes_loaded(ingested):
 
 @pytest.mark.asyncio
 async def test_easylaw_docs_loaded(ingested):
-    """상황적용 층 — easylaw 전세사기 생활법령 (작업단위 40).
+    """상황적용 층 — easylaw 생활법령 booklet 2종 (작업단위 40, 50에서 확장).
 
     페이지=1청크, source_type 생활법령, 통제 어휘 태깅. 신탁 페이지가 전-⑤신탁사기로
     태깅되는지(special_cases RAG 전환 근거)까지 확인.
@@ -118,9 +120,15 @@ async def test_easylaw_docs_loaded(ingested):
             " WHERE source_type = '생활법령' LIMIT 1"
         )).scalar()
 
-    assert len(rows) == 20
-    assert "생활법령-1.1.2" in rows  # 신탁 부동산을 이용한 사기
-    assert "전-⑤신탁사기" in rows["생활법령-1.1.2"]
+    # booklet 단위로 센다 — 총량만 보면 한쪽 booklet이 통째로 빠져도 다른 쪽 증가에 묻힌다.
+    # 작업단위 50에서 csmSeq가 case_no에 들어왔다("생활법령-1.1.2" → "생활법령-1972-1.1.2").
+    by_booklet = Counter(case_no.split("-")[1] for case_no in rows)
+    assert by_booklet["1972"] == 20  # 전세사기 피해자 지원 20p (작업단위 40)
+    assert by_booklet["629"] == 31  # 주택임대차 31p — 1p가 8000토큰 초과로 2행 분할돼 32행/31문서
+    assert len(rows) == 51
+
+    assert "생활법령-1972-1.1.2" in rows  # 신탁 부동산을 이용한 사기
+    assert "전-⑤신탁사기" in rows["생활법령-1972-1.1.2"]
     assert meta and "easylaw" in meta  # 출처(공공누리) 표기
 
 
@@ -162,8 +170,17 @@ async def test_ownership_change_precedents_loaded(ingested):
 @pytest.mark.asyncio
 async def test_links_loaded(ingested):
     with get_engine().connect() as conn:
-        total = conn.execute(text("SELECT count(*) FROM d_reference_links")).scalar_one()
-    assert total == 2490  # 승계 판례 36건의 참조조문 링크 +245 (작업단위 42)
+        by_type = dict(conn.execute(text(
+            "SELECT linked_type, count(*) FROM d_reference_links GROUP BY 1"
+        )).all())
+
+    # Tier 1·2(참조조문/근거법 → 법령원문)와 Tier 3(주제태그 → HUG사례집)을 나눠 센다.
+    # 총량만 보면 한 tier가 무너져도 다른 tier 증가에 묻힌다.
+    assert by_type["법령원문"] == 912  # 승계 판례 36건의 참조조문 링크 포함 (작업단위 42)
+    assert by_type["HUG사례집"] == 1581
+    assert sum(by_type.values()) == 2493
+    # 작업단위 42 시점 2490 → 48에서 후-① 키워드에 최우선변제/소액임차인을 추가하자
+    # 사례집-2가 후-① 태그를 얻어 후-① 판례 3건과 Tier 3 링크가 생기며 +3.
 
 
 @pytest.mark.asyncio
