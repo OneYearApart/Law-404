@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from backend.app.consultation.a_part.issues import get_issue_definition
-from backend.app.consultation.a_part.models import (
+from app.consultation.a_part.issues import get_issue_definition
+from app.consultation.a_part.models import (
     ConversationState,
     SlotState,
     SlotStatus,

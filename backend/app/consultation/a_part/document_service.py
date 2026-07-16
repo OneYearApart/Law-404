@@ -5,28 +5,28 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from backend.app.consultation.a_part.models import ConversationState
-from backend.app.consultation.a_part.service import (
+from app.consultation.a_part.models import ConversationState
+from app.consultation.a_part.service import (
     APartConversationService,
     DEFAULT_CONVERSATION_SERVICE,
 )
-from backend.app.documents.analysis import (
+from app.documents.analysis import (
     ANALYSIS_VERSION,
     ConversationDocumentAnalysisResponse,
     DocumentAnalysisService,
 )
-from backend.app.documents.analysis.state_mapper import (
+from app.documents.analysis.state_mapper import (
     apply_document_analysis_to_state,
     build_document_slot_updates,
 )
-from backend.app.documents.extraction_models import DocumentExtractionResponse
-from backend.app.documents.extraction_service import DocumentExtractionService
-from backend.app.documents.models import (
+from app.documents.extraction_models import DocumentExtractionResponse
+from app.documents.extraction_service import DocumentExtractionService
+from app.documents.models import (
     DocumentType,
     DocumentUploadResult,
     UploadedDocument,
 )
-from backend.app.documents.service import DocumentUploadService
+from app.documents.service import DocumentUploadService
 
 
 class APartDocumentUploadService:

@@ -6,21 +6,21 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-from backend.app.documents.analysis.field_validation import (
+from app.documents.analysis.field_validation import (
     FieldCandidate,
     build_field,
     candidate,
     make_evidence,
     page_confidence,
 )
-from backend.app.documents.analysis.models import (
+from app.documents.analysis.models import (
     ANALYSIS_VERSION,
     AnalysisValueStatus,
     AnalyzedField,
     RegistryAnalysisResult,
     RegistryRight,
 )
-from backend.app.documents.analysis.normalization import (
+from app.documents.analysis.normalization import (
     address_signal_score,
     compact_ocr_text,
     extract_address_components,
@@ -30,12 +30,12 @@ from backend.app.documents.analysis.normalization import (
     normalize_whitespace,
     repair_address_ocr,
 )
-from backend.app.documents.extraction_models import (
+from app.documents.extraction_models import (
     DocumentExtractionResult,
     PageExtractionResult,
     PageExtractionStatus,
 )
-from backend.app.documents.models import UploadedDocument, utc_now
+from app.documents.models import UploadedDocument, utc_now
 
 
 @dataclass(frozen=True)

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import BinaryIO
 
-from backend.app.documents.models import DocumentType, UploadedDocument
-from backend.app.documents.storage import FileDocumentRepository
-from backend.app.documents.validation import (
+from app.documents.models import DocumentType, UploadedDocument
+from app.documents.storage import FileDocumentRepository
+from app.documents.validation import (
     DEFAULT_MAX_UPLOAD_BYTES,
     read_stream_limited,
     validate_upload_bytes,

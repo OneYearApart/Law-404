@@ -8,7 +8,7 @@ from time import perf_counter
 
 from PIL import Image
 
-from backend.app.documents.extraction_models import (
+from app.documents.extraction_models import (
     EXTRACTION_VERSION,
     DocumentExtractionResult,
     ExtractionMethod,
@@ -16,21 +16,21 @@ from backend.app.documents.extraction_models import (
     PageExtractionResult,
     PageExtractionStatus,
 )
-from backend.app.documents.extraction_storage import DocumentExtractionStorage
-from backend.app.documents.models import (
+from app.documents.extraction_storage import DocumentExtractionStorage
+from app.documents.models import (
     DocumentFormat,
     DocumentProcessingStatus,
     UploadedDocument,
 )
-from backend.app.documents.ocr import AdaptiveTesseractOCRProvider, OCRProvider
-from backend.app.documents.pdf_extractor import (
+from app.documents.ocr import AdaptiveTesseractOCRProvider, OCRProvider
+from app.documents.pdf_extractor import (
     extract_pdf_page_text,
     open_pdf,
     render_pdf_page,
 )
-from backend.app.documents.storage import FileDocumentRepository
-from backend.app.documents.text_metrics import normalize_text
-from backend.app.documents.text_quality import evaluate_direct_text_quality
+from app.documents.storage import FileDocumentRepository
+from app.documents.text_metrics import normalize_text
+from app.documents.text_quality import evaluate_direct_text_quality
 
 
 def utc_now() -> datetime:

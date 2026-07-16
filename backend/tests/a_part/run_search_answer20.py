@@ -16,9 +16,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-import backend.app.llm.a_part as a_part_module
-from backend.app.rag.retrievers.a_part import CODE_VERSION as SEARCH_CODE_VERSION
-from backend.app.llm.a_part import (
+import app.llm.a_part as a_part_module
+from app.rag.retrievers.a_part import CODE_VERSION as SEARCH_CODE_VERSION
+from app.llm.a_part import (
     APartRAGResponse,
     ConsultationContext,
     EvidenceStatus,

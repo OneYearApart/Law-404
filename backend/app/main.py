@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import auth, conversations, a_part, b_part, c_part, d_part
 from app.conversations.errors import ConversationNotFoundError
 
-from backend.app.api.a_part_errors import APartAPIError, APIErrorBody, APIErrorResponse
+from app.api.a_part_errors import APartAPIError, APIErrorBody, APIErrorResponse
 
 app = FastAPI(title="주택임대차 법률 챗봇")
 
@@ -24,7 +24,7 @@ async def conversation_not_found_handler(request: Request, exc: ConversationNotF
 # TODO: 프론트엔드 포트 확정되면 실제 값으로 교체
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
