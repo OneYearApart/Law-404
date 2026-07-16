@@ -13,6 +13,7 @@ import {
   sendATurn,
   uploadADocument,
 } from '../../api/chat/A/aApi.js';
+import { createBConversation, sendBChat } from '../../api/chat/B/bApi.js';
 import { ApiError } from '../../api/common/apiClient.js';
 import ChatComposer from '../../components/chat/ChatComposer/ChatComposer.jsx';
 import AssistantThinking from '../../components/chat/AssistantThinking/AssistantThinking.jsx';
@@ -45,9 +46,11 @@ function getErrorMessage(error, fallback) {
 
 function ChatbotPage({ consultationType }) {
   const messagesEndRef = useRef(null);
+  const messageIdRef = useRef(0);
   const config = CHATBOT_CATEGORIES[consultationType];
   const AssistantAnswer = CHATBOT_ANSWER_COMPONENTS[consultationType];
   const isAPart = consultationType === 'before-contract';
+  const isBPart = consultationType === 'during-contract';
   const [input, setInput] = useState('');
   const [messagesByType, setMessagesByType] = useState(createEmptyConversations);
   const [conversationIds, setConversationIds] = useState({});
@@ -77,6 +80,26 @@ function ChatbotPage({ consultationType }) {
     }));
   };
 
+  const createMessageId = (role) => {
+    messageIdRef.current += 1;
+    return `${consultationType}-${role}-${messageIdRef.current}`;
+  };
+
+  const updateMessageContent = (messageId, updater) => {
+    setMessagesByType((current) => ({
+      ...current,
+      [consultationType]: (current[consultationType] ?? []).map((message) => {
+        if (message.id !== messageId) {
+          return message;
+        }
+
+        const nextContent =
+          typeof updater === 'function' ? updater(message.content) : updater;
+        return { ...message, content: nextContent };
+      }),
+    }));
+  };
+
   const saveConversationId = (conversationId) => {
     setConversationIds((current) => ({
       ...current,
@@ -92,6 +115,114 @@ function ChatbotPage({ consultationType }) {
     const created = await createAConversation();
     saveConversationId(created.conversation_id);
     return created.conversation_id;
+  };
+
+  const ensureBConversation = async () => {
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+
+    const conversationId = await createBConversation();
+    saveConversationId(conversationId);
+    return conversationId;
+  };
+
+  const getLatestBPendingAction = () => {
+    const latestAssistant = [...messages]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === 'assistant' &&
+          message.content &&
+          typeof message.content === 'object' &&
+          message.content.pendingAction,
+      );
+
+    return latestAssistant?.content?.pendingAction ?? null;
+  };
+
+  const isCalendarApprovalMessage = (question) =>
+    /(등록|캘린더|일정).*(해줘|할게|하고 싶|해주세요)|^(응|네|좋아|그래|등록해줘|등록)$/u.test(
+      question,
+    );
+
+  const runBChatTurn = async ({
+    question,
+    pendingAction = null,
+    calendarMode = 'dry_run',
+  }) => {
+    const conversationId = await ensureBConversation();
+    const assistantMessageId = createMessageId('assistant');
+
+    appendMessages({
+      id: assistantMessageId,
+      role: 'assistant',
+      content: {
+        text: '',
+        pendingAction: null,
+        calendarEvents: [],
+        calendarRegistration: null,
+        calendarToolResult: null,
+        isStreaming: true,
+        onRegisterCalendar: null,
+      },
+    });
+
+    await sendBChat({
+      message: question,
+      conversationId,
+      pendingAction,
+      calendarMode,
+      calendarProvider: 'smithery_googlecalendar',
+      calendarId: 'primary',
+      topK: 5,
+      onMeta: (meta) => {
+        updateMessageContent(assistantMessageId, (content) => ({
+          ...(content && typeof content === 'object' ? content : { text: String(content ?? '') }),
+          pendingAction: meta.pending_action ?? null,
+          calendarEvents: meta.calendar_events ?? [],
+          calendarRegistration: meta.calendar_registration ?? null,
+          calendarToolResult: meta.calendar_tool_result ?? null,
+          meta,
+          onRegisterCalendar: (action) => {
+            if (!action) return;
+            const registerQuestion = '캘린더에 등록해줘';
+            appendMessages({
+              id: createMessageId('user-calendar'),
+              role: 'user',
+              content: registerQuestion,
+            });
+            setIsLoading(true);
+            setError('');
+            setNotice('');
+            runBChatTurn({
+              question: registerQuestion,
+              pendingAction: action,
+              calendarMode: 'live',
+            })
+              .then(() => setNotice('캘린더 등록 요청을 처리했습니다.'))
+              .catch((requestError) =>
+                setError(getErrorMessage(requestError, '캘린더 등록 요청을 처리하지 못했습니다.')),
+              )
+              .finally(() => setIsLoading(false));
+          },
+        }));
+      },
+      onToken: (token) => {
+        updateMessageContent(assistantMessageId, (content) => {
+          const current =
+            content && typeof content === 'object' ? content : { text: String(content ?? '') };
+          return { ...current, text: `${current.text ?? ''}${token}` };
+        });
+      },
+      onDone: () => {
+        updateMessageContent(assistantMessageId, (content) => {
+          const current =
+            content && typeof content === 'object' ? content : { text: String(content ?? '') };
+          return { ...current, isStreaming: false };
+        });
+      },
+    });
   };
 
   const refreshDocuments = async (conversationId) => {
@@ -136,6 +267,15 @@ function ChatbotPage({ consultationType }) {
           id: `${timestamp}-assistant`,
           role: 'assistant',
           content: mapATurnToAnswer(result),
+        });
+      } else if (isBPart) {
+        const pendingAction =
+          isCalendarApprovalMessage(question) ? getLatestBPendingAction() : null;
+
+        await runBChatTurn({
+          question,
+          pendingAction,
+          calendarMode: pendingAction ? 'live' : 'dry_run',
         });
       } else {
         appendMessages({
