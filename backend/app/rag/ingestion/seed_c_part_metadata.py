@@ -182,13 +182,7 @@ class PrecedentMetadataUpdater:
         인자:
         - case_number: 사건번호 (예: "2023다202228")
         - metadata: 메타데이터 딕셔너리 (court_level, case_year 등)
-        
-        흐름:
-        1. SQL UPDATE 쿼리 작성
-        2. 쿼리 실행
-        3. 성공/실패 로깅
-        4. 커밋 (변경사항 DB에 반영)
-        
+
         """
         try:
             cursor = self.conn.cursor()
@@ -222,10 +216,6 @@ class PrecedentMetadataUpdater:
                 case_number
             ))
             
-            # 【업데이트 성공 확인】
-            # cursor.rowcount: 몇 개 행이 영향받았는가?
-            # 1 = 성공 (1개 행 업데이트)
-            # 0 = 실패 (해당 사건번호 없음)
             if cursor.rowcount > 0:
                 print(f"  ✓ {case_number}: 업데이트 완료 ({cursor.rowcount}행)")
                 self.updated_count += 1  # 성공 카운트 증가
@@ -233,9 +223,6 @@ class PrecedentMetadataUpdater:
                 print(f"  ⚠️  {case_number}: 해당 행을 찾을 수 없음 (사건번호가 없거나 오류인가?)")
                 self.failed_count += 1
             
-            # 【변경사항 DB에 반영】
-            # commit() 하기 전에는 변경사항이 "임시"상태입니다.
-            # 다른 프로세스는 아직 이전 데이터를 봅니다.
             self.conn.commit()
             cursor.close()
             
@@ -266,7 +253,6 @@ class PrecedentMetadataUpdater:
             # 3. 각 질문별 판례 처리
             print("\n【판례 메타데이터 업데이트】\n")
             
-            # json_data 구조: {"Q1_보증금못받음": [{판례1}, {판례2}, ...], "Q2_...": [...], ...}
             for question_id, precedents in json_data.items():
                 print(f"\n[{question_id}] 판례 처리 중...")
                 

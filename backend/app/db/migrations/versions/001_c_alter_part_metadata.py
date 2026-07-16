@@ -41,11 +41,6 @@ def upgrade() -> None:
     op.add_column('legal_documents_c', sa.Column('appeal_outcome', sa.String(50), nullable=True))
     op.add_column('legal_documents_c', sa.Column('related_procedures', sa.Text(), nullable=True))
     
-    # 인덱스 생성 (검색 성능 최적화)
-    # • court_level: 대법원 판례 먼저 찾기
-    # • case_year DESC: 최신 판례부터
-    # • ruling_type: "임차인 승소" 판례만 필터링
-    
     op.create_index('idx_legal_documents_c_court_level', 'legal_documents_c', ['court_level'])
     op.create_index('idx_legal_documents_c_case_year', 'legal_documents_c', ['case_year'], postgresql_ops={'case_year': 'DESC'})
     op.create_index('idx_legal_documents_c_ruling_type', 'legal_documents_c', ['ruling_type'])
@@ -53,9 +48,6 @@ def upgrade() -> None:
     # ────────────────────────────────────────────────────────────────────────
     # 2. region_standards 테이블 생성 (지역별 표준 정보)
     # ────────────────────────────────────────────────────────────────────────
-    
-    # 이 테이블의 목적:
-    # 절차의 기본 정보(절차명, 설명)를 저장합니다.
     
     op.create_table(
         'region_standards',
