@@ -30,12 +30,14 @@ from app.graph.parts.b_part.calendar_events import (
     format_calendar_events_for_answer,
     is_calendar_registration_approved,
 )
+from app.graph.parts.b_part.calendar_tool import run_calendar_registration
 from app.graph.parts.b_part.memory import (
     build_contextual_question,
     extract_conversation_id,
     build_history_text,
     memory_store,
 )
+from app.graph.parts.b_part.planner_validator import validate_planner_flow
 from app.graph.parts.b_part.rules import (
     has_date_in_text,
     parse_day_from_text,
@@ -479,6 +481,24 @@ def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]
     return questions[:3]
 
 
+def can_continue_with_rule_results(question: str, categories: list[str]) -> bool:
+    """
+    일부 부가 정보가 부족해도 Rule Engine 계산이 가능한 질문인지 판단합니다.
+
+    예를 들어 월세 인상 질문에서 현재 월세와 요구 월세가 모두 있으면
+    계약 종료일이 없어도 5% 초과 여부는 계산할 수 있으므로 답변 흐름을 계속 진행합니다.
+    또한 누수로 인한 물건 파손처럼 하자와 손해가 함께 드러난 질문은
+    증거 여부가 없어도 기본 법률 구조를 먼저 설명할 수 있습니다.
+    """
+    if "차임증감" in categories and len(parse_money_values_from_text(question)) >= 2:
+        return True
+    has_defect = any(keyword in question for keyword in ["누수", "보일러", "곰팡이", "결로", "배관", "하자"])
+    has_damage = any(keyword in question for keyword in ["망가", "파손", "손해", "손해배상", "피해"])
+    if has_defect and has_damage:
+        return True
+    return False
+
+
 class BPartGraphState(TypedDict, total=False):
     """B파트 LangGraph 실행 상태입니다."""
 
@@ -493,11 +513,15 @@ class BPartGraphState(TypedDict, total=False):
     categories: list[str]
     keyword_categories: list[str]
     planner_result: dict[str, Any]
+    planner_validation: dict[str, Any]
     scope_result: dict[str, Any] | None
     intent_result: dict[str, Any] | None
     rule_results: list[dict[str, Any]]
     calendar_events: list[dict[str, Any]]
     pending_action: dict[str, Any] | None
+    calendar_tool_result: dict[str, Any] | None
+    executed_tools: list[str]
+    skipped_tools: list[str]
     top_k: int
     retrieved: list[dict[str, Any]]
     retrieval_quality: dict[str, Any]
@@ -518,6 +542,7 @@ class BPartMVPGraph:
         builder.add_node("check_keyword_scope", self._check_keyword_scope_node)
         builder.add_node("handle_calendar_confirmation", self._handle_calendar_confirmation_node)
         builder.add_node("plan", self._plan_node)
+        builder.add_node("validate_plan", self._validate_plan_node)
         builder.add_node("missing_scope", self._missing_scope_node)
         builder.add_node("compute", self._compute_node)
         builder.add_node("retrieve", self._retrieve_node)
@@ -540,7 +565,8 @@ class BPartMVPGraph:
                 "continue": "plan",
             },
         )
-        builder.add_edge("plan", "missing_scope")
+        builder.add_edge("plan", "validate_plan")
+        builder.add_edge("validate_plan", "missing_scope")
         builder.add_conditional_edges(
             "missing_scope",
             self._route_after_missing_scope,
@@ -646,6 +672,9 @@ class BPartMVPGraph:
             "calendar_events": [],
             "pending_action": None,
             "calendar_registration": None,
+            "calendar_tool_result": None,
+            "executed_tools": [],
+            "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": [],
             "retrieved": [],
             "retrieval_quality": {
@@ -684,12 +713,26 @@ class BPartMVPGraph:
         calendar_registration = build_calendar_registration_ready_action(pending_action)
         if not calendar_registration:
             return state
-
-        answer = (
-            "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
-            "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
-            "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
+        calendar_tool_result = run_calendar_registration(
+            calendar_registration,
+            mode=str(request.get("calendar_mode", "dry_run")),
+            provider=str(request.get("calendar_provider", "google_calendar")),
+            calendar_id=str(request.get("calendar_id", "primary")),
         )
+
+        if calendar_tool_result.get("status") == "registered":
+            answer = "좋습니다. 아래 일정들을 Google Calendar에 등록했습니다."
+        elif calendar_tool_result.get("status") == "not_configured":
+            answer = (
+                "좋습니다. 아래 일정들은 Google Calendar에 등록할 수 있는 형식으로 검증되었습니다.\n"
+                "다만 현재 Google Calendar MCP 연결 코드가 아직 설정되지 않아 실제 등록은 수행하지 않았습니다."
+            )
+        else:
+            answer = (
+                "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
+                "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
+                "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
+            )
 
         final_state = {
             "question": question,
@@ -702,6 +745,9 @@ class BPartMVPGraph:
             "calendar_events": calendar_registration.get("events", []),
             "pending_action": None,
             "calendar_registration": calendar_registration,
+            "calendar_tool_result": calendar_tool_result,
+            "executed_tools": ["calendar_confirmation"],
+            "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": [],
             "retrieved": [],
             "memory": memory_meta,
@@ -756,28 +802,60 @@ class BPartMVPGraph:
             "planner_result": planner_result,
         }
 
+    async def _validate_plan_node(self, state: BPartGraphState) -> BPartGraphState:
+        """LangGraph 노드: LLM Planner 결과를 실행 제어용 결정값으로 검증합니다."""
+        planner_validation = validate_planner_flow(
+            question=state["question"],
+            categories=state.get("categories", []),
+            context_result=state["context_result"],
+            planner_result=state["planner_result"],
+        )
+
+        return {
+            **state,
+            "planner_validation": planner_validation,
+        }
+
     async def _compute_node(self, state: BPartGraphState) -> BPartGraphState:
         """LangGraph 노드: Rule Engine 계산과 캘린더 후보 생성을 수행합니다."""
         question = state["question"]
         categories = state.get("categories", [])
+        planner_validation = state.get("planner_validation", {})
+        tools_to_use = planner_validation.get("tools_to_use", ["rule_engine", "retriever"])
+        if not isinstance(tools_to_use, list):
+            tools_to_use = ["rule_engine", "retriever"]
+        executed_tools = list(state.get("executed_tools", []))
+        skipped_tools = list(state.get("skipped_tools", []))
 
-        rule_results = run_b_part_rules(question=question, categories=categories)
+        rule_results: list[dict[str, Any]] = []
         intent_result: dict[str, Any] | None = None
 
-        if should_call_llm_intent(
-            question=question,
-            categories=categories,
-            rule_results=rule_results,
-        ):
-            intent_result = analyze_b_part_intent(question)
-            categories = merge_categories(
-                categories,
-                intent_result.get("categories", []),
-            )
+        if "rule_engine" in tools_to_use:
             rule_results = run_b_part_rules(question=question, categories=categories)
+            executed_tools.append("rule_engine")
 
-        calendar_events = build_calendar_event_candidates(rule_results)
-        pending_action = build_calendar_pending_action(calendar_events)
+            if should_call_llm_intent(
+                question=question,
+                categories=categories,
+                rule_results=rule_results,
+            ):
+                intent_result = analyze_b_part_intent(question)
+                categories = merge_categories(
+                    categories,
+                    intent_result.get("categories", []),
+                )
+                rule_results = run_b_part_rules(question=question, categories=categories)
+        else:
+            skipped_tools.append("rule_engine")
+
+        calendar_events: list[dict[str, Any]] = []
+        pending_action: dict[str, Any] | None = None
+        if "calendar_candidate" in tools_to_use:
+            calendar_events = build_calendar_event_candidates(rule_results)
+            pending_action = build_calendar_pending_action(calendar_events)
+            executed_tools.append("calendar_candidate")
+        else:
+            skipped_tools.append("calendar_candidate")
 
         return {
             **state,
@@ -786,6 +864,8 @@ class BPartMVPGraph:
             "rule_results": rule_results,
             "calendar_events": calendar_events,
             "pending_action": pending_action,
+            "executed_tools": list(dict.fromkeys(executed_tools)),
+            "skipped_tools": list(dict.fromkeys(skipped_tools)),
         }
 
     async def _missing_scope_node(self, state: BPartGraphState) -> BPartGraphState:
@@ -797,6 +877,7 @@ class BPartMVPGraph:
         memory_meta = state["memory_meta"]
         categories = state.get("categories", [])
         planner_result = state["planner_result"]
+        planner_validation = state.get("planner_validation", {})
 
         memory_state = (
             memory_store.get_state(conversation_id)
@@ -942,11 +1023,11 @@ class BPartMVPGraph:
                 }
 
         required_missing_questions = context_result.get("required_missing_questions", [])
-        if (
-            context_result.get("source") == "llm"
-            and context_result.get("response_mode") == "ask_missing_info"
-            and required_missing_questions
-        ):
+        if planner_validation.get("context_should_stop"):
+            required_missing_questions = planner_validation.get(
+                "context_missing_questions",
+                required_missing_questions,
+            )
             answer = "\n".join(str(question) for question in required_missing_questions)
             final_state = self._build_early_final_state(
                 question=question,
@@ -962,16 +1043,13 @@ class BPartMVPGraph:
                 },
                 memory_meta=memory_meta,
                 answer=answer,
+                planner_validation=planner_validation,
             )
             self._save_turn(conversation_id, original_question, answer)
             return {**state, "final_state": final_state}
 
-        planner_missing_questions = build_planner_missing_questions(planner_result)
-        if (
-            planner_result.get("source") == "llm"
-            and planner_result.get("answer_mode") == "ask_missing_info"
-            and planner_missing_questions
-        ):
+        planner_missing_questions = planner_validation.get("planner_missing_questions", [])
+        if planner_validation.get("planner_should_stop"):
             answer = "\n".join(planner_missing_questions)
             final_state = self._build_early_final_state(
                 question=question,
@@ -987,6 +1065,7 @@ class BPartMVPGraph:
                 },
                 memory_meta=memory_meta,
                 answer=answer,
+                planner_validation=planner_validation,
             )
             self._save_turn(conversation_id, original_question, answer)
             return {**state, "final_state": final_state}
@@ -1043,12 +1122,34 @@ class BPartMVPGraph:
         categories = state.get("categories", [])
         intent_result = state.get("intent_result")
         top_k = int(request.get("top_k", 5))
+        planner_validation = state.get("planner_validation", {})
+        tools_to_use = planner_validation.get("tools_to_use", ["retriever"])
+        if not isinstance(tools_to_use, list):
+            tools_to_use = ["retriever"]
+        executed_tools = list(state.get("executed_tools", []))
+        skipped_tools = list(state.get("skipped_tools", []))
 
         rule_results = state.get("rule_results", [])
         calendar_events = state.get("calendar_events", [])
         pending_action = state.get("pending_action")
 
+        if "retriever" not in tools_to_use:
+            skipped_tools.append("retriever")
+            return {
+                **state,
+                "top_k": top_k,
+                "retrieved": [],
+                "retrieval_quality": {
+                    "skipped": True,
+                    "reason": "retriever_not_requested_by_tool_policy",
+                    "refined_by_llm": False,
+                },
+                "executed_tools": list(dict.fromkeys(executed_tools)),
+                "skipped_tools": list(dict.fromkeys(skipped_tools)),
+            }
+
         retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+        executed_tools.append("retriever")
         retrieval_quality = evaluate_retrieval_quality(retrieved)
 
         if should_refine_intent_after_retrieval(
@@ -1067,6 +1168,10 @@ class BPartMVPGraph:
             retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
             retrieval_quality = evaluate_retrieval_quality(retrieved)
             retrieval_quality["refined_by_llm"] = True
+            if "rule_engine" not in executed_tools:
+                executed_tools.append("rule_engine")
+            if "retriever" not in executed_tools:
+                executed_tools.append("retriever")
         else:
             retrieval_quality["refined_by_llm"] = False
 
@@ -1080,6 +1185,8 @@ class BPartMVPGraph:
             "top_k": top_k,
             "retrieved": retrieved,
             "retrieval_quality": retrieval_quality,
+            "executed_tools": list(dict.fromkeys(executed_tools)),
+            "skipped_tools": list(dict.fromkeys(skipped_tools)),
         }
 
     async def _answer_node(self, state: BPartGraphState) -> BPartGraphState:
@@ -1096,6 +1203,7 @@ class BPartMVPGraph:
         memory_meta = state["memory_meta"]
         categories = state.get("categories", [])
         planner_result = state["planner_result"]
+        planner_validation = state.get("planner_validation", {})
         intent_result = state.get("intent_result")
         rule_results = state.get("rule_results", [])
         calendar_events = state.get("calendar_events", [])
@@ -1103,6 +1211,8 @@ class BPartMVPGraph:
         retrieved = state.get("retrieved", [])
         retrieval_quality = state.get("retrieval_quality", {})
         scope_result = state.get("scope_result")
+        executed_tools = state.get("executed_tools", [])
+        skipped_tools = state.get("skipped_tools", [])
 
         missing_questions = find_missing_questions(question, categories)
 
@@ -1122,11 +1232,15 @@ class BPartMVPGraph:
             "categories": categories,
             "context_result": context_result,
             "planner_result": planner_result,
+            "planner_validation": planner_validation,
             "intent_result": intent_result,
             "scope_result": scope_result,
             "rule_results": rule_results,
             "calendar_events": calendar_events,
             "pending_action": pending_action,
+            "calendar_tool_result": state.get("calendar_tool_result"),
+            "executed_tools": executed_tools,
+            "skipped_tools": skipped_tools,
             "missing_questions": missing_questions,
             "retrieved": retrieved,
             "retrieval_quality": retrieval_quality,
@@ -1150,6 +1264,7 @@ class BPartMVPGraph:
         retrieval_quality: dict[str, Any],
         memory_meta: dict[str, Any],
         answer: str,
+        planner_validation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """조기 종료 노드에서 공통으로 사용하는 final_state를 만듭니다."""
         return {
@@ -1157,12 +1272,16 @@ class BPartMVPGraph:
             "categories": categories,
             "context_result": context_result,
             "planner_result": planner_result,
+            "planner_validation": planner_validation or {},
             "intent_result": intent_result,
             "scope_result": scope_result,
             "rule_results": [],
             "calendar_events": [],
             "pending_action": None,
             "calendar_registration": None,
+            "calendar_tool_result": None,
+            "executed_tools": [],
+            "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": missing_questions,
             "retrieved": [],
             "retrieval_quality": retrieval_quality,
