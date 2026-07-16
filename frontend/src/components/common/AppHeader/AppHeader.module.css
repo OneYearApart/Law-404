@@ -1,0 +1,79 @@
+.header {
+  position: relative;
+  z-index: 20;
+  min-height: 7.2rem;
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.inner {
+  width: min(100%, var(--layout-wide-width));
+  min-height: 7.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-24);
+  margin: 0 auto;
+  padding: 0 var(--space-32);
+}
+
+.navigation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  overflow-x: auto;
+}
+
+.navLink {
+  min-height: 4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  padding: 0 var(--space-16);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  border-radius: var(--radius-medium);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.navLink svg {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+
+.navLink:hover,
+.active {
+  color: var(--color-primary);
+  background: var(--color-surface-subtle);
+}
+
+.signupLink {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.signupLink:hover {
+  color: var(--color-white);
+  background: var(--color-primary-hover);
+}
+
+@media (max-width: 760px) {
+  .inner {
+    min-height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: var(--space-16) var(--space-20);
+  }
+
+  .navigation {
+    width: 100%;
+    justify-content: flex-start;
+    padding-bottom: var(--space-4);
+  }
+}

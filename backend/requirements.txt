@@ -17,3 +17,5 @@ tiktoken
 PyMuPDF
 Pillow
 pytesseract
+pdfplumber
+httpx
