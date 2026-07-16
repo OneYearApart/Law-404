@@ -30,6 +30,7 @@ from app.graph.parts.b_part.calendar_events import (
     format_calendar_events_for_answer,
     is_calendar_registration_approved,
 )
+from app.graph.parts.b_part.calendar_tool import dry_run_calendar_registration
 from app.graph.parts.b_part.memory import (
     build_contextual_question,
     extract_conversation_id,
@@ -518,6 +519,7 @@ class BPartGraphState(TypedDict, total=False):
     rule_results: list[dict[str, Any]]
     calendar_events: list[dict[str, Any]]
     pending_action: dict[str, Any] | None
+    calendar_tool_result: dict[str, Any] | None
     executed_tools: list[str]
     skipped_tools: list[str]
     top_k: int
@@ -670,6 +672,7 @@ class BPartMVPGraph:
             "calendar_events": [],
             "pending_action": None,
             "calendar_registration": None,
+            "calendar_tool_result": None,
             "executed_tools": [],
             "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": [],
@@ -710,6 +713,7 @@ class BPartMVPGraph:
         calendar_registration = build_calendar_registration_ready_action(pending_action)
         if not calendar_registration:
             return state
+        calendar_tool_result = dry_run_calendar_registration(calendar_registration)
 
         answer = (
             "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
@@ -728,6 +732,7 @@ class BPartMVPGraph:
             "calendar_events": calendar_registration.get("events", []),
             "pending_action": None,
             "calendar_registration": calendar_registration,
+            "calendar_tool_result": calendar_tool_result,
             "executed_tools": ["calendar_confirmation"],
             "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": [],
@@ -1220,6 +1225,7 @@ class BPartMVPGraph:
             "rule_results": rule_results,
             "calendar_events": calendar_events,
             "pending_action": pending_action,
+            "calendar_tool_result": state.get("calendar_tool_result"),
             "executed_tools": executed_tools,
             "skipped_tools": skipped_tools,
             "missing_questions": missing_questions,
@@ -1260,6 +1266,7 @@ class BPartMVPGraph:
             "calendar_events": [],
             "pending_action": None,
             "calendar_registration": None,
+            "calendar_tool_result": None,
             "executed_tools": [],
             "skipped_tools": ["rule_engine", "calendar_candidate", "retriever"],
             "missing_questions": missing_questions,
