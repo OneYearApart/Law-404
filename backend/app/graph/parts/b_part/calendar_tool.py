@@ -8,11 +8,19 @@ calendar_registration payload를 검증한 뒤 Calendar MCP에 넘길 수 있는
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
+from datetime import date, timedelta
 from typing import Any
 
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DEFAULT_TIMEZONE = "Asia/Seoul"
+KST_OFFSET = "+09:00"
+SMITHERY_CONNECTION_NAME = "googlecalendar"
+SMITHERY_CREATE_EVENT_TOOL_NAME = "create_event"
 
 
 def validate_calendar_event(event: dict[str, Any]) -> list[str]:
@@ -91,6 +99,83 @@ def to_calendar_mcp_event(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def to_google_calendar_create_event_args(
+    event: dict[str, Any],
+    *,
+    calendar_id: str = "primary",
+    timezone_str: str = DEFAULT_TIMEZONE,
+) -> dict[str, Any]:
+    """
+    Google Calendar MCP create_event 호출 인자로 변환합니다.
+
+    Codex Google Calendar MCP의 create_event 스키마 기준:
+    - title
+    - description
+    - start_time: RFC3339 datetime
+    - end_time: RFC3339 datetime
+    - timezone_str: IANA timezone
+    - attendees: 필수 리스트
+
+    현재 B파트 일정은 하루 종일 확인용 일정이므로,
+    날짜를 Asia/Seoul 기준 00:00~다음날 00:00 구간으로 변환합니다.
+    """
+    event_date = date.fromisoformat(str(event["date"]))
+    next_date = event_date + timedelta(days=1)
+    start_time = f"{event_date.isoformat()}T00:00:00{KST_OFFSET}"
+    end_time = f"{next_date.isoformat()}T00:00:00{KST_OFFSET}"
+
+    return {
+        "calendar_id": calendar_id or "primary",
+        "title": str(event["title"]),
+        "description": str(event.get("description", "")),
+        "start_time": start_time,
+        "end_time": end_time,
+        "timezone_str": timezone_str,
+        "attendees": [],
+        "add_google_meet": False,
+        "event_type": "default",
+        "transparency": "transparent",
+        "self_attendance": "accepted",
+    }
+
+
+def to_smithery_create_event_args(
+    event: dict[str, Any],
+    *,
+    calendar_id: str = "primary",
+    timezone_str: str = DEFAULT_TIMEZONE,
+) -> dict[str, Any]:
+    """
+    Smithery Google Calendar MCP의 create_event tool 호출 인자로 변환합니다.
+
+    Smithery 도구는 start_datetime과 duration을 받아 종료 시각을 계산합니다.
+    B파트 계약 일정은 날짜 중심 일정이므로 all_day=True인 경우 해당 날짜 00:00부터
+    24시간짜리 일정으로 등록합니다.
+    """
+    event_date = date.fromisoformat(str(event["date"]))
+    is_all_day = bool(event.get("all_day", True))
+
+    if is_all_day:
+        start_datetime = f"{event_date.isoformat()}T00:00:00"
+        duration_hour = 24
+        duration_minutes = 0
+    else:
+        start_datetime = f"{event_date.isoformat()}T09:00:00"
+        duration_hour = 1
+        duration_minutes = 0
+
+    return {
+        "calendar_id": calendar_id or "primary",
+        "start_datetime": start_datetime,
+        "timezone": timezone_str,
+        "event_duration_hour": duration_hour,
+        "event_duration_minutes": duration_minutes,
+        "summary": str(event["title"]),
+        "description": str(event.get("description", "")),
+        "attendees": [],
+    }
+
+
 def dry_run_calendar_registration(
     calendar_registration: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -119,12 +204,128 @@ def dry_run_calendar_registration(
 
     events = calendar_registration["events"]
     converted_events = [to_calendar_mcp_event(event) for event in events]
+    google_create_event_args = [
+        to_google_calendar_create_event_args(event)
+        for event in events
+    ]
+    smithery_create_event_args = [
+        to_smithery_create_event_args(event)
+        for event in events
+    ]
     return {
         "status": "dry_run",
         "provider": "mock_calendar",
         "event_count": len(converted_events),
         "events": converted_events,
+        "google_calendar_create_event_args": google_create_event_args,
+        "smithery_create_event_args": smithery_create_event_args,
     }
+
+
+def _call_smithery_create_event(event_args: dict[str, Any]) -> dict[str, Any]:
+    """Smithery CLI를 통해 Google Calendar MCP create_event tool을 호출합니다."""
+    smithery_command = shutil.which("smithery")
+    if not smithery_command:
+        return {
+            "ok": False,
+            "reason": "smithery_cli_not_found",
+            "event_args": event_args,
+        }
+
+    command = [
+        smithery_command,
+        "tool",
+        "call",
+        SMITHERY_CONNECTION_NAME,
+        SMITHERY_CREATE_EVENT_TOOL_NAME,
+        json.dumps(event_args, ensure_ascii=False),
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "reason": "smithery_cli_timeout",
+            "event_args": event_args,
+        }
+
+    if completed.returncode != 0:
+        return {
+            "ok": False,
+            "reason": "smithery_cli_failed",
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "event_args": event_args,
+        }
+
+    try:
+        response = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return {
+            "ok": False,
+            "reason": "smithery_response_not_json",
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "event_args": event_args,
+        }
+
+    if response.get("isError"):
+        return {
+            "ok": False,
+            "reason": "smithery_tool_error",
+            "response": response,
+            "event_args": event_args,
+        }
+
+    response_data = _extract_smithery_response_data(response)
+    return {
+        "ok": True,
+        "event_args": event_args,
+        "response": response,
+        "response_data": response_data,
+        "provider_event_id": response_data.get("id") if isinstance(response_data, dict) else None,
+        "html_link": response_data.get("htmlLink") if isinstance(response_data, dict) else None,
+    }
+
+
+def _extract_smithery_response_data(response: dict[str, Any]) -> dict[str, Any]:
+    """Smithery CLI 응답에서 실제 Google Calendar event payload를 추출합니다."""
+    direct_response_data = response.get("response_data")
+    if isinstance(direct_response_data, dict):
+        return direct_response_data
+
+    structured_content = response.get("structuredContent")
+    if isinstance(structured_content, dict):
+        structured_response_data = structured_content.get("response_data")
+        if isinstance(structured_response_data, dict):
+            return structured_response_data
+
+    content = response.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "text":
+                continue
+            text = item.get("text")
+            if not isinstance(text, str):
+                continue
+            try:
+                parsed_text = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            parsed_response_data = parsed_text.get("response_data")
+            if isinstance(parsed_response_data, dict):
+                return parsed_response_data
+
+    return response
 
 
 def register_google_calendar_events(
@@ -152,24 +353,25 @@ def register_google_calendar_events(
         }
 
     converted_events = dry_run_result["events"]
+    google_create_event_args = [
+        {
+            **event_args,
+            "calendar_id": calendar_id or "primary",
+        }
+        for event_args in dry_run_result.get("google_calendar_create_event_args", [])
+    ]
 
     # TODO(Google Calendar MCP):
     # 여기에 실제 Google Calendar MCP 호출을 연결하세요.
     #
     # 예상 호출 흐름 예시:
     # registered_events = []
-    # for event in converted_events:
-    #     result = google_calendar_mcp.create_event(
-    #         calendar_id=calendar_id,
-    #         summary=event["summary"],
-    #         description=event["description"],
-    #         start=event["start"],
-    #         end=event["end"],
-    #     )
+    # for event_args in google_create_event_args:
+    #     result = google_calendar_mcp.create_event(**event_args)
     #     registered_events.append(
     #         {
-    #             "summary": event["summary"],
-    #             "date": event["start"]["date"],
+    #             "title": event_args["title"],
+    #             "start_time": event_args["start_time"],
     #             "provider_event_id": result["id"],
     #             "html_link": result.get("htmlLink"),
     #         }
@@ -183,8 +385,82 @@ def register_google_calendar_events(
         "calendar_id": calendar_id,
         "event_count": len(converted_events),
         "events": converted_events,
+        "google_calendar_create_event_args": google_create_event_args,
         "registered_event_count": 0,
         "registered_events": [],
+    }
+
+
+def register_smithery_google_calendar_events(
+    calendar_registration: dict[str, Any] | None,
+    *,
+    calendar_id: str = "primary",
+    timezone_str: str = DEFAULT_TIMEZONE,
+) -> dict[str, Any]:
+    """Smithery Google Calendar MCP를 통해 실제 캘린더 일정을 등록합니다."""
+    dry_run_result = dry_run_calendar_registration(calendar_registration)
+    if dry_run_result.get("status") != "dry_run":
+        return {
+            **dry_run_result,
+            "provider": "smithery_googlecalendar",
+        }
+
+    events = calendar_registration.get("events", []) if isinstance(calendar_registration, dict) else []
+    smithery_create_event_args = [
+        to_smithery_create_event_args(
+            event,
+            calendar_id=calendar_id or "primary",
+            timezone_str=timezone_str,
+        )
+        for event in events
+    ]
+
+    registered_events: list[dict[str, Any]] = []
+    failed_events: list[dict[str, Any]] = []
+
+    for event, event_args in zip(events, smithery_create_event_args, strict=False):
+        result = _call_smithery_create_event(event_args)
+        if result.get("ok"):
+            registered_events.append(
+                {
+                    "title": event.get("title"),
+                    "date": event.get("date"),
+                    "provider_event_id": result.get("provider_event_id"),
+                    "html_link": result.get("html_link"),
+                    "event_args": event_args,
+                    "response_data": result.get("response_data"),
+                }
+            )
+            continue
+
+        failed_events.append(
+            {
+                "title": event.get("title"),
+                "date": event.get("date"),
+                "reason": result.get("reason"),
+                "event_args": event_args,
+                "details": result,
+            }
+        )
+
+    if registered_events and failed_events:
+        status = "partial_success"
+    elif registered_events:
+        status = "registered"
+    else:
+        status = "failed"
+
+    return {
+        "status": status,
+        "provider": "smithery_googlecalendar",
+        "calendar_id": calendar_id or "primary",
+        "event_count": len(events),
+        "events": dry_run_result.get("events", []),
+        "smithery_create_event_args": smithery_create_event_args,
+        "registered_event_count": len(registered_events),
+        "registered_events": registered_events,
+        "failed_event_count": len(failed_events),
+        "failed_events": failed_events,
     }
 
 
@@ -207,6 +483,12 @@ def run_calendar_registration(
 
     if normalized_mode != "live":
         return dry_run_calendar_registration(calendar_registration)
+
+    if normalized_provider in {"smithery_googlecalendar", "smithery_google_calendar"}:
+        return register_smithery_google_calendar_events(
+            calendar_registration,
+            calendar_id=calendar_id or "primary",
+        )
 
     if normalized_provider == "google_calendar":
         return register_google_calendar_events(

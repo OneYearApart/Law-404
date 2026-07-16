@@ -14,6 +14,22 @@ from app.graph.parts.b_part.graph import graph as b_graph
 router = APIRouter(prefix="/chat/b", tags=["b_part"])
 
 
+def _parse_db_conversation_id(request: dict) -> int | None:
+    """DB 저장용 숫자 conversation_id만 추출합니다."""
+    raw_conversation_id = request.get("conversation_id")
+    if raw_conversation_id is None:
+        return None
+
+    try:
+        conversation_id = int(raw_conversation_id)
+    except (TypeError, ValueError):
+        return None
+
+    if conversation_id <= 0:
+        return None
+    return conversation_id
+
+
 @router.post("/")
 async def chat_b(request: dict, user=Depends(get_current_user)):
     async def event_generator():
@@ -26,6 +42,7 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
             "pending_action": final_state.get("pending_action"),
             "calendar_events": final_state.get("calendar_events", []),
             "calendar_registration": final_state.get("calendar_registration"),
+            "calendar_tool_result": final_state.get("calendar_tool_result"),
             "memory": final_state.get("memory"),
         }
         yield f"data: {StreamEvent(type=EventType.META, data=meta_data).model_dump_json()}\n\n"
@@ -34,10 +51,18 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
         async for chunk in final_state["response_stream"]:
             yield f"data: {StreamEvent(type=EventType.TOKEN, data=chunk).model_dump_json()}\n\n"
 
-        try:
-            await save_message(user.id, "b", "assistant", final_state.get("final_answer", ""))
-        except NotImplementedError:
-            pass
+        conversation_id = _parse_db_conversation_id(request)
+        if conversation_id is not None:
+            try:
+                await save_message(
+                    user.id,
+                    "b",
+                    "assistant",
+                    final_state.get("final_answer", ""),
+                    conversation_id,
+                )
+            except Exception:
+                pass
 
         yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
 
