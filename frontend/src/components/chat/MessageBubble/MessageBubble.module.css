@@ -1,4 +1,6 @@
 .messageRow {
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: var(--space-12);
@@ -12,23 +14,28 @@
   justify-content: flex-end;
 }
 
-.avatar {
-  width: 3.6rem;
-  height: 3.6rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--color-white);
-  font-size: var(--font-size-body-small);
-  font-weight: var(--font-weight-bold);
-  background: var(--color-primary);
-  border-radius: var(--radius-medium);
+.messageEnter {
+  animation: message-enter 180ms ease-out both;
 }
 
-.avatar svg {
-  width: 2rem;
-  height: 2rem;
+.avatar {
+  width: 6.8rem;
+  height: 7.6rem;
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.avatar img {
+  width: 7.6rem;
+  height: 8.8rem;
+  object-fit: contain;
+  object-position: center top;
 }
 
 .userBubble {
@@ -51,8 +58,55 @@
   margin-top: 0.4rem;
 }
 
+.assistantRow > :last-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.completedAssistantRow {
+  align-items: center;
+}
+
+.completedAssistantRow > :last-child {
+  width: auto;
+  max-width: min(50rem, calc(100% - 8rem));
+  flex: 0 1 auto;
+}
+
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messageEnter {
+    animation: none;
+  }
+}
+
 @media (max-width: 640px) {
+  .avatar {
+    width: 5.8rem;
+    height: 6.4rem;
+  }
+
+  .avatar img {
+    width: 6.4rem;
+    height: 7.4rem;
+  }
+
   .userBubble {
     max-width: 86%;
+  }
+
+  .completedAssistantRow > :last-child {
+    max-width: calc(100% - 7rem);
   }
 }
