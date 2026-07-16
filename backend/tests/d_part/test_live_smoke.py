@@ -44,12 +44,6 @@ async def user_id():
 
 
 @pytest.mark.asyncio
-async def test_call_stage_router_live():
-    result = await llm_d_part.call_stage_router("계약하려고 준비 중이에요")
-    assert result["stage"] in [s.value for s in Stage]
-
-
-@pytest.mark.asyncio
 async def test_call_victim_check_live():
     result = await llm_d_part.call_victim_check(
         "작년에 전입신고랑 확정일자는 받아뒀는데 집주인이 돌려줄 생각이 없어 보여요",
@@ -127,7 +121,6 @@ async def test_full_graph_live_end_to_end(user_id):
         "user_input": "아니요 없어요",
         "session_id": str(conversation.id),
         "stage": Stage.DURING,
-        "stage_confirmed": True,
         "victim_slots": slots,
         "awaiting_relief_confirmation": True,
     }

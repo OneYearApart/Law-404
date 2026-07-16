@@ -32,18 +32,6 @@ async def _no_sleep(_seconds):
 
 
 @pytest.mark.asyncio
-async def test_call_stage_router_parses_json(monkeypatch):
-    async def _fake_call_llm(prompt: str) -> str:
-        return json.dumps({"stage": "전"}, ensure_ascii=False)
-
-    monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
-
-    result = await d_part.call_stage_router("계약하려고 준비 중이에요")
-
-    assert result == {"stage": "전"}
-
-
-@pytest.mark.asyncio
 async def test_call_victim_check_includes_existing_slots_in_prompt(monkeypatch):
     captured = {}
 
@@ -73,13 +61,13 @@ async def test_call_structured_strips_markdown_code_fence(monkeypatch):
     """GPT-4o가 실제로 ```json ... ``` 코드펜스로 감싸서 응답하는 경우가 있음(라이브 확인, 2026-07-11)."""
 
     async def _fake_call_llm(prompt: str) -> str:
-        return '```json\n{"stage": "전"}\n```'
+        return '```json\n{"moved_in_and_fixed_date": "filled"}\n```'
 
     monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
 
-    result = await d_part.call_stage_router("계약하려고 준비 중이에요")
+    result = await d_part.call_victim_check("전입신고 했어요", existing_slots={})
 
-    assert result == {"stage": "전"}
+    assert result == {"moved_in_and_fixed_date": "filled"}
 
 
 def _tool_call_response(arguments: dict):
@@ -128,9 +116,9 @@ async def test_call_supervisor_still_uses_default_model(monkeypatch):
 
 
 def test_render_prompt_loads_template_and_appends_context():
-    prompt = d_part._render_prompt("stage_router", user_input="테스트 발화")
+    prompt = d_part._render_prompt("victim_check", user_input="테스트 발화")
 
-    assert "계약 단계 판별" in prompt
+    assert "미인지형 판별" in prompt
     assert "테스트 발화" in prompt
 
 
