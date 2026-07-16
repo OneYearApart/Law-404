@@ -119,7 +119,7 @@ async def ingest(embed_enabled: bool = False):
         rows = (load_precedent_chunks() + load_statute_chunks() + load_hug_chunks()
                 + load_gov_chunks() + load_easylaw_chunks())
         rows = _split_oversized_rows(rows)
-        enrich_hug_topic_tags([row for row in rows if row["source_type"] in ("HUG사례집", "정부자료", "생활법령")])
+        enrich_hug_topic_tags([row for row in rows if row["source_type"] in ("HUG사례집", "HUG규정", "정부자료", "생활법령")])
         for row in rows:
             row["id"] = _insert_chunk(conn, row)
 

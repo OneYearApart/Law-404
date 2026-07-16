@@ -28,6 +28,19 @@ async def test_row_counts(ingested):
 
 
 @pytest.mark.asyncio
+async def test_hug_regulation_gets_topic_tags(ingested):
+    """작업단위 48: HUG규정도 enrich 대상이라 키워드 매칭 청크는 topic_tags가 채워진다.
+    (topic_tags는 ingest 시점 컬럼이라 임베딩 NULL 상태의 conftest에서도 검증 가능)"""
+    with get_engine().connect() as conn:
+        n = conn.execute(text(
+            "SELECT count(*) FROM d_part_embeddings "
+            "WHERE source_type = 'HUG규정' "
+            "AND topic_tags IS NOT NULL AND array_length(topic_tags, 1) > 0"
+        )).scalar()
+    assert n > 0
+
+
+@pytest.mark.asyncio
 async def test_decree_articles_loaded(ingested):
     """최우선변제액·소액임차인 범위는 법률 본문이 아닌 시행령에만 있다 (작업단위 38)."""
     with get_engine().connect() as conn:
