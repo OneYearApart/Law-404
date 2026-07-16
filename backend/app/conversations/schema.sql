@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     user_id INTEGER NOT NULL REFERENCES users(id),
     part VARCHAR(1) NOT NULL,          -- 'a' | 'b' | 'c' | 'd'
     title TEXT,
+    state JSONB,                        -- 파트별 턴간 carryover 상태 (현재 d파트 전용, a/b/c는 항상 NULL)
     updated_at TIMESTAMP DEFAULT now()
 );
 
