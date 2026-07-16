@@ -13,6 +13,12 @@ import {
   sendATurn,
   uploadADocument,
 } from '../../api/chat/A/aApi.js';
+import {
+  createDConversation,
+  createEmptyDAnswer,
+  reduceDAnswer,
+  streamDChat,
+} from '../../api/chat/D/dApi.js';
 import { ApiError } from '../../api/common/apiClient.js';
 import ChatComposer from '../../components/chat/ChatComposer/ChatComposer.jsx';
 import AssistantThinking from '../../components/chat/AssistantThinking/AssistantThinking.jsx';
@@ -48,6 +54,7 @@ function ChatbotPage({ consultationType }) {
   const config = CHATBOT_CATEGORIES[consultationType];
   const AssistantAnswer = CHATBOT_ANSWER_COMPONENTS[consultationType];
   const isAPart = consultationType === 'before-contract';
+  const isDPart = consultationType === 'jeonse-fraud';
   const [input, setInput] = useState('');
   const [messagesByType, setMessagesByType] = useState(createEmptyConversations);
   const [conversationIds, setConversationIds] = useState({});
@@ -63,9 +70,12 @@ function ChatbotPage({ consultationType }) {
   const isBusy = isLoading || isUploading || isAnalyzing;
   const currentConversationId = conversationIds[consultationType] || null;
 
+  // D파트 스트리밍은 메시지 개수가 아니라 마지막 답변의 길이가 늘어나므로 그것도 같이 따라간다.
+  const streamedLength = messages[messages.length - 1]?.content?.text?.length ?? 0;
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, streamedLength]);
 
   const appendMessages = (...nextMessages) => {
     setMessagesByType((current) => ({
@@ -74,6 +84,16 @@ function ChatbotPage({ consultationType }) {
         ...(current[consultationType] ?? []),
         ...nextMessages,
       ],
+    }));
+  };
+
+  // D파트는 SSE라 답변이 토큰 단위로 들어온다. 이미 붙여둔 말풍선을 제자리에서 갱신한다.
+  const updateMessage = (id, updater) => {
+    setMessagesByType((current) => ({
+      ...current,
+      [consultationType]: (current[consultationType] ?? []).map((message) =>
+        message.id === id ? { ...message, content: updater(message.content) } : message,
+      ),
     }));
   };
 
@@ -94,6 +114,17 @@ function ChatbotPage({ consultationType }) {
     return created.conversation_id;
   };
 
+  // D파트 엔드포인트는 대화방을 만들어주지 않으므로 첫 질문 전에 발급받아 둔다.
+  const ensureDConversation = async () => {
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+
+    const conversationId = await createDConversation();
+    saveConversationId(conversationId);
+    return conversationId;
+  };
+
   const refreshDocuments = async (conversationId) => {
     const response = await listADocuments(conversationId);
     const nextDocuments = normalizeADocumentList(response);
@@ -110,6 +141,7 @@ function ChatbotPage({ consultationType }) {
     }
 
     const timestamp = Date.now();
+    const assistantId = `${timestamp}-assistant`;
     appendMessages({ id: `${timestamp}-user`, role: 'user', content: question });
     setInput('');
     setError('');
@@ -117,7 +149,19 @@ function ChatbotPage({ consultationType }) {
     setIsLoading(true);
 
     try {
-      if (isAPart) {
+      if (isDPart) {
+        // 빈 답변 카드를 먼저 띄우고 스트림이 도착하는 대로 채운다.
+        appendMessages({ id: assistantId, role: 'assistant', content: createEmptyDAnswer() });
+
+        const conversationId = await ensureDConversation();
+
+        await streamDChat({
+          conversationId,
+          userInput: question,
+          onEvent: (streamEvent) =>
+            updateMessage(assistantId, (answer) => reduceDAnswer(answer, streamEvent)),
+        });
+      } else if (isAPart) {
         const result = await sendATurn({
           question,
           conversationId: currentConversationId,
@@ -145,8 +189,17 @@ function ChatbotPage({ consultationType }) {
         });
       }
     } catch (requestError) {
-      setError(getErrorMessage(requestError, '상담 답변을 불러오지 못했습니다.'));
+      const message = getErrorMessage(requestError, '상담 답변을 불러오지 못했습니다.');
+      setError(message);
 
+      // D파트는 카드를 이미 띄워둔 상태라 그대로 두면 빈 카드가 남는다.
+      if (isDPart) {
+        updateMessage(assistantId, (answer) => ({
+          ...answer,
+          status: 'error',
+          errorMessage: message,
+        }));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -318,7 +371,7 @@ function ChatbotPage({ consultationType }) {
               AssistantAnswer={AssistantAnswer}
             />
           ))}
-          {isLoading && (
+          {isLoading && !isDPart && (
             <AssistantThinking key={`assistant-thinking-${consultationType}`} />
           )}
         </AnimatePresence>

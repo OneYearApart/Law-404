@@ -30,8 +30,77 @@
   border-radius: var(--radius-round);
 }
 
-.answer p {
+/* 근거 자료는 DB 원문 그대로다. 본문(LLM 생성)과 시각적으로 구분해서 위에 쌓는다. */
+.citations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-20);
+  background: var(--color-surface-subtle);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.citationsTitle {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}
+
+.citation {
+  padding: var(--space-10) var(--space-12);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-medium);
+}
+
+.citationHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.sourceType,
+.excerpt {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-8);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-round);
+}
+
+.sourceType {
+  color: var(--color-white);
+  background: var(--color-secondary);
+}
+
+.excerpt {
+  color: var(--color-text-secondary);
+  background: var(--color-border);
+}
+
+.citationLabel {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.citationContent {
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+/* 본문은 원문→해설→상황적용 + 액션플랜 + 면책이 줄바꿈으로 이어진 평문이다. */
+.body,
+.errorMessage {
   padding: var(--space-16) var(--space-20);
   font-size: var(--font-size-body);
   line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+.errorMessage {
+  color: #b42318;
 }
