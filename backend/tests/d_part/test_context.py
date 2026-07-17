@@ -1,13 +1,17 @@
 """
-단위 26 — format_chunks 출처 직렬화 헬퍼 테스트 (순수 함수, DB/네트워크 없음).
+_context 헬퍼 테스트 (순수 함수, DB/네트워크 없음).
 
-세 응답조립 노드(general_scenario/open_qa/response_assembly)가 공유하는 헬퍼로,
-statute_name/article_no/case_no/grade/법원명 등을 컨텍스트에 명시해 모델이 조번호·
-사건번호를 지어내지 않게 하는 것이 목적.
+- format_chunks(단위 26): statute_name/article_no/case_no/grade/법원명 등을 컨텍스트에
+  명시해 모델이 조번호·사건번호를 지어내지 않게 한다.
+- build_context: 생성 경로가 공유하는 컨텍스트 조립 — 근거 + 경로별 헤더 + 사용자 발화.
 """
 from datetime import date
 
-from app.graph.parts.d_part.nodes._context import _format_article_no, format_chunks
+from app.graph.parts.d_part.nodes._context import (
+    _format_article_no,
+    build_context,
+    format_chunks,
+)
 from app.rag.retrievers.base import Chunk
 
 
@@ -68,3 +72,25 @@ def test_multiple_chunks_separated_by_blank_line():
     ]
     out = format_chunks(chunks)
     assert out == "[HUG규정 | 안내-Q38]\nA\n\n[HUG규정 | 안내-Q39]\nB"
+
+
+# ── build_context: 생성 경로가 사용자 발화를 보게 한다 ──────────────────
+
+def test_build_context_includes_query_and_header():
+    context = build_context(
+        [Chunk(id=1, source_type="법령원문", content="조문 본문", statute_name="전세사기피해자법")],
+        header="항목: 등기부등본 위험 신호 해석",
+        query="근저당이 3개나 잡혀 있는데 계약해도 되나요",
+    )
+
+    assert "항목: 등기부등본 위험 신호 해석" in context
+    assert "근저당이 3개나 잡혀 있는데 계약해도 되나요" in context
+    assert "조문 본문" in context
+
+
+def test_build_context_without_query_omits_the_field():
+    """발화를 안 넣는 경로(response_assembly)에 빈 '사용자 발화:' 줄이 남으면 안 된다."""
+    context = build_context([Chunk(id=1, source_type="법령원문", content="조문")], header="판단 결과: 높음")
+
+    assert "사용자 발화" not in context
+    assert context.startswith("판단 결과: 높음")

@@ -25,7 +25,7 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
             "guides": [_make_chunk("생활법령", "상황적용 안내")],   # 작업단위 51 상황적용 grounding
         }
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "원문 "
         yield "해설 "
         yield "상황적용"
@@ -94,7 +94,7 @@ async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
         calls["retrieve"] += 1
         return {"statute": [], "case_law": [], "cases": [], "guides": []}
 
-    async def _counting_generate_response(context: str):
+    async def _counting_generate_response(context: str, answer_kind: str):
         calls["generate"] += 1
         yield "재생성된 응답"
 
@@ -111,3 +111,51 @@ async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
 
     assert calls == {"retrieve": 0, "generate": 0}
     assert result.get("response_stream") is None
+
+
+# --- 컨텍스트가 내부 필드명을 노출하지 않아야 한다 -------------------------------
+
+def test_context_uses_korean_labels_not_internal_field_names():
+    """슬롯을 model_dump로 통째로 넘기면 모델이 영문 키를 답변에 그대로 옮겨 적는다
+    (실제로 "'moved_in_and_fixed_date' 요건이 충족된 반면…"이 사용자에게 노출됐다)."""
+    from app.graph.parts.d_part.nodes.response_assembly import _format_context
+
+    state = {
+        "victim_slots": VictimRequirementSlots(
+            moved_in_and_fixed_date=SlotStatus.FILLED,
+            deposit_under_limit=SlotStatus.FILLED,
+            multiple_victims=SlotStatus.FILLED,
+            no_intent_to_return=SlotStatus.UNFILLED,
+            has_relief_measure=False,
+            auction_completed=True,
+        ),
+        "victim_judgment": VictimJudgment.NEEDS_CONFIRMATION,
+        "retrieved_chunks": [],
+    }
+
+    context = _format_context(state)
+
+    for field_name in ("moved_in_and_fixed_date", "deposit_under_limit", "multiple_victims",
+                       "no_intent_to_return"):
+        assert field_name not in context
+    assert "전입신고·확정일자" in context and "충족" in context
+    assert "미충족" in context                      # no_intent_to_return이 UNFILLED
+    assert VictimJudgment.NEEDS_CONFIRMATION.value in context
+
+
+def test_context_hides_control_flags_that_are_not_requirements():
+    """auction_completed(면제 플래그)·has_relief_measure(제외 사유)는 요건이 아니다.
+    함께 던지면 모델이 "has_relief_measure 요건이 충족되지 않았습니다"처럼 쓰는데,
+    구제수단이 없다는 건 오히려 지원 대상이라는 뜻이라 정반대로 읽힌다."""
+    from app.graph.parts.d_part.nodes.response_assembly import _format_context
+
+    state = {
+        "victim_slots": VictimRequirementSlots(has_relief_measure=False, auction_completed=True),
+        "victim_judgment": VictimJudgment.HIGH,
+        "retrieved_chunks": [],
+    }
+
+    context = _format_context(state)
+
+    assert "has_relief_measure" not in context
+    assert "auction_completed" not in context

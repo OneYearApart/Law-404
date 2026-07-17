@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, status
 
 from app.auth.dependencies import get_current_user
 from app.conversations import repository
-from app.conversations.models import CreateConversationRequest, CreateMessageRequest
+from app.conversations.models import (
+    ConversationSummary,
+    CreateConversationRequest,
+    CreateMessageRequest,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -18,8 +22,9 @@ async def create_conversation(body: CreateConversationRequest, user=Depends(get_
     return await repository.create_conversation(user.id, body.part, body.title)
 
 
-@router.get("/")
+@router.get("/", response_model=list[ConversationSummary])
 async def list_conversations(user=Depends(get_current_user)):
+    """로그인한 사용자의 전 파트 대화 목록. part를 함께 실어 클라이언트가 파트별로 고른다."""
     return await repository.list_conversations(user.id)
 
 

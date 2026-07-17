@@ -17,12 +17,20 @@ export const CHATBOT_CATEGORIES = Object.freeze({
     reply:
       '계약 후 상담 기준으로 안내하겠습니다. 입주일과 잔금일을 기준으로 전입신고, 확정일자, 임대차 신고 일정을 먼저 정리해 주세요.',
   },
+  // 전세사기(D)는 실제 백엔드에 연결돼 있어 고정 reply를 쓰지 않는다.
   'jeonse-fraud': {
     title: '전세사기 상담',
     prompt: '의심되는 상황이나 위험 신호를 입력해 주세요.',
-    reply:
-      '전세사기 상담 기준으로 위험 신호를 나눠 보겠습니다. 추가 송금은 보류하고 최신 등기부, 임대인 신원, 보증 가입 가능 여부를 공식 기관에서 다시 확인해 주세요.',
   },
+});
+
+// conversations 테이블의 part 컬럼('a'~'d')과 화면의 consultationType을 잇는 단일 매핑처.
+// 지금까지는 dApi가 'd'를 직접 박아 썼다 — 파트가 늘면 흩어지므로 여기로 모은다.
+export const CONSULTATION_TYPE_TO_PART = Object.freeze({
+  'before-contract': 'a',
+  'during-contract': 'b',
+  'after-contract': 'c',
+  'jeonse-fraud': 'd',
 });
 
 export const createEmptyConversations = () =>

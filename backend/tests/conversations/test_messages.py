@@ -101,3 +101,30 @@ async def test_list_conversations_returns_multiple_newest_first(user_id):
 
     assert first.id in ids and second.id in ids
     assert ids.index(first.id) < ids.index(second.id)
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_titles_fall_back_to_first_question(user_id):
+    """요약(title)이 붙기 전에도 사이드바가 빈 제목을 그리지 않아야 한다.
+    폴백 재료인 첫 사용자 발화가 messages에 있어 클라이언트는 대신 못 채운다."""
+    asked = await create_conversation(user_id, "d")
+    untouched = await create_conversation(user_id, "d")
+    await save_message(user_id, "d", "user", "보증금을 못 받고 있어요", asked.id)
+    await save_message(user_id, "d", "assistant", "전입신고는 하셨나요?", asked.id)
+
+    by_id = {c.id: c for c in await list_conversations(user_id)}
+
+    assert by_id[asked.id].title == "보증금을 못 받고 있어요"   # assistant 발화가 아니라 첫 user 발화
+    assert by_id[untouched.id].title == "새 상담"               # 질문 전이라 폴백 문구
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_exposes_part_for_client_side_filtering(user_id):
+    """목록은 전 파트를 반환하고 part를 함께 실어 클라이언트가 골라 쓴다."""
+    d_conversation = await create_conversation(user_id, "d")
+    a_conversation = await create_conversation(user_id, "a")
+
+    parts = {c.id: c.part for c in await list_conversations(user_id)}
+
+    assert parts[d_conversation.id] == "d"
+    assert parts[a_conversation.id] == "a"
