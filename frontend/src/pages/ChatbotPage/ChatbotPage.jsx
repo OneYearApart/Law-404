@@ -249,6 +249,21 @@ function ChatbotPage({ consultationType }) {
     ? latestAssistantAnswer?.consultationProgress || null
     : null;
 
+  // '새 상담'은 사이드바 컨텍스트(A 전용)를 거치는데 아래 복원 effect가 A에서만 동작해,
+  // B·C·D는 버튼이 무반응이었다. 대화이력 연동이 없어도 "새로 시작"은 되어야 하므로
+  // 파트 중립 신호인 newConversationVersion만 보고 현재 파트를 직접 초기화한다.
+  // (A는 아래 effect가 activeAConversationId=null 경로로 처리하므로 건너뛴다 — 중복 초기화 방지)
+  // effect가 아니라 렌더 중 조정인 이유: 초기화를 effect로 미루면 이전 대화가 한 프레임
+  // 그려졌다 사라진다. 이 시점에 바로 리셋하면 React가 커밋 전에 다시 렌더한다.
+  const [lastNewConversationVersion, setLastNewConversationVersion] = useState(newConversationVersion);
+  if (!isAPart && lastNewConversationVersion !== newConversationVersion) {
+    setLastNewConversationVersion(newConversationVersion);
+    setMessagesByType((current) => ({ ...current, [consultationType]: [] }));
+    setConversationIds((current) => ({ ...current, [consultationType]: null }));
+    setError('');
+    setNotice('');
+  }
+
   useEffect(() => {
     if (!isAPart) {
       return undefined;
