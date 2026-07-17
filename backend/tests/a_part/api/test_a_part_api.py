@@ -57,15 +57,11 @@ def fake_rag_answerer(*, query, consultation_context, **kwargs):
 class TrackingDatabaseRepository:
     def __init__(self):
         self.documents: dict[str, str] = {}
-        self.states: set[str] = set()
         self.analyses: set[str] = set()
         self.comparisons: set[str] = set()
 
     def upsert_document(self, *, document_id, conversation_id, **kwargs):
         self.documents[document_id] = conversation_id
-
-    def upsert_state(self, *, conversation_id, state):
-        self.states.add(conversation_id)
 
     def delete_document(self, *, conversation_id, document_id):
         return self.documents.pop(document_id, None) == conversation_id
@@ -152,7 +148,7 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
 
             valid = client.post(
                 "/chat/a/turn",
-                json={"question": "등기부등본에 근저당이 있는데 계약해도 되나요?"},
+                json={"question": "집주인 가족이 대신 계약하러 왔어요."},
             )
             assert valid.status_code == 200
             valid_payload = valid.json()["data"]
@@ -160,7 +156,7 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
             assert valid_payload["consultation"]["state"]["owner_user_id"] == 1
 
             wrong_type = client.post(
-                f"/chat/a/conversations/{conversation_id}/documents?extract_text=false",
+                f"/chat/a/conversations/{conversation_id}/documents",
                 data={"document_type": "transfer_receipt"},
                 files={"file": ("receipt.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")},
             )
@@ -168,7 +164,7 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
             assert wrong_type.json()["error"]["code"] == "UNSUPPORTED_DOCUMENT_TYPE"
 
             invalid_pdf = client.post(
-                f"/chat/a/conversations/{conversation_id}/documents?extract_text=false",
+                f"/chat/a/conversations/{conversation_id}/documents",
                 data={"document_type": "lease_contract"},
                 files={"file": ("lease.pdf", b"not a pdf", "application/pdf")},
             )
@@ -176,7 +172,7 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
             assert invalid_pdf.json()["error"]["code"] == "INVALID_DOCUMENT"
 
             uploaded = client.post(
-                f"/chat/a/conversations/{conversation_id}/documents?extract_text=false",
+                f"/chat/a/conversations/{conversation_id}/documents",
                 data={"document_type": "lease_contract"},
                 files={"file": ("lease.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")},
             )
@@ -214,7 +210,7 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_a_part_api_extracts_text_layer_pdf(tmp_path):
+def test_a_part_api_uploads_pdf_without_early_analysis(tmp_path):
     import fitz
 
     service = build_service(tmp_path)
@@ -223,11 +219,7 @@ def test_a_part_api_extracts_text_layer_pdf(tmp_path):
 
     pdf = fitz.open()
     page = pdf.new_page()
-    text = "LEASE CONTRACT\n" + "\n".join(
-        f"Clause {index}: deposit and payment schedule information."
-        for index in range(1, 30)
-    )
-    page.insert_textbox(fitz.Rect(50, 50, 550, 780), text, fontsize=9)
+    page.insert_text((50, 50), "LEASE CONTRACT")
     pdf_bytes = pdf.tobytes()
     pdf.close()
 
@@ -242,12 +234,9 @@ def test_a_part_api_extracts_text_layer_pdf(tmp_path):
                 files={"file": ("lease.pdf", pdf_bytes, "application/pdf")},
             )
             assert uploaded.status_code == 201
-            extraction = uploaded.json()["data"]["extraction"]["extraction"]
-            assert extraction["processing_status"] == "completed"
-            assert extraction["page_count"] == 1
-            assert extraction["direct_text_page_count"] == 1
-            assert extraction["ocr_page_count"] == 0
-            assert extraction["text_character_count"] > 500
+            payload = uploaded.json()["data"]
+            assert "extraction" not in payload
+            assert payload["upload"]["document"]["processing_status"] == "uploaded"
     finally:
         app.dependency_overrides.clear()
 
@@ -281,7 +270,7 @@ def test_delete_conversation_removes_files_state_and_database_artifacts(tmp_path
                 ),
             ):
                 uploaded = client.post(
-                    f"/chat/a/conversations/{conversation_id}/documents?extract_text=false",
+                    f"/chat/a/conversations/{conversation_id}/documents",
                     data={"document_type": document_type},
                     files={
                         "file": (
