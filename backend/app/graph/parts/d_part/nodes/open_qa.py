@@ -31,6 +31,8 @@ async def handle_open_qa(state: DPartGraphState) -> DPartGraphState:
 
     # 근거가 될 법령원문이 없으면 원문→해설→상황적용을 지어내지 않고 '근거 없음'으로 빠진다.
     if not any(c.source_type == "법령원문" for c in chunks):
+        # 판례/HUG만 걸렸어도 근거 카드(META)를 내보내면 '근거 없음' 메시지와 모순되므로 비운다(단위 46).
+        state["retrieved_chunks"] = []
         state["final_answer"] = _NO_EVIDENCE_MESSAGE
         return state
 

@@ -98,11 +98,11 @@ class DPartRetriever(BaseRetriever):
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
         """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문 + 판례/HUG사례집/
-        생활법령/정부자료를 조회한다. 판례/HUG/생활법령/정부자료는 topic_tags로 후보를 거른 뒤
+        생활법령/정부자료/HUG규정을 조회한다. 판례/HUG/생활법령/정부자료는 topic_tags로 후보를 거른 뒤
         query_text 유사도로 재랭킹해 상위 top_k만 취한다(태그만으로 필터하면 수십~수백 건이
-        통째로 컨텍스트에 들어가 토큰이 폭증하므로). 생활법령/정부자료(상황적용·해설 층)는 guides로
-        함께 반환해 판례/HUG가 0건인 항목(예: 전-④계약서_특약사항)도 근거자료가 검색되게 한다
-        (작업단위 40/41 + 코드트랙 재랭킹). query_text는 한 번만 임베딩해 재사용한다."""
+        통째로 컨텍스트에 들어가 토큰이 폭증하므로). 생활법령/정부자료/HUG규정(상황적용·해설 층)은 guides로
+        함께 반환해 판례/HUG사례집이 0건인 항목(예: 전-④계약서_특약사항)도 근거자료가 검색되게 한다
+        (작업단위 40/41 + 코드트랙 재랭킹, HUG규정 편입은 작업단위 48). query_text는 한 번만 임베딩해 재사용한다."""
         query_vector = await embed(query_text)
         statute_chunks = await self.search(
             query_text, top_k=_STATUTE_TOP_K, source_type="법령원문", query_vector=query_vector
@@ -110,7 +110,8 @@ class DPartRetriever(BaseRetriever):
         case_law = await self._fetch_by_topic_tag(topic_key, "판례", query_vector)
         cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집", query_vector)
         guides = (await self._fetch_by_topic_tag(topic_key, "생활법령", query_vector)
-                  + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector))
+                  + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector)
+                  + await self._fetch_by_topic_tag(topic_key, "HUG규정", query_vector))   # 작업단위 48
         return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
 
     async def _fetch_by_topic_tag(
@@ -142,16 +143,20 @@ class DPartRetriever(BaseRetriever):
         rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
 
-    async def search_by_requirement(self, slot_result: dict) -> dict:
+    async def search_by_requirement(self, slot_result: dict, situation_query: str | None = None) -> dict:
         """요건 슬롯 중 하나라도 평가(충족/불충족/불명확)가 내려졌으면 전세사기피해자법
-        제3조(요건 항① + 제외사유 항②) 청크를 조회하고, 링크된 판례/사례집을 함께 붙여 반환한다."""
+        제3조(요건 항① + 제외사유 항②) 청크를 조회하고, 링크된 판례/사례집을 함께 붙여 반환한다.
+        situation_query(사용자 발화)가 있으면 상황적용 grounding용 생활법령을 벡터 검색해 guides로 붙인다(작업단위 51)."""
         slots = slot_result.model_dump() if hasattr(slot_result, "model_dump") else slot_result
         article_nos = JEONSE_LAW_ARTICLE3_HANGS if any(v is not None for v in slots.values()) else []
 
         statute_chunks = await self._fetch_statute_articles(article_nos)
         case_law = await self._link_related(statute_chunks, source="판례")
         cases = await self._link_related(statute_chunks, source="HUG사례집")
-        return {"statute": statute_chunks, "case_law": case_law, "cases": cases}
+        # 상황적용 grounding: 요건 슬롯은 조문 키라 topic_tag가 없으므로 발화로 생활법령을 벡터 검색(작업단위 51)
+        guides = (await self.search(situation_query, top_k=2, source_type="생활법령")
+                  if situation_query else [])
+        return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
 
     async def _fetch_statute_articles(self, article_nos: list[str]) -> list[Chunk]:
         if not article_nos:

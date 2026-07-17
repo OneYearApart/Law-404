@@ -16,6 +16,10 @@ PROJECT_ROOT = BACKEND_ROOT.parent
 class Settings(BaseSettings):
     database_url: str = "postgresql://edu:1234@localhost:5433/edudb"
     OPENAI_API_KEY: str
+
+    @property
+    def openai_api_key(self) -> str:
+        return self.OPENAI_API_KEY
     #openai_api_key: str
     @property
     def openai_api_key(self) -> str:
@@ -37,6 +41,12 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def openai_api_key(self) -> str:
+        """소문자 별칭. 필드가 OPENAI_API_KEY로 리네임(feature/#28)되며 깨진 소문자 참조
+        (rag/embeddings/base.py, llm/d_part.py)를 복구한다 — 대/소문자 참조가 공존한다."""
+        return self.OPENAI_API_KEY
 
 settings = Settings()
 

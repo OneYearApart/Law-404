@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.conversations.repository import get_session_state, save_message, update_session_state
 from app.conversations.summarizer import maybe_summarize_conversation
 from app.graph.parts.d_part.graph import graph as d_graph
+from app.graph.parts.d_part.nodes._context import build_citation_cards
 from app.graph.parts.d_part.schemas import DPartSessionState
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ async def chat_d(
 
             # 판단 단계(전/중/후, 위험신호 감지 등)는 내부적으로 동기 실행
             final_state = await d_graph.ainvoke(graph_input)
+
+            # 근거 카드(조문/판례 verbatim)를 토큰 스트림 앞에 먼저 내보낸다(B파트 META 패턴, 단위 46).
+            # retrieved_chunks가 없는 경로(스테이지 확인질문/special_cases/fallback/근거없음)는 emit 안 함.
+            cards = build_citation_cards(final_state.get("retrieved_chunks", []))
+            if cards:
+                yield f"data: {StreamEvent(type=EventType.META, data={'citations': cards}).model_dump_json()}\n\n"
 
             # 최종 답변만 토큰 단위로 스트리밍. response_assembly가 조립한 응답은 final_answer를
             # 일부러 비워두므로(ainvoke() 반환 dict는 노드가 사후에 채운 값을 반영 못 함) 여기서

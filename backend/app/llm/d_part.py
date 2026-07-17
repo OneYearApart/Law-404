@@ -138,10 +138,6 @@ async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs)
             await asyncio.sleep(2**attempt)
 
 
-async def call_stage_router(user_input: str) -> dict:
-    return await _call_structured("stage_router", user_input=user_input)
-
-
 async def call_victim_check(user_input: str, existing_slots: dict) -> dict:
     return await _call_structured("victim_check", user_input=user_input, existing_slots=existing_slots)
 

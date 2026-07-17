@@ -58,6 +58,15 @@ GENERAL_TOPIC_LABELS: dict[str, str] = {
 
 SPECIAL_CASE_CATEGORIES: tuple[str, ...] = ("임대인 사망/파산", "신탁사기", "다가구주택", "공인중개사 허위고지")
 
+# supervisor가 분류하는 특수상황 4종 → search_by_topic이 조회할 topic_tag 키 매핑(작업단위 49).
+# 키는 links_d.py TOPIC_TAG_KEYWORDS와 정확히 일치해야 한다(§4대로 4종 전부 판례/HUG 태그 보유).
+SPECIAL_CASE_TOPIC_TAGS: dict[str, str] = {
+    "임대인 사망/파산": "트리거-임대인사망파산",
+    "신탁사기": "전-⑤신탁사기",
+    "다가구주택": "전-③다가구_선순위보증금",
+    "공인중개사 허위고지": "전-⑥공인중개사_허위고지",
+}
+
 
 class VictimRequirementSlots(BaseModel):
     moved_in_and_fixed_date: Optional[SlotStatus] = None      # ① 전입신고+확정일자
@@ -80,9 +89,8 @@ class DPartGraphState(TypedDict, total=False):
                                                          # 관리하며, 그 외 노드는 get_active_query()로만 읽는다
     session_id: Optional[str]                        # = conversations.id. 상태를 어디서 불러올지 가리키는 키일 뿐, 값 자체는 아님
     persona: Optional[str]                             # 사용자 유형(임차인/임대인 등) — 최초 판별 후 유지
-    stage: Optional[Stage]                              # 계약 단계(전/중/후) — 최초 판별+확인 후 유지
-    stage_confirmed: bool                                 # stage가 사용자 확인을 거쳤는지
-    stage_confirm_attempts: int                             # 확인 응답이 unclear로 온 연속 턴 수 — 재질문 상한용
+    stage: Optional[Stage]                              # 계약 단계(전/중/후) — supervisor가 general_topic 키
+                                                           # 접두어에서 역산(단위 29). 역산 불가한 턴은 이전 값 유지
     route_target: Optional[str]                             # supervisor가 이번 턴 결정한 다음 노드
                                                                # ("victim_check"/"special_cases"/"general_scenario"/
                                                                # "open_qa") — 이번 턴 라우팅 전용, carryover 아님
@@ -95,6 +103,9 @@ class DPartGraphState(TypedDict, total=False):
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     needs_response_assembly: bool                                     # victim_check가 이번 턴에 판단을 새로 확정했는지 —
                                                                         # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
+    appendix_text: Optional[str]                                      # 스트림 말미(면책 앞)에 붙일 결정론적 첨부 텍스트 —
+                                                                        # 미인지형 지원절차 액션플랜(43~45) / 인지형 지원절차 개요(49)가 공유.
+                                                                        # finalize가 첨부. 이번 턴 전용(carryover 아님)
     special_case_matched: Optional[str]                          # 매칭된 특수상황
     general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(13개 항목 키) — 매 턴 재분류, carryover 아님
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
@@ -111,8 +122,6 @@ class DPartSessionState(BaseModel):
     저장: state.model_dump(mode="json") / 로드: DPartSessionState.model_validate(raw_dict)
     """
     stage: Optional[Stage] = None
-    stage_confirmed: bool = False
-    stage_confirm_attempts: int = 0
     active_query: Optional[str] = None
     persona: Optional[str] = None
     victim_slots: VictimRequirementSlots = Field(default_factory=VictimRequirementSlots)

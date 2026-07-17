@@ -83,8 +83,11 @@ class ConversationState(BaseModel):
     issue_slots: dict[str, dict[str, SlotState]] = Field(default_factory=dict)
     messages: list[ConversationMessage] = Field(default_factory=list)
     asked_question_keys: list[str] = Field(default_factory=list)
+    active_question_key: str | None = None
+    persisted_message_count: int = Field(default=0, ge=0)
     last_risk_level: str | None = None
     last_answer: dict[str, Any] | None = None
+    turn_history: list[dict[str, Any]] = Field(default_factory=list)
     documents: list[UploadedDocument] = Field(default_factory=list)
     document_analysis_version: str | None = None
     document_comparison_result_path: str | None = None
