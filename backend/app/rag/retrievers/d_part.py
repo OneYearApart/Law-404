@@ -13,6 +13,7 @@ from sqlalchemy import text
 from app.core.config import get_engine
 from app.rag.embeddings.base import embed
 from app.rag.retrievers.base import BaseRetriever, Chunk, _vector_literal
+from app.rag.retrievers.d_part_glossary_supplement import SUPPLEMENTARY_GLOSSARY
 
 JEONSE_LAW_NAME = "전세사기피해자 지원 및 주거안정에 관한 특별법"
 
@@ -165,10 +166,13 @@ class DPartRetriever(BaseRetriever):
         return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
 
     async def load_glossary(self) -> list[dict]:
-        """HUG 종합안내 "붙임 2. 용어사전"에서 적재된 용어 풀이 전량(현재 112건).
+        """HUG 종합안내 "붙임 2. 용어사전"에서 적재된 용어 풀이 전량 + 코드 보충분.
+
+        DB는 인제스천 데이터(약 112건)라 원본 PDF 없이는 못 늘려서, 전세사기 상담에 자주
+        나오는 핵심어를 SUPPLEMENTARY_GLOSSARY로 병합한다(표제어 겹치면 DB 우선).
 
         벡터 검색이 아니라 전량 조회다 — 용어사전은 정적 데이터라 매 턴 DB를 칠 이유가 없어
-        프로세스당 1회만 읽고 캐시한다. 인제스천으로 사전이 바뀌면 재기동이 필요하다.
+        프로세스당 1회만 읽고 캐시한다. 인제스천이나 보충분이 바뀌면 재기동이 필요하다.
 
         content 형식은 hug_docs_d._load_glossary_chunks가 조립한 "{용어}: {설명}\\n예: {예문}" —
         첫 ':'로 표제어와 설명을 가른다. 표제어를 화면에서 제목으로 쓰므로 설명에 다시 남겨두면
@@ -197,6 +201,13 @@ class DPartRetriever(BaseRetriever):
             if not separator or not term.strip() or not description.strip():
                 continue
             glossary.append({"term": term.strip(), "description": description.strip()})
+
+        # 인제스천으로는 못 늘리는 전세사기 핵심어를 코드 보충분으로 채운다.
+        # 표제어가 겹치면 DB 원문을 우선한다(보충분은 새 표제어만 더한다).
+        db_terms = {entry["term"] for entry in glossary}
+        glossary.extend(
+            entry for entry in SUPPLEMENTARY_GLOSSARY if entry["term"] not in db_terms
+        )
 
         _glossary_cache = glossary
         return _glossary_cache
