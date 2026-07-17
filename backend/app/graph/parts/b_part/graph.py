@@ -724,15 +724,33 @@ class BPartMVPGraph:
         calendar_registration = build_calendar_registration_ready_action(pending_action)
         if not calendar_registration:
             return state
-        calendar_tool_result = run_calendar_registration(
-            calendar_registration,
-            mode=str(request.get("calendar_mode", "dry_run")),
-            provider=str(request.get("calendar_provider", "google_calendar")),
-            calendar_id=str(request.get("calendar_id", "primary")),
-        )
+
+        if request.get("calendar_connection_required"):
+            calendar_tool_result = {
+                "status": "calendar_connection_required",
+                "provider": str(request.get("calendar_provider", "smithery_googlecalendar")),
+                "reason": "user_calendar_connection_not_found",
+                "event_count": len(calendar_registration.get("events", [])),
+                "events": calendar_registration.get("events", []),
+                "registered_event_count": 0,
+                "registered_events": [],
+            }
+        else:
+            calendar_tool_result = run_calendar_registration(
+                calendar_registration,
+                mode=str(request.get("calendar_mode", "dry_run")),
+                provider=str(request.get("calendar_provider", "google_calendar")),
+                calendar_id=str(request.get("calendar_id", "primary")),
+                connection_id=request.get("calendar_connection_id"),
+            )
 
         if calendar_tool_result.get("status") == "registered":
             answer = "좋습니다. 아래 일정들을 Google Calendar에 등록했습니다."
+        elif calendar_tool_result.get("status") == "calendar_connection_required":
+            answer = (
+                "Google Calendar 연결이 필요합니다.\n"
+                "캘린더에 등록하려면 먼저 내 계정의 Google Calendar connection을 연결해 주세요."
+            )
         elif calendar_tool_result.get("status") == "not_configured":
             answer = (
                 "좋습니다. 아래 일정들은 Google Calendar에 등록할 수 있는 형식으로 검증되었습니다.\n"
