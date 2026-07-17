@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { splitDBody } from '../../../api/chat/D/dApi.js';
 import styles from './AssistantAnswer.module.css';
 
 // 스트림 진행 상태. done은 라벨을 붙이지 않는다 — 완료됐다는 사실 자체는 본문이 이미 말해주고,
@@ -66,9 +67,10 @@ function CitationModal({ citation, onClose }) {
 }
 
 function DAssistantAnswer({ content }) {
-  const { status, citations, judgment, text, appendix, disclaimer, errorMessage } = content;
+  const { status, citations, judgment, text, appendix, disclaimer, terms, errorMessage } = content;
   const [selectedCitation, setSelectedCitation] = useState(null);
   const statusLabel = STATUS_LABELS[status];
+  const bodySections = useMemo(() => splitDBody(text), [text]);
 
   return (
     <>
@@ -88,18 +90,41 @@ function DAssistantAnswer({ content }) {
 
         {status === 'error' ? (
           <p className={styles.errorMessage}>{errorMessage}</p>
+        ) : bodySections.length ? (
+          // 해설 → 상황적용. 머리글이 깨진 응답은 title이 null인 단일 섹션으로 온다(폴백).
+          bodySections.map((section) => (
+            <section className={styles.section} key={section.title ?? 'body'}>
+              {section.title && <h3 className={styles.sectionTitle}>{section.title}</h3>}
+              <p className={styles.sectionBody}>{section.body}</p>
+            </section>
+          ))
         ) : (
-          <p className={styles.body}>
-            {text || (status === 'loading' ? '답변을 준비하고 있습니다.' : null)}
+          <p className={styles.sectionBody}>
+            {status === 'loading' ? '답변을 준비하고 있습니다.' : null}
           </p>
         )}
 
-        {/* 해설·상황적용(LLM 본문) 다음의 3번 블록. 내용은 백엔드가 큐레이션한 고정 텍스트라
-            프론트는 제목만 씌우고 문구는 손대지 않는다. */}
+        {/* 대응 — 백엔드가 큐레이션한 고정 텍스트라 프론트는 제목만 씌우고 문구는 손대지 않는다. */}
         {appendix && (
-          <section className={styles.appendix}>
-            <h3 className={styles.appendixTitle}>대응</h3>
-            <p className={styles.appendixBody}>{appendix}</p>
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>대응</h3>
+            <p className={styles.sectionBody}>{appendix}</p>
+          </section>
+        )}
+
+        {/* 관련 법률 용어 풀이 — 본문·대응에 실제로 등장한 용어만 백엔드가 골라 내려준다.
+            문구는 DB 원문 그대로라 여기서 재가공하지 않는다. */}
+        {terms.length > 0 && (
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>관련 법률 용어 풀이</h3>
+            <dl className={styles.terms}>
+              {terms.map((entry) => (
+                <div key={entry.term}>
+                  <dt>{entry.term}</dt>
+                  <dd>{entry.description}</dd>
+                </div>
+              ))}
+            </dl>
           </section>
         )}
 

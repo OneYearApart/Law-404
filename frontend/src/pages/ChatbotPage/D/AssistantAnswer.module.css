@@ -55,36 +55,53 @@
   border-radius: var(--radius-round);
 }
 
-/* 본문은 원문→해설→상황적용 + 액션플랜 + 면책이 줄바꿈으로 이어진 평문이다. */
-.body,
 .errorMessage {
   padding: var(--space-16) var(--space-20);
   font-size: var(--font-size-body);
   line-height: var(--line-height-relaxed);
   white-space: pre-wrap;
-}
-
-.errorMessage {
   color: #b42318;
 }
 
-/* 대응(액션플랜) — 해설·상황적용 다음의 3번 블록. 본문(LLM)과 달리 코드가 큐레이션한
-   고정 절차 안내라 시각적으로 구분한다. */
-.appendix {
+/* 해설 → 상황적용 → 대응 → 관련 법률 용어 풀이. 네 블록 모두 같은 프레임을 쓴다 —
+   출처(LLM 생성 / 코드 큐레이션 / DB 원문)는 달라도 사용자에겐 한 답변의 목차다. */
+.section {
   padding: var(--space-16) var(--space-20);
+}
+
+.section + .section {
   border-top: var(--border-width) solid var(--color-border);
 }
 
-.appendixTitle {
+.sectionTitle {
   margin-bottom: var(--space-8);
   font-size: var(--font-size-body-small);
   font-weight: var(--font-weight-bold);
   color: var(--color-deep-blue);
 }
 
-.appendixBody {
+.sectionBody {
   font-size: var(--font-size-body-small);
   line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+.terms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.terms dt {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+}
+
+.terms dd {
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary);
   white-space: pre-wrap;
 }
 

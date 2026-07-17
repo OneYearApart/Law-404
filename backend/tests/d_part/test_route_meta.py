@@ -30,7 +30,12 @@ async def _one_chunk():
     yield "답변 본문"
 
 
-def _stub_route(monkeypatch, final_state: dict, saved: list | None = None):
+def _stub_route(monkeypatch, final_state: dict, saved: list | None = None, glossary: list | None = None):
+    async def _fake_load_glossary():
+        return glossary or []
+
+    monkeypatch.setattr(d_part_route._retriever, "load_glossary", _fake_load_glossary)
+
     async def _fake_get_session_state(conversation_id, user_id):
         return None
 
@@ -122,3 +127,47 @@ def test_saved_message_matches_what_user_sees(monkeypatch):
     assert "답변 본문" in saved[0]
     assert "■ 지금 확인·실행하실 점" in saved[0]
     assert "본 안내는 일반적인 법률 정보이며" in saved[0]
+
+
+def test_glossary_terms_cover_appendix_not_just_body(monkeypatch):
+    """용어 스캔은 본문뿐 아니라 대응(액션플랜)까지 훑어야 한다 — 난해한 용어가 거기 몰려 있다."""
+    _stub_route(
+        monkeypatch,
+        {"appendix_text": "■ 지금 확인·실행하실 점\n- 우선매수권을 확인하세요."},
+        glossary=[{"term": "우선매수권", "description": "먼저 살 수 있는 권리예요."}],
+    )
+
+    body = _post()
+
+    assert '"terms"' in body
+    assert "우선매수권" in body
+
+
+def test_terms_absent_when_no_glossary_word_appears(monkeypatch):
+    """사전에 있어도 답변에 안 나온 용어는 붙이지 않는다."""
+    _stub_route(
+        monkeypatch,
+        {},
+        glossary=[{"term": "질권", "description": "담보로 잡는 권리예요."}],
+    )
+
+    body = _post()
+
+    assert '"terms"' not in body
+
+
+def test_terms_are_not_saved_to_messages(monkeypatch):
+    """의도된 예외: terms는 본문에서 파생된 읽기 보조 정보라 messages에 저장하지 않는다.
+    저장된 본문만 있으면 언제든 같은 결과로 재도출되므로 이력이 손실되지 않는다."""
+    saved: list[str] = []
+    _stub_route(
+        monkeypatch,
+        {},
+        saved=saved,
+        glossary=[{"term": "답변", "description": "풀이 문구예요."}],
+    )
+
+    body = _post()
+
+    assert '"terms"' in body            # 화면에는 나가고
+    assert "풀이 문구예요" not in saved[0]  # 저장 텍스트에는 섞이지 않는다

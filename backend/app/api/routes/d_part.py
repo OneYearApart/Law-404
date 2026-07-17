@@ -15,12 +15,16 @@ from app.core.config import settings
 from app.conversations.repository import get_session_state, save_message, update_session_state
 from app.conversations.summarizer import maybe_summarize_conversation
 from app.graph.parts.d_part.graph import graph as d_graph
-from app.graph.parts.d_part.nodes._context import build_citation_cards
+from app.graph.parts.d_part.nodes._context import build_citation_cards, match_glossary_terms
 from app.graph.parts.d_part.schemas import DPartSessionState
+from app.rag.retrievers.d_part import DPartRetriever
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat/d", tags=["d_part"])
+
+# 용어사전 조회 전용 — 사전은 프로세스당 1회만 읽고 캐시된다(load_glossary 참고).
+_retriever = DPartRetriever()
 
 _ERROR_MESSAGE = "일시적인 오류로 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
 
@@ -88,13 +92,25 @@ async def chat_d(
                 )
                 if value
             }
+
+            # 용어 풀이는 답변에 실제로 등장한 용어만 — 본문과 대응(액션플랜)을 함께 훑는다.
+            # 우선매수권·조세채권 안분 같은 난해한 용어는 오히려 대응 쪽에 몰려 있다.
+            body_text = "".join(chunks)
+            terms = match_glossary_terms(
+                f"{body_text}\n{tail.get('appendix', '')}", await _retriever.load_glossary()
+            )
+            if terms:
+                tail["terms"] = terms
+
             if tail:
                 yield f"data: {StreamEvent(type=EventType.META, data=tail).model_dump_json()}\n\n"
 
             # 저장 텍스트는 사용자가 보는 것과 같아야 한다 — 구조화해 내보낸 블록도 이어붙인다.
             # 고정 텍스트 경로(final_answer 세팅됨)는 면책이 이미 인라인돼 있어 그대로 쓴다.
+            # terms는 예외로 저장하지 않는다 — 본문에서 파생된 읽기 보조 정보이지 저자가 쓴
+            # 내용이 아니고, 저장된 본문만 있으면 언제든 같은 결과로 재도출된다.
             final_answer = final_state.get("final_answer") or "\n\n".join(
-                part for part in ["".join(chunks), tail.get("appendix"), tail.get("disclaimer")] if part
+                part for part in [body_text, tail.get("appendix"), tail.get("disclaimer")] if part
             )
 
             updated_session = DPartSessionState(

@@ -38,6 +38,12 @@ _MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
 _OPEN_QA_QUOTA = {"법령원문": 2, "판례": 2, "HUG사례집": 2, "HUG규정": 1}
 _MAX_DISTANCE = 0.65
 
+# 용어사전은 HUG규정 안에 Q&A·부록표와 섞여 있어 metadata.항목유형으로만 가려낼 수 있다
+# (hug_docs_d.py가 "붙임 2. 용어사전" 구간을 이 태그로 적재).
+_GLOSSARY_SOURCE_TYPE = "HUG규정"
+_GLOSSARY_ITEM_TYPE = "용어사전"
+_glossary_cache: Optional[list[dict]] = None
+
 
 class DPartRetriever(BaseRetriever):
     def __init__(self):
@@ -157,6 +163,43 @@ class DPartRetriever(BaseRetriever):
         guides = (await self.search(situation_query, top_k=2, source_type="생활법령")
                   if situation_query else [])
         return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
+
+    async def load_glossary(self) -> list[dict]:
+        """HUG 종합안내 "붙임 2. 용어사전"에서 적재된 용어 풀이 전량(현재 112건).
+
+        벡터 검색이 아니라 전량 조회다 — 용어사전은 정적 데이터라 매 턴 DB를 칠 이유가 없어
+        프로세스당 1회만 읽고 캐시한다. 인제스천으로 사전이 바뀌면 재기동이 필요하다.
+
+        content 형식은 hug_docs_d._load_glossary_chunks가 조립한 "{용어}: {설명}\\n예: {예문}" —
+        첫 ':'로 표제어와 설명을 가른다. 표제어를 화면에서 제목으로 쓰므로 설명에 다시 남겨두면
+        "갑구 / 갑구: 집문서…"로 중복된다. 자르기만 할 뿐 문구는 DB 원문 그대로다.
+        형식이 어긋난 행(설명 없이 표제어만)은 풀이로서 쓸모가 없으므로 버린다.
+        """
+        global _glossary_cache
+        if _glossary_cache is not None:
+            return _glossary_cache
+
+        sql = text(f"""
+            SELECT content
+            FROM {self.table_name}
+            WHERE source_type = '{_GLOSSARY_SOURCE_TYPE}'
+              AND metadata->>'항목유형' = '{_GLOSSARY_ITEM_TYPE}'
+        """)
+
+        def _query():
+            with get_engine().connect() as conn:
+                return conn.execute(sql).mappings().all()
+
+        rows = await run_in_threadpool(_query)
+        glossary = []
+        for row in rows:
+            term, separator, description = (row["content"] or "").partition(":")
+            if not separator or not term.strip() or not description.strip():
+                continue
+            glossary.append({"term": term.strip(), "description": description.strip()})
+
+        _glossary_cache = glossary
+        return _glossary_cache
 
     async def _fetch_statute_articles(self, article_nos: list[str]) -> list[Chunk]:
         if not article_nos:

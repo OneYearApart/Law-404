@@ -133,8 +133,46 @@ export function createEmptyDAnswer() {
     text: '',
     appendix: '',
     disclaimer: '',
+    terms: [],
     errorMessage: '',
   };
+}
+
+// 본문 머리글은 response.md가 강제하는 계약이다. 여기 바꾸면 프롬프트도 같이 바꿔야 한다.
+const BODY_SECTION_MARKER = /^###\s*(해설|상황적용)\s*$/gm;
+
+/**
+ * LLM 본문을 머리글 기준으로 섹션 배열로 쪼갠다.
+ *
+ * 대응·면책과 달리 본문은 모델이 그 자리에서 쓰는 글이라 형식이 보장되지 않는다. 머리글이
+ * 없거나 깨지면 전체를 제목 없는 단일 섹션으로 반환한다 — 렌더가 실패해 답이 안 보이는 것보다
+ * 스타일이 덜 예쁜 게 낫다. 스트리밍 중 부분 텍스트에도 그대로 동작한다(마지막 섹션이 자라는 중).
+ */
+export function splitDBody(text) {
+  if (!text) {
+    return [];
+  }
+
+  const sections = [];
+  let lastIndex = 0;
+  let lastTitle = null;
+
+  BODY_SECTION_MARKER.lastIndex = 0;
+  let match = BODY_SECTION_MARKER.exec(text);
+  while (match) {
+    if (lastTitle !== null) {
+      sections.push({ title: lastTitle, body: text.slice(lastIndex, match.index).trim() });
+    }
+    lastTitle = match[1];
+    lastIndex = match.index + match[0].length;
+    match = BODY_SECTION_MARKER.exec(text);
+  }
+
+  if (lastTitle === null) {
+    return [{ title: null, body: text.trim() }];   // 머리글 없음 → 통째로 한 블록(폴백)
+  }
+  sections.push({ title: lastTitle, body: text.slice(lastIndex).trim() });
+  return sections.filter((section) => section.body);
 }
 
 // 스트림 이벤트를 화면 상태로 접는다. done/error는 배타적 종료 이벤트다.
@@ -152,6 +190,7 @@ export function reduceDAnswer(answer, event) {
         judgment: event.data?.judgment ?? answer.judgment,
         appendix: event.data?.appendix ?? answer.appendix,
         disclaimer: event.data?.disclaimer ?? answer.disclaimer,
+        terms: event.data?.terms ?? answer.terms,
       };
     case 'token':
       return { ...answer, status: 'streaming', text: answer.text + (event.data ?? '') };

@@ -80,3 +80,29 @@ def build_citation_cards(chunks: list[Chunk]) -> list[dict]:
         }
         for c in ordered
     ]
+
+
+def match_glossary_terms(text: str, glossary: list[dict]) -> list[dict]:
+    """응답 텍스트에 실제로 등장한 용어의 풀이만 골라낸다(결정론적).
+
+    build_citation_cards와 같은 계열이다 — LLM에게 "어려운 용어를 골라 설명하라"고 시키면
+    법률 용어 정의를 지어낼 수 있으므로(§14.1 "출력을 하드코딩하는 것은 맞다"), 사전에 있는
+    표제어를 코드가 문자열로 대조하고 설명은 DB 원문을 그대로 쓴다.
+
+    긴 표제어부터 훑고 이미 채택된 용어에 포함되는 짧은 용어는 버린다 — "우선변제권"이 잡힌
+    글에서 "변제"까지 따로 풀면 중복이고, 사용자가 읽은 단어와도 어긋난다.
+    """
+    if not text:
+        return []
+
+    matched: list[dict] = []
+    for entry in sorted(glossary, key=lambda e: len(e["term"]), reverse=True):
+        term = entry["term"]
+        if term not in text:
+            continue
+        if any(term in picked["term"] for picked in matched):
+            continue
+        matched.append(entry)
+
+    # 사용자가 읽는 순서(본문 등장 순)로 되돌린다 — 길이순 배열은 읽기 흐름과 무관하다.
+    return sorted(matched, key=lambda e: text.index(e["term"]))
