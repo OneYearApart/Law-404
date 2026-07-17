@@ -13,12 +13,20 @@ const STATUS_LABELS = {
   error: '오류',
 };
 
-// 화면 제목 ← 본문 머리글. 머리글(response.md가 강제하는 '### 해설' 등)은 모델과의 내부 계약이라
+// 화면 제목 ← [답변 성격][본문 머리글]. 머리글('### 해설' 등)은 모델과의 내부 계약이라
 // 표시 문구와 분리한다 — 카피를 다듬을 때마다 프롬프트를 건드리면 LLM 출력 형식이 흔들린다.
+//
+// 성격별로 나누는 이유: 네 경로(판정/시나리오/특수상황/자유질의)가 같은 프롬프트를 태우지만
+// 내용이 다르다. 판정이 없는 턴의 '상황적용'은 내 상황 판단이 아니라 일반 유의사항이라
+// (response.md가 그렇게 지시한다), 전부 '내 상황은요'로 달면 내용과 어긋난다.
 const SECTION_TITLES = {
-  해설: '이런 사례예요',
-  상황적용: '내 상황은요',
+  judgment: { 해설: '이런 사례가 있어요', 상황적용: '내 상황은요' },
+  scenario: { 해설: '이런 사례가 있어요', 상황적용: '짚어볼 점' },
+  special_case: { 해설: '이런 사례가 있어요', 상황적용: '짚어볼 점' },
+  open_qa: { 해설: '설명', 상황적용: '확인하실 점' },
 };
+// 성격을 모르는 턴(백엔드가 answer_kind를 안 보냄)에는 어느 내용에도 틀리지 않는 제목을 쓴다.
+const DEFAULT_SECTION_TITLES = { 해설: '설명', 상황적용: '짚어볼 점' };
 
 function CitationModal({ citation, onClose }) {
   useEffect(() => {
@@ -74,10 +82,13 @@ function CitationModal({ citation, onClose }) {
 }
 
 function DAssistantAnswer({ content }) {
-  const { status, citations, judgment, text, appendix, disclaimer, terms, errorMessage } = content;
+  const {
+    status, citations, judgment, text, appendix, disclaimer, terms, answerKind, errorMessage,
+  } = content;
   const [selectedCitation, setSelectedCitation] = useState(null);
   const statusLabel = STATUS_LABELS[status];
   const bodySections = useMemo(() => splitDBody(text), [text]);
+  const sectionTitles = SECTION_TITLES[answerKind] ?? DEFAULT_SECTION_TITLES;
 
   return (
     <>
@@ -103,7 +114,7 @@ function DAssistantAnswer({ content }) {
             <section className={styles.section} key={section.title ?? 'body'}>
               {section.title && (
                 <h3 className={styles.sectionTitle}>
-                  {SECTION_TITLES[section.title] ?? section.title}
+                  {sectionTitles[section.title] ?? section.title}
                 </h3>
               )}
               <p className={styles.sectionBody}>{section.body}</p>

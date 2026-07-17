@@ -128,6 +128,7 @@ export function createEmptyDAnswer() {
     appendix: '',
     disclaimer: '',
     terms: [],
+    answerKind: null,
     errorMessage: '',
   };
 }
@@ -185,6 +186,7 @@ export function reduceDAnswer(answer, event) {
         appendix: event.data?.appendix ?? answer.appendix,
         disclaimer: event.data?.disclaimer ?? answer.disclaimer,
         terms: event.data?.terms ?? answer.terms,
+        answerKind: event.data?.answer_kind ?? answer.answerKind,
       };
     case 'token':
       return { ...answer, status: 'streaming', text: answer.text + (event.data ?? '') };

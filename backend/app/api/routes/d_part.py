@@ -34,6 +34,24 @@ class DPartChatRequest(BaseModel):
     user_input: str
 
 
+def _answer_kind(final_state: dict) -> str | None:
+    """이번 턴 답변의 성격. supervisor가 이미 분류해둔 결과(route_target)에서 역산한다.
+
+    route_target='victim_check'는 답변이 두 종류다 — 요건을 더 묻는 턴과 판정이 확정된 턴.
+    스트림을 만드는 건 후자뿐이므로 needs_response_assembly로 가른다(배지와 같은 게이트).
+    확인질문/fallback처럼 성격을 규정할 게 없는 턴은 None을 반환해 아예 싣지 않는다.
+    """
+    if final_state.get("needs_response_assembly"):
+        return "judgment"
+    if final_state.get("special_case_matched"):
+        return "special_case"
+    if final_state.get("general_topic_matched"):
+        return "scenario"
+    if final_state.get("route_target") == "open_qa":
+        return "open_qa"
+    return None
+
+
 @router.post("/")
 async def chat_d(
     request: DPartChatRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)
@@ -70,6 +88,14 @@ async def chat_d(
             # 지원대상 제외 경로는 victim_judgment가 None이라 자연히 빠진다.
             if final_state.get("needs_response_assembly") and final_state.get("victim_judgment"):
                 meta["judgment"] = final_state["victim_judgment"].value
+
+            # 답변 성격을 함께 알린다. 네 경로가 같은 프롬프트(response.md)를 태우지만 내용은
+            # 다르다 — 판정 없는 턴의 '상황적용'은 내 상황 판단이 아니라 일반 유의사항이다
+            # (response.md가 "판단 결과가 주어지지 않았다면 위험도를 붙이지 말라"고 지시).
+            # 클라이언트가 이걸 모르면 모든 답에 같은 제목을 달아 내용과 어긋난다.
+            answer_kind = _answer_kind(final_state)
+            if answer_kind:
+                meta["answer_kind"] = answer_kind
 
             if meta:
                 yield f"data: {StreamEvent(type=EventType.META, data=meta).model_dump_json()}\n\n"

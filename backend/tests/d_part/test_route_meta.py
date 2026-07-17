@@ -97,6 +97,34 @@ def test_slot_question_turn_has_no_meta(monkeypatch):
     assert '"type":"token"' in body
 
 
+def test_answer_kind_distinguishes_judgment_from_other_paths(monkeypatch):
+    """네 경로가 같은 프롬프트를 태우므로, 클라이언트가 답변 성격을 알아야 제목을 맞출 수 있다.
+    특히 판정 없는 턴의 '상황적용'은 내 상황 판단이 아니라 일반 유의사항이다."""
+    _stub_route(monkeypatch, {
+        "needs_response_assembly": True,
+        "victim_judgment": VictimJudgment.HIGH,
+        "route_target": "victim_check",
+    })
+    assert '"answer_kind":"judgment"' in _post()
+
+    _stub_route(monkeypatch, {"general_topic_matched": "전-①등기부등본_위험신호"})
+    assert '"answer_kind":"scenario"' in _post()
+
+    _stub_route(monkeypatch, {"special_case_matched": "임대인_사망"})
+    assert '"answer_kind":"special_case"' in _post()
+
+    _stub_route(monkeypatch, {"route_target": "open_qa"})
+    assert '"answer_kind":"open_qa"' in _post()
+
+
+def test_slot_question_turn_has_no_answer_kind(monkeypatch):
+    """요건을 더 묻는 턴(route_target=victim_check이나 판정 미확정)은 성격을 규정할 게 없다.
+    victim_check로 라우팅됐다는 이유만으로 judgment를 붙이면 안 된다."""
+    _stub_route(monkeypatch, {"route_target": "victim_check", "needs_response_assembly": False})
+
+    assert "answer_kind" not in _post()
+
+
 def test_appendix_and_disclaimer_are_structured_not_inlined(monkeypatch):
     """액션플랜·면책은 토큰 평문에 섞이지 않고 META로 나간다 — 프론트가 별도 블록으로 렌더한다."""
     _stub_route(monkeypatch, {
