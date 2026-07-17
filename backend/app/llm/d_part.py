@@ -174,6 +174,22 @@ async def call_supervisor(user_input: str) -> dict:
     return await _call_tool("supervisor", _SUPERVISOR_TOOL, user_input=user_input)
 
 
+async def call_query_expansion(user_input: str) -> str:
+    """발화를 법령·판례 벡터검색용 질의로 바꿔 한 줄로 반환한다(검색 전용).
+
+    구어와 법조문의 어휘 간극 때문에 발화를 그대로 임베딩하면 정답 조문이 한참 뒤로 밀린다 —
+    실측: "이사를 먼저 나가도 보증금 돌려받을 권리가 유지되나요"에서 임차권등기명령(주택임대차
+    보호법 제3조의3)이 법령원문 932건 중 29위(쿼터는 top2만 가져간다). 확장하면 1위가 된다.
+
+    싼 모델을 쓰지 않는다. gpt-4o-mini는 "무관한 발화는 그대로 두라"는 지시를 어기고 "김치찌개
+    끓이는 법"을 "김치찌개 조리법에 대한 질문입니다"로 다듬어, 거리가 임계값(0.65) 아래인
+    0.614로 내려가 무관 질문에 법령이 걸렸다(실측). '근거 없음'으로 빠져야 할 자리에서 답변이
+    생성되는 안전성 회귀라 확장은 본 모델로 한다.
+    """
+    raw = await _call_llm(_render_prompt("query_expansion", user_input=user_input))
+    return _strip_code_fence(raw).strip()
+
+
 async def call_confirmation(question: str, user_input: str) -> dict:
     return await _call_tool(
         "confirmation",

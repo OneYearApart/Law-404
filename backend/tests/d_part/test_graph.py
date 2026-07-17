@@ -26,6 +26,15 @@ from app.graph.parts.d_part.schemas import (
 from app.rag.retrievers.base import Chunk
 
 
+@pytest.fixture(autouse=True)
+def _stub_expansion(monkeypatch):
+    """검색 질의 확장이 실호출로 새지 않게 항등 스텁으로 막는다(확장 자체는 test_open_qa가 검증)."""
+    async def _identity(user_input: str) -> str:
+        return user_input
+
+    monkeypatch.setattr(_open_search.llm_d_part, "call_query_expansion", _identity)
+
+
 def _fake_confirmation(answer):
     async def _fake(question: str, user_input: str):
         return answer

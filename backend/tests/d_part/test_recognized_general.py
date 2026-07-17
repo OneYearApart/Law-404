@@ -13,6 +13,15 @@ async def _fake_generate_response(context: str, answer_kind: str):
     yield "인지형 응답"
 
 
+@pytest.fixture(autouse=True)
+def _stub_expansion(monkeypatch):
+    """검색 질의 확장이 실호출로 새지 않게 항등 스텁으로 막는다(확장 자체는 test_open_qa가 검증)."""
+    async def _identity(user_input: str) -> str:
+        return user_input
+
+    monkeypatch.setattr(_open_search.llm_d_part, "call_query_expansion", _identity)
+
+
 @pytest.mark.asyncio
 async def test_generates_response_with_recognized_answer_kind(monkeypatch):
     """근거가 있으면 인지형 관점(answer_kind)으로 응답 스트림을 세팅한다."""
