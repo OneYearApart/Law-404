@@ -44,10 +44,7 @@ app.include_router(conversations.router)
 app.include_router(calendar_connections.router)
 app.include_router(a_part.router)
 app.include_router(b_part.router)
-
-# C파트는 로컬 A파트 테스트에서 임시 제외
-# app.include_router(c_part.router)
-
+app.include_router(c_part.router)
 app.include_router(d_part.router)
 
 

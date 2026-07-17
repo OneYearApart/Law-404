@@ -31,10 +31,9 @@ from app.api.sse import sse_event, sse_comment
 # 【대화 저장】conversations repository
 from app.conversations import repository as conv_repo
 
-from sse import sse_event, sse_comment 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/c-part", tags=["C파트 - 보증금 반환"])
+router = APIRouter(prefix="/c-part", tags=["C파트 - 보증금 반환"])
 
 # 【파트 식별자】이 라우터는 항상 "c"
 PART = "c"
