@@ -1,7 +1,8 @@
 """
 special_cases 실행 노드 테스트 (DB/네트워크는 monkeypatch로 흉내).
-작업단위 49: 하드코딩 안내문 → RAG 실행 노드. 카테고리→태그 매핑 + RAG 해설 스트림 +
-지원절차 개요 appendix_text를 검증한다(리트리버·generate_response monkeypatch).
+작업단위 49: 하드코딩 안내문 → RAG 실행 노드. 카테고리→태그 매핑 + RAG 해설 스트림을
+검증한다(리트리버·generate_response monkeypatch). 지원절차 개요 부착은 이 노드 책임이
+아니므로 여기서 검증하지 않는다 — support_appendix가 상황을 보고 정한다(D3).
 """
 import pytest
 
@@ -20,7 +21,7 @@ def _chunk(st, content):
     ("다가구주택", "전-③다가구_선순위보증금"),
     ("공인중개사 허위고지", "전-⑥공인중개사_허위고지"),
 ])
-async def test_retrieves_by_mapped_tag_and_sets_stream_and_appendix(monkeypatch, category, tag):
+async def test_retrieves_by_mapped_tag_and_sets_stream(monkeypatch, category, tag):
     seen = {}
 
     async def _fake_search_by_topic(topic_key, query_text):
@@ -39,8 +40,9 @@ async def test_retrieves_by_mapped_tag_and_sets_stream_and_appendix(monkeypatch,
 
     assert seen["tag"] == tag                              # 카테고리→태그 매핑
     assert result["response_stream"] is not None           # RAG 해설 스트림
-    assert result["appendix_text"] == special_cases._SPECIAL_CASE_GUIDANCE[category]
     assert len(result["retrieved_chunks"]) == 2
+    # 부착은 support_appendix 몫이다 — 이 노드가 몰래 붙이면 결정 지점이 다시 둘로 갈라진다
+    assert result.get("appendix_text") is None
 
 
 @pytest.mark.asyncio
@@ -51,10 +53,3 @@ async def test_pending_final_answer_is_not_overwritten():
     result = await special_cases.match_special_case(state)
     assert result["final_answer"].endswith("맞으신가요?")
     assert result.get("response_stream") is None
-
-
-def test_guidance_has_no_banned_terms():
-    from app.graph.parts.d_part.nodes.finalize import _BANNED_JUDGMENT_TERMS
-    for text in special_cases._SPECIAL_CASE_GUIDANCE.values():
-        for term in _BANNED_JUDGMENT_TERMS:
-            assert term not in text

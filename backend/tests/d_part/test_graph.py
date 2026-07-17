@@ -12,6 +12,8 @@ from app.graph.parts.d_part.nodes import (
     open_qa,
     recognized_general,
     response_assembly,
+    special_cases,
+    support_data,
     supervisor,
     victim_check,
 )
@@ -198,11 +200,96 @@ async def test_full_graph_routes_recognized_victim_to_recognized_general(monkeyp
     # 객체라 "open_qa엔 절대 안 간다"를 monkeypatch 가드로 세울 수는 없다 — 뒤 patch가 앞을 덮는다.
     assert result["route_target"] == "recognized_general"
     assert result["answer_kind"] == "recognized_general"
-    # 지원절차 개요는 인지형 special_cases와 같은 자리(해설 뒤·면책 앞)에 슬롯으로 넘어간다
-    assert result["appendix_text"] == recognized_general._RECOGNIZED_GUIDANCE
+    # 지원절차 개요는 support_appendix가 상황(recognized)을 보고 붙인다 — 이 경로가
+    # 직접 세팅하지 않아도 종단에서는 붙어 있어야 한다(D3 부착 일관성)
+    assert result["appendix_text"] == support_data._RECOGNIZED_GUIDANCE
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("인지형 응답")
     assert result["disclaimer_text"] == DISCLAIMER
+
+
+@pytest.mark.asyncio
+async def test_full_graph_special_case_still_gets_its_guidance(monkeypatch):
+    """부착점을 옮긴 뒤에도 특수상황 안내가 그대로 붙는지 — special_cases는 자기 노드에서
+    inline으로 붙이던 것을 잃었고, 이제 support_appendix가 상황을 보고 같은 텍스트를 붙인다.
+    (이 경로는 예전에 유닛 그린인 채로 통째로 죽어 있던 전적이 있어 종단으로 못 박는다.)"""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"recognized": True, "risk_signals": [], "special_case": "신탁사기"}
+
+    async def _fake_search_by_topic(topic_key, query_text):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")],
+                "case_law": [], "cases": [], "guides": []}
+
+    async def _fake_generate_response(context: str, answer_kind: str):
+        yield "신탁사기 해설"
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(special_cases._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(special_cases.llm_d_part, "generate_response", _fake_generate_response)
+
+    result = await graph_module.graph.ainvoke(
+        {"user_input": "신탁 등기가 되어 있고 이미 피해자로 인정받았어요"}
+    )
+
+    assert result["route_target"] == "special_cases"
+    assert result["appendix_text"] == support_data._SPECIAL_CASE_GUIDANCE["신탁사기"]
+    assert result["disclaimer_text"] == DISCLAIMER
+
+
+@pytest.mark.asyncio
+async def test_full_graph_attaches_support_guidance_on_general_scenario_when_recognized(monkeypatch):
+    """인정받은 사용자가 13개 항목을 물으면 general_scenario가 답하지만 지원절차 안내는 붙는다.
+
+    부착이 실행 경로에 묶여 있던 시절엔 topic이 잡혔다는 이유만으로 안내가 사라졌다 —
+    같은 사용자가 같은 상황인데 무엇을 물었느냐로 부가기능이 나타났다 사라진 것이다(D3)."""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        # 전-③/⑤/⑥이 아닌 topic이라 special_case로 파생되지 않는다 → general_scenario로 간다
+        return {"recognized": True, "risk_signals": [], "topic": "후-②이중계약_배당순위"}
+
+    async def _fake_search_by_topic(topic_key, query_text):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")],
+                "case_law": [], "cases": [], "guides": []}
+
+    async def _fake_generate_response(context: str, answer_kind: str):
+        yield "배당순위 답변"
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+
+    result = await graph_module.graph.ainvoke(
+        {"user_input": "피해자로 인정받았는데 배당순위 다툼이 있어요"}
+    )
+
+    assert result["route_target"] == "general_scenario"
+    assert result["appendix_text"] == support_data._RECOGNIZED_GUIDANCE
+
+
+@pytest.mark.asyncio
+async def test_full_graph_attaches_nothing_on_general_scenario_when_not_recognized(monkeypatch):
+    """같은 경로라도 인정 전 사용자에겐 지원절차 안내가 붙지 않는다 — 부착을 정하는 건
+    경로가 아니라 상황이라는 것의 반대편 증거."""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"recognized": False, "risk_signals": [], "topic": "후-②이중계약_배당순위"}
+
+    async def _fake_search_by_topic(topic_key, query_text):
+        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")],
+                "case_law": [], "cases": [], "guides": []}
+
+    async def _fake_generate_response(context: str, answer_kind: str):
+        yield "배당순위 답변"
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+
+    result = await graph_module.graph.ainvoke({"user_input": "배당순위 다툼이 걱정돼요"})
+
+    assert result["route_target"] == "general_scenario"
+    assert result.get("appendix_text") is None
 
 
 @pytest.mark.asyncio

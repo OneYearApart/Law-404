@@ -3,7 +3,7 @@ META 이벤트의 judgment 게이트 라우트 테스트.
 
 victim_judgment는 carryover(DPartSessionState)라 판정이 한 번 확정되면 이후 턴에도 상태에
 남는다. 그대로 내보내면 판정 이후 모든 답변에 배지가 재부착되므로, "이번 턴에 새로
-확정했는지"를 뜻하는 needs_response_assembly로 게이트한다(action_plan/response_assembly와
+확정했는지"를 뜻하는 needs_response_assembly로 게이트한다(support_appendix/response_assembly와
 동일 게이트).
 
 get_current_user는 override, DB/그래프는 monkeypatch로 흉내(네트워크·DB 접근 없음).

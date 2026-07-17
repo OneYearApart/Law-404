@@ -66,7 +66,7 @@ async def chat_d(
 
             # 판정은 이번 턴에 새로 확정됐을 때만 싣는다 — victim_judgment는 carryover라
             # 그대로 내보내면 판정 이후 모든 턴에 재부착된다. needs_response_assembly가
-            # "이번 턴에 새로 확정했는지" 플래그(action_plan/response_assembly와 동일 게이트).
+            # "이번 턴에 새로 확정했는지" 플래그(support_appendix/response_assembly와 동일 게이트).
             # 지원대상 제외 경로는 victim_judgment가 None이라 자연히 빠진다.
             if final_state.get("needs_response_assembly") and final_state.get("victim_judgment"):
                 meta["judgment"] = final_state["victim_judgment"].value

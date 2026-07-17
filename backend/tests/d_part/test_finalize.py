@@ -102,7 +102,7 @@ async def test_clean_response_logs_no_warning(caplog):
 # --- 단위 44: 지원절차 액션플랜 첨부(스트림 경로) -----------------------------------
 
 @pytest.mark.asyncio
-async def test_action_plan_stays_out_of_body_stream():
+async def test_appendix_stays_out_of_body_stream():
     """판정 확정 턴: 액션플랜은 본문 평문에 섞이지 않고 슬롯에 남아 있어야 한다 —
     프론트가 정규식으로 '■'를 찾아 쪼개는 걸 막는 게 이 구조의 목적이다."""
     async def _body():
@@ -139,7 +139,7 @@ async def test_no_appendix_text_yields_body_only():
 
 
 @pytest.mark.asyncio
-async def test_fixed_text_path_unaffected_by_action_plan():
+async def test_fixed_text_path_unaffected_by_appendix():
     """고정 텍스트 경로(special_cases 등)는 appendix_text가 실수로 있어도 붙이지 않는다."""
     state = {
         "final_answer": "특수상황 안내문",

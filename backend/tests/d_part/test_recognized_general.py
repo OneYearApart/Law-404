@@ -1,7 +1,7 @@
 """
 recognized_general 노드 테스트 (DB/네트워크는 monkeypatch로 흉내).
 인정받았지만 특수 4종에도 13개 항목에도 안 걸리는 피해자 경로 — open_qa와 검색은 같고
-관점(대응·회복)과 지원절차 개요 첨부가 다르다.
+관점(대응·회복)만 다르다. 지원절차 개요 부착은 support_appendix 몫이라 여기서 안 본다(D3).
 """
 import pytest
 
@@ -14,8 +14,8 @@ async def _fake_generate_response(context: str, answer_kind: str):
 
 
 @pytest.mark.asyncio
-async def test_generates_response_and_attaches_support_guidance(monkeypatch):
-    """근거가 있으면 인지형 관점 응답 + 지원절차 개요 첨부 — 첨부는 special_cases와 대칭이다."""
+async def test_generates_response_with_recognized_answer_kind(monkeypatch):
+    """근거가 있으면 인지형 관점(answer_kind)으로 응답 스트림을 세팅한다."""
     seen = {}
 
     async def _fake_search_balanced(query: str, quota=None):
@@ -30,7 +30,8 @@ async def test_generates_response_and_attaches_support_guidance(monkeypatch):
 
     assert seen["query"] == "피해자로 인정받았는데 이제 무엇을 해야 하나요"
     assert result["answer_kind"] == "recognized_general"
-    assert result["appendix_text"] == recognized_general._RECOGNIZED_GUIDANCE
+    # 부착은 support_appendix 몫 — 이 노드가 붙이면 결정 지점이 다시 갈라진다
+    assert result.get("appendix_text") is None
     joined = "".join([c async for c in result["response_stream"]])
     assert joined == "인지형 응답"
 
@@ -38,10 +39,7 @@ async def test_generates_response_and_attaches_support_guidance(monkeypatch):
 @pytest.mark.asyncio
 async def test_no_evidence_falls_back_without_guidance(monkeypatch):
     """법령원문 근거가 없으면 open_qa와 똑같이 '근거 없음'으로 빠진다 — 이 경로에만 규칙이
-    빠져 있으면 인정받은 사용자에게만 조문을 지어내게 된다.
-
-    지원절차 개요도 붙이지 않는다: finalize는 고정 텍스트 경로에서 appendix_text를 읽지 않아
-    첨부해봐야 사용자에게 닿지 않는다(붙인 줄 알고 오해하기 쉬운 자리)."""
+    빠져 있으면 인정받은 사용자에게만 조문을 지어내게 된다."""
 
     async def _fake_search_balanced(query: str, quota=None):
         return [Chunk(id=1, source_type="판례", content="판례만")]
@@ -74,9 +72,3 @@ async def test_uses_active_query_over_raw_user_input(monkeypatch):
     )
 
     assert seen["query"] == "인정받은 뒤 우선매수권은 어떻게 행사하나요"
-
-
-def test_guidance_has_no_prevention_advice():
-    """이미 피해자로 인정받은 사용자에게 붙는 안내다 — 계약 전 예방 조언이 섞이면 안 된다."""
-    assert "계약 전" not in recognized_general._RECOGNIZED_GUIDANCE
-    assert "피해자 결정" in recognized_general._RECOGNIZED_GUIDANCE
