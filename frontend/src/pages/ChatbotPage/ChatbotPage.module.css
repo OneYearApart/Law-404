@@ -52,6 +52,138 @@
   border-top: var(--border-width) solid var(--color-border);
 }
 
+.calendarConnectionPanel {
+  width: min(90rem, 100%);
+  display: grid;
+  gap: 1rem;
+  align-self: center;
+  margin: 0 auto var(--space-12);
+  padding: 1.2rem 1.4rem;
+  color: #263044;
+  background: #f8fbff;
+  border: var(--border-width) solid #d8e5ff;
+  border-radius: var(--radius-medium);
+}
+
+.calendarConnectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+}
+
+.calendarConnectionHeader strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.35rem;
+}
+
+.calendarConnectionHeader button,
+.calendarConnectionForm button {
+  flex-shrink: 0;
+  padding: 0.75rem 1.1rem;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 750;
+  cursor: pointer;
+  background: var(--color-white);
+  border: var(--border-width) solid #bdd2f8;
+  border-radius: 0.9rem;
+}
+
+.calendarConnectionHeader button:disabled,
+.calendarConnectionForm button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.calendarConnectionEyebrow {
+  color: var(--color-primary);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.calendarConnectionDescription {
+  margin: 0;
+  color: #5d6678;
+  font-size: 1.2rem;
+  line-height: 1.6;
+}
+
+.calendarConnectionDescription code,
+.calendarConnectionCommand code {
+  font-family:
+    ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  overflow-wrap: anywhere;
+}
+
+.calendarConnectionForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.calendarConnectionForm label {
+  min-width: 0;
+  display: grid;
+  gap: 0.4rem;
+  color: #5d6678;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.calendarConnectionForm input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  color: #202638;
+  font: inherit;
+  font-size: 1.2rem;
+  background: var(--color-white);
+  border: var(--border-width) solid #d8e5ff;
+  border-radius: 0.9rem;
+}
+
+.calendarConnectionCommand {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  color: #344054;
+  font-size: 1.15rem;
+  background: var(--color-white);
+  border: var(--border-width) solid #e4ecff;
+  border-radius: 0.9rem;
+}
+
+.calendarConnectionCommand span {
+  color: #667085;
+  font-weight: 750;
+}
+
+@media (max-width: 700px) {
+  .messages {
+    padding: var(--space-24) var(--space-16);
+  }
+
+  .composerDock {
+    padding: var(--space-12) var(--space-16) var(--space-16);
+  }
+
+  .calendarConnectionHeader,
+  .calendarConnectionForm {
+    grid-template-columns: 1fr;
+  }
+
+  .calendarConnectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .emptyState {
   width: min(104rem, 100%);
   min-width: 0;
