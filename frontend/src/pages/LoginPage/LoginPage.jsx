@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { FiAlertTriangle, FiLoader, FiLock, FiLogIn, FiUser } from 'react-icons/fi';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 
 import AuthField from '../../components/auth/AuthField/AuthField.jsx';
 import { ROUTES } from '../../constants/routes.js';
@@ -9,13 +9,21 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import styles from './LoginPage.module.css';
 
 function LoginPage() {
-  const { login } = useAuth();
+  const { login, status } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [form, setForm] = useState({ userId: '', password: '' });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (status === 'loading') {
+    return null;
+  }
+
+  if (status === 'authenticated') {
+    return <Navigate to={ROUTES.CHAT_BEFORE_CONTRACT} replace />;
+  }
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -31,7 +39,10 @@ function LoginPage() {
     setIsSubmitting(true);
     try {
       await login({ username: form.userId, password: form.password });
-      const redirectTo = location.state?.from?.pathname ?? ROUTES.LANDING;
+      const requestedPath = location.state?.from?.pathname;
+      const redirectTo = requestedPath?.startsWith('/chat/')
+        ? requestedPath
+        : ROUTES.CHAT_BEFORE_CONTRACT;
       navigate(redirectTo, { replace: true });
     } catch (submitError) {
       setError(submitError?.message ?? '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');

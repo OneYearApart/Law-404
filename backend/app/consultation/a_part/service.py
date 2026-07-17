@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 
 from app.consultation.a_part.models import (
     ConversationState,
+    FactSource,
     MessageRole,
+    SlotStatus,
     add_issue_to_state,
     create_conversation_state,
 )
@@ -35,11 +37,13 @@ from app.consultation.a_part.state_updater import (
     OpenAISlotUpdateExtractor,
     SlotUpdateExtractor,
     apply_slot_updates,
+    extract_active_question_update,
 )
 from app.consultation.a_part.store import (
     DEFAULT_CONVERSATION_STORE,
     MemoryConversationStore,
     PostgresConversationStore,
+    SharedConversationStore,
 )
 from app.documents.models import UploadedDocument
 
@@ -80,7 +84,7 @@ class APartConversationService:
     def __init__(
         self,
         *,
-        store: MemoryConversationStore | PostgresConversationStore | None = None,
+        store: MemoryConversationStore | PostgresConversationStore | SharedConversationStore | None = None,
         slot_extractor: SlotUpdateExtractor | None = None,
         rag_answerer: RAGAnswerer | None = None,
     ) -> None:
@@ -90,7 +94,7 @@ class APartConversationService:
         self._uses_default_rag = rag_answerer is None
 
     @property
-    def store(self) -> MemoryConversationStore | PostgresConversationStore:
+    def store(self) -> MemoryConversationStore | PostgresConversationStore | SharedConversationStore:
         return self._store
 
     def _get_slot_extractor(self) -> SlotUpdateExtractor:
@@ -109,6 +113,22 @@ class APartConversationService:
             from app.llm.a_part import ConsultationContext
             return ConsultationContext(known_facts=known_facts)
         return ConversationRAGContext(known_facts=known_facts)
+
+    @staticmethod
+    def _normalize_invalid_slot_statuses(state: ConversationState) -> None:
+        """현재 이슈에서 허용되지 않는 기존 상태값을 안전하게 보정한다."""
+
+        if "q01_owner_proxy" not in state.all_issue_ids:
+            return
+        changed = False
+        for slot in state.issue_slots.get("q01_owner_proxy", {}).values():
+            if slot.status == SlotStatus.NOT_APPLICABLE:
+                slot.status = SlotStatus.UNCERTAIN
+                slot.value = None
+                slot.source = FactSource.USER
+                changed = True
+        if changed:
+            state.touch()
 
     @staticmethod
     def _normalize_updates(
@@ -133,6 +153,13 @@ class APartConversationService:
     ) -> list[ExtractedSlotUpdate]:
         if explicit_updates is not None:
             return explicit_updates
+
+        active_update = extract_active_question_update(
+            user_text=question,
+            state=state,
+        )
+        if active_update is not None:
+            return [active_update]
 
         try:
             result = self._get_slot_extractor().extract(
@@ -160,14 +187,8 @@ class APartConversationService:
     ) -> str:
         parts = [str(response.answer.core_judgment)]
         if follow_up_questions:
-            parts.append("추가 확인 질문")
-            parts.extend(
-                f"{index}. {item.question}"
-                for index, item in enumerate(
-                    follow_up_questions,
-                    start=1,
-                )
-            )
+            parts.append("다음 확인 질문")
+            parts.append(follow_up_questions[0].question)
         return "\n".join(parts)
 
     @staticmethod
@@ -177,13 +198,9 @@ class APartConversationService:
         question: str,
         explicit_issue_id: str | None,
     ) -> bool:
+        # 기존 대화의 짧은 후속 답변을 새 상담 주제로 다시 라우팅하지 않는다.
+        # 화면이나 사용자가 명시적으로 새 issue_id를 보낸 경우에만 관련 이슈를 추가한다.
         candidate: str | None = explicit_issue_id
-
-        if candidate is None:
-            try:
-                candidate = detect_primary_issue_id(question)
-            except UnsupportedConsultationIssueError:
-                candidate = None
 
         if not candidate or candidate in state.all_issue_ids:
             return False
@@ -244,6 +261,7 @@ class APartConversationService:
                     add_issue_to_state(state, related_id, as_related=True)
                     new_issue_added = True
 
+        self._normalize_invalid_slot_statuses(state)
         state.append_message(MessageRole.USER, normalized_question)
 
         extracted_updates = self._extract_updates(
@@ -254,17 +272,6 @@ class APartConversationService:
         )
         update_summary = apply_slot_updates(state, extracted_updates)
         warnings.extend(update_summary.ignored)
-
-        if (
-            not suppress_no_update_warning
-            and not is_new
-            and not new_issue_added
-            and not update_summary.applied
-        ):
-            warnings.append(
-                "이번 후속 답변에서 새로 확인된 슬롯을 찾지 못했습니다. "
-                "남은 질문에 맞춰 사실을 조금 더 구체적으로 답해 주세요."
-            )
 
         known_facts = confirmed_fact_sentences(state, max_items=10)
         consultation_context = self._build_rag_context(known_facts)
@@ -290,7 +297,7 @@ class APartConversationService:
         follow_up_questions = (
             build_follow_up_questions(
                 state,
-                max_questions=3,
+                max_questions=1,
                 mark_as_asked=True,
             )
             if build_follow_ups

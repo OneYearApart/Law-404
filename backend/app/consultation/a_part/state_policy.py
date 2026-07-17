@@ -115,6 +115,246 @@ def _unique(items: list[str]) -> list[str]:
     return result
 
 
+def _join_korean(items: list[str]) -> str:
+    cleaned = _unique([item.strip() for item in items if item and item.strip()])
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+
+    previous = cleaned[-2]
+    last = previous[-1]
+    code = ord(last)
+    has_final = 0xAC00 <= code <= 0xD7A3 and (code - 0xAC00) % 28 != 0
+    connector = "과" if has_final else "와"
+    return f"{', '.join(cleaned[:-1])}{connector} {cleaned[-1]}"
+
+
+def _with_particle(text: str, consonant: str, vowel: str) -> str:
+    stripped = text.rstrip()
+    if not stripped:
+        return stripped
+    last = stripped[-1]
+    code = ord(last)
+    has_final = 0xAC00 <= code <= 0xD7A3 and (code - 0xAC00) % 28 != 0
+    return f"{stripped}{consonant if has_final else vowel}"
+
+
+def _slot_for(
+    state: ConversationState,
+    issue_id: str,
+    slot_key: str,
+) -> SlotState | None:
+    return state.issue_slots.get(issue_id, {}).get(slot_key)
+
+
+def _slot_is_confirmed_true(slot: SlotState | None) -> bool:
+    return bool(
+        slot
+        and slot.status == SlotStatus.CONFIRMED
+        and slot.value is True
+    )
+
+
+def _slot_is_unresolved(slot: SlotState | None) -> bool:
+    if slot is None:
+        return True
+    if slot.status in {
+        SlotStatus.UNKNOWN,
+        SlotStatus.UNCERTAIN,
+        SlotStatus.CONFLICT,
+        SlotStatus.NOT_APPLICABLE,
+    }:
+        return True
+    return slot.status == SlotStatus.CONFIRMED and slot.value is False
+
+
+def _slot_text(slot: SlotState | None) -> str:
+    if slot is None or slot.value is None:
+        return ""
+    if isinstance(slot.value, list):
+        return ", ".join(str(item).strip() for item in slot.value if str(item).strip())
+    return str(slot.value).strip()
+
+
+def _account_text(slot: SlotState | None) -> str:
+    value = _slot_text(slot)
+    for suffix in ("입니다.", "입니다", "이에요.", "이에요", "예요.", "예요"):
+        if value.endswith(suffix):
+            value = value[: -len(suffix)].rstrip()
+            break
+    return value
+
+
+def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
+    """q01 최종 답변을 실제 슬롯 상태에 맞는 안전한 문장으로 만든다."""
+
+    issue_id = "q01_owner_proxy"
+    owner = _slot_for(state, issue_id, "registered_owner_identified")
+    intent = _slot_for(state, issue_id, "owner_proxy_intent_confirmed")
+    document = _slot_for(state, issue_id, "delegation_document_available")
+    scope = _slot_for(state, issue_id, "delegation_scope_confirmed")
+    signature = _slot_for(state, issue_id, "signature_authority_confirmed")
+    payment = _slot_for(state, issue_id, "payment_authority_confirmed")
+    account = _slot_for(state, issue_id, "payment_account_holder")
+
+    confirmed_labels: list[str] = []
+    if _slot_is_confirmed_true(intent):
+        confirmed_labels.append("소유자의 대리 의사")
+    if _slot_is_confirmed_true(scope):
+        confirmed_labels.append("계약 체결 범위")
+    if _slot_is_confirmed_true(signature):
+        confirmed_labels.append("대리인의 서명 권한")
+    if _slot_is_confirmed_true(payment):
+        confirmed_labels.append("대금 수령 권한")
+
+    unresolved_pairs = [
+        (document, "권한을 입증할 위임 자료"),
+        (scope, "구체적인 계약 체결 범위"),
+        (signature, "대리인의 서명 권한"),
+        (payment, "대금 수령 권한"),
+    ]
+    unresolved_labels = [
+        label for slot, label in unresolved_pairs if _slot_is_unresolved(slot)
+    ]
+
+    account_value = _account_text(account)
+    account_is_owner = any(
+        marker in account_value
+        for marker in ("소유자 본인", "소유자 명의", "임대인 본인", "임대인 명의")
+    )
+    account_is_non_owner = bool(account_value) and not account_is_owner
+
+    conclusion_parts: list[str] = []
+    confirmed_text = _join_korean(confirmed_labels)
+    unresolved_text = _join_korean(unresolved_labels)
+    if unresolved_text and confirmed_text:
+        conclusion_parts.append(
+            f"{_with_particle(confirmed_text, '은', '는')} 확인했지만, "
+            f"{_with_particle(unresolved_text, '은', '는')} 확인하지 못했습니다."
+        )
+    elif unresolved_text:
+        conclusion_parts.append(
+            f"{_with_particle(unresolved_text, '을', '를')} 확인하지 못했습니다."
+        )
+    elif confirmed_text:
+        conclusion_parts.append(
+            f"입력한 답변 기준으로 {_with_particle(confirmed_text, '은', '는')} 확인됐습니다."
+        )
+
+    if account_is_non_owner:
+        conclusion_parts.append(
+            f"계약금 계좌도 소유자 본인 명의가 아닌 {account_value}로 확인됐습니다."
+        )
+
+    document_is_confirmed = _slot_is_confirmed_true(document)
+    scope_is_unresolved = _slot_is_unresolved(scope)
+
+    if unresolved_labels and account_is_non_owner:
+        if document_is_confirmed and scope_is_unresolved:
+            conclusion_parts.append(
+                "현재 보유한 위임 자료에서 구체적인 계약 체결 범위를 확인하고, "
+                "확인한 권한과 계좌 정보를 서로 대조하기 전에는 "
+                "계약서 서명과 계약금 송금을 보류하는 것이 안전합니다."
+            )
+        else:
+            conclusion_parts.append(
+                "확인한 권한과 계좌 정보를 위임 자료와 대조하기 전에는 "
+                "계약서 서명과 계약금 송금을 보류하는 것이 안전합니다."
+            )
+    elif unresolved_labels:
+        if document_is_confirmed and scope_is_unresolved:
+            conclusion_parts.append(
+                "현재 보유한 위임 자료에서 구체적인 계약 체결 범위를 확인하기 전에는 "
+                "계약서 서명을 보류하는 것이 안전합니다."
+            )
+        else:
+            conclusion_parts.append(
+                "남은 미확인 권한과 위임 자료를 확인하기 전에는 "
+                "계약서 서명을 보류하는 것이 안전합니다."
+            )
+    elif account_is_non_owner:
+        conclusion_parts.append(
+            "대리인 명의 계좌의 수령 권한 확인 기록과 위임 자료를 최종 대조한 뒤 진행하세요."
+        )
+    else:
+        conclusion_parts.append(
+            "입력한 내용과 실제 위임 자료·계좌 정보가 일치하는지 최종 대조한 뒤 진행하세요."
+        )
+
+    owner_name = _slot_text(owner)
+    authority_targets: list[str] = []
+    if _slot_is_unresolved(scope):
+        authority_targets.append("계약 체결 범위")
+    if _slot_is_unresolved(signature):
+        authority_targets.append("서명 권한")
+    if _slot_is_unresolved(payment):
+        authority_targets.append("대금 수령 권한")
+
+    actions: list[str] = []
+    if authority_targets:
+        owner_target = f"등기부에서 확인한 소유자 {owner_name}" if owner_name else "등기부상 소유자"
+        actions.append(
+            f"{owner_target}에게 대리인의 "
+            f"{_with_particle(_join_korean(authority_targets), '을', '를')} 직접 확인하고 "
+            "문자나 서면처럼 기록이 남는 방식으로 보관합니다."
+        )
+    if _slot_is_unresolved(document):
+        actions.append(
+            "확인한 권한이 구체적으로 적힌 위임 자료를 요청하고, "
+            "소유자가 작성하거나 발급한 자료인지 대조합니다."
+        )
+    elif document_is_confirmed and scope_is_unresolved:
+        actions.append(
+            "현재 보유한 위임 자료에서 대리인이 체결할 수 있는 계약의 범위를 확인하고, "
+            "소유자가 작성하거나 발급한 자료인지 대조합니다."
+        )
+    if _slot_is_unresolved(payment):
+        account_target = account_value or "해당 계좌"
+        actions.append(
+            f"{account_target}로 계약금을 받을 권한이 있는지 소유자에게 별도로 확인하고, "
+            "계좌 정보와 확인 기록을 함께 보관합니다."
+        )
+    elif account_is_non_owner and _slot_is_confirmed_true(payment):
+        actions.append(
+            f"{account_value}로 계약금을 받을 권한을 확인한 내용과 계좌 정보를 "
+            "문자나 서면처럼 기록이 남는 형태로 보관합니다."
+        )
+    if not actions:
+        actions.append(
+            "위임 자료의 계약 체결·서명·대금 수령 범위와 계약금 계좌 정보를 최종 대조합니다."
+        )
+
+    reasons: list[str] = []
+    if confirmed_text and unresolved_text:
+        reasons.append(
+            f"{_with_particle(confirmed_text, '은', '는')} 확인됐지만 "
+            f"{_with_particle(unresolved_text, '은', '는')} 확인되지 않았습니다."
+        )
+    elif unresolved_text:
+        reasons.append(
+            f"{_with_particle(unresolved_text, '이', '가')} 확인되지 않았습니다."
+        )
+    if account_is_non_owner and _slot_is_unresolved(payment):
+        reasons.append(
+            "계약금 계좌가 소유자 본인 명의가 아니므로 계약 권한과 대금 수령 권한을 분리해 확인해야 합니다."
+        )
+    elif account_is_non_owner and _slot_is_confirmed_true(payment):
+        reasons.append(
+            "계약금 계좌가 소유자 본인 명의가 아니므로 확인한 대금 수령 권한과 계좌 정보를 기록으로 남겨야 합니다."
+        )
+    reasons.append(
+        "실제 대리권이 없거나 확인된 범위를 넘어 계약한 경우에는 "
+        "계약의 효력이 소유자에게 귀속되는지를 두고 분쟁이 생길 수 있습니다."
+    )
+
+    return {
+        "core_judgment": " ".join(conclusion_parts),
+        "immediate_actions": actions[:3],
+        "reasons": _unique(reasons)[:4],
+    }
+
+
 def _hold_actions_for_state(state: ConversationState) -> list[str]:
     actions: list[str] = []
     for issue_id in state.all_issue_ids:
@@ -229,12 +469,19 @@ def apply_state_policy_to_response(
     }
 
     answer["risk_level"] = assessment.risk_level
-    if not failed_generation:
+    # assessment.core_judgment는 상태 엔진 내부 요약이다.
+    # 근거와 실제 사용자 답변을 반영해 LLM이 만든 사용자용 핵심 결론을 유지한다.
+    if failed_generation:
         answer["core_judgment"] = assessment.core_judgment
+    elif (
+        state.primary_issue_id == "q01_owner_proxy"
+        and not follow_up_questions
+    ):
+        answer.update(_owner_proxy_final_payload(state))
     answer["hold_actions"] = assessment.hold_actions[:3]
     answer["follow_up_questions"] = [
         item.question
-        for item in follow_up_questions[:3]
+        for item in follow_up_questions[:1]
     ]
 
     required_information = list(answer.get("required_information") or [])

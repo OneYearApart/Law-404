@@ -5,10 +5,9 @@ import {
   FiClipboard,
   FiEdit3,
   FiLogIn,
-  FiLogOut,
   FiUserPlus,
 } from 'react-icons/fi';
-import { NavLink, useNavigate } from 'react-router';
+import { NavLink } from 'react-router';
 
 import { CHAT_ROUTES, ROUTES } from '../../../constants/routes.js';
 import { useAuth } from '../../../contexts/AuthContext.jsx';
@@ -28,30 +27,10 @@ function navClassName({ isActive }) {
 
 function AppHeader({ variant = 'public' }) {
   const isChat = variant === 'chat';
-  const { status, user, logout } = useAuth();
-  const navigate = useNavigate();
-  const isAuthenticated = status === 'authenticated';
+  const { status } = useAuth();
+  const showAuthActions = !isChat && status === 'anonymous';
 
-  const handleLogout = async () => {
-    await logout();
-    navigate(ROUTES.LOGIN);
-  };
-
-  const authActions = isAuthenticated ? (
-    <>
-      {user?.nickname && (
-        <span className={styles.greeting}>
-          <strong>{user.nickname}</strong>님
-        </span>
-      )}
-      <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
-        <button type="button" className={`${styles.navLink} ${styles.logoutButton}`} onClick={handleLogout}>
-          <FiLogOut aria-hidden="true" />
-          <span>로그아웃</span>
-        </button>
-      </motion.div>
-    </>
-  ) : (
+  const authActions = showAuthActions ? (
     <>
       <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
         <NavLink className={navClassName} to={ROUTES.LOGIN}>
@@ -66,7 +45,7 @@ function AppHeader({ variant = 'public' }) {
         </NavLink>
       </motion.div>
     </>
-  );
+  ) : null;
 
   return (
     <motion.header

@@ -136,13 +136,14 @@ class ChatbotProcessingStatus(str, Enum):
 class ChatbotTurnRequest(BaseModel):
     question: str = Field(min_length=1)
     conversation_id: str | None = None
+    owner_user_id: int | None = None
     issue_id: str | None = None
     related_issue_ids: list[str] = Field(default_factory=list)
     checklist_updates: list[ExtractedSlotUpdate | dict[str, Any]] = Field(
         default_factory=list
     )
     document_ids: list[str] = Field(default_factory=list)
-    analyze_documents: bool = True
+    analyze_documents: bool = False
     force_document_analysis: bool = False
     rag_options: dict[str, Any] = Field(default_factory=dict)
 
@@ -154,6 +155,9 @@ class ChatbotTurnResult(BaseModel):
     is_new_conversation: bool
     document_analysis: ConversationDocumentAnalysisResponse | None = None
     consultation: ConsultationTurnResponse
+    consultation_progress: dict[str, Any] = Field(default_factory=dict)
+    next_question: dict[str, Any] | None = None
+    is_complete: bool = False
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -180,17 +184,13 @@ class APartChatbotService:
             state = self.conversation_service.get_state(
                 request.conversation_id
             )
-            routed = route_issues(
-                request.question,
-                primary_issue_id=request.issue_id,
-                related_issue_ids=request.related_issue_ids,
-            )
             changed = False
-            for issue_id in (
-                routed.primary_issue_id,
-                *routed.related_issue_ids,
-            ):
-                if issue_id in state.all_issue_ids:
+            explicit_issue_ids = [
+                request.issue_id,
+                *request.related_issue_ids,
+            ]
+            for issue_id in explicit_issue_ids:
+                if not issue_id or issue_id in state.all_issue_ids:
                     continue
                 add_issue_to_state(
                     state,
@@ -211,6 +211,7 @@ class APartChatbotService:
             primary_issue_id=routed.primary_issue_id,
             related_issue_ids=list(routed.related_issue_ids),
         )
+        state.owner_user_id = request.owner_user_id
         stored = self.conversation_service.store.create(state)
         return stored.conversation_id, True
 
@@ -485,7 +486,7 @@ class APartChatbotService:
         return (
             summary,
             _unique_text(reasons, max_items=4),
-            _unique_text(follow_up_questions, max_items=3),
+            _unique_text(follow_up_questions, max_items=1),
         )
 
     @staticmethod
@@ -612,7 +613,13 @@ class APartChatbotService:
             ],
             max_items=6,
         )
-        answer["follow_up_questions"] = document_questions
+        state_questions = list(consultation.follow_up_questions[:1])
+        if state_questions:
+            answer["follow_up_questions"] = [
+                item.question for item in state_questions
+            ]
+        else:
+            answer["follow_up_questions"] = document_questions[:1]
         data["answer"] = answer
 
         # 계약서·등기부 분석 결과가 있으면 법률 RAG가 일시적으로 비어도
@@ -651,7 +658,7 @@ class APartChatbotService:
         if state.messages and state.messages[-1].role == MessageRole.ASSISTANT:
             state.messages[-1].content = self.conversation_service._assistant_message(
                 updated_rag,
-                [],
+                state_questions,
             )
             state.touch()
         stored_state = self.conversation_service.store.save(state)
@@ -670,7 +677,7 @@ class APartChatbotService:
                 "rag_response": updated_rag,
                 "state": stored_state,
                 "risk_assessment": assessment,
-                "follow_up_questions": [],
+                "follow_up_questions": state_questions,
                 "missing_facts": list(summary.get("warnings", []))[:6],
                 "conflict_facts": hold_reasons,
                 "rag_generation_status": str(
@@ -698,7 +705,12 @@ class APartChatbotService:
         }
         if rag_status in mapping:
             return mapping[rag_status]
-        if consultation.follow_up_questions:
+        answer_questions = getattr(
+            getattr(consultation.rag_response, "answer", None),
+            "follow_up_questions",
+            [],
+        )
+        if consultation.follow_up_questions or answer_questions:
             return ChatbotProcessingStatus.NEEDS_FOLLOW_UP
         return ChatbotProcessingStatus.COMPLETED
 
@@ -732,7 +744,7 @@ class APartChatbotService:
 
         if document_analysis is not None:
             rag_options["apply_state_policy"] = False
-            rag_options["build_follow_up_questions"] = False
+            rag_options["build_follow_up_questions"] = True
             rag_options["suppress_no_update_warning"] = True
 
         consultation = self.conversation_service.handle(
