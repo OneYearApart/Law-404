@@ -746,6 +746,13 @@ class BPartMVPGraph:
 
         if calendar_tool_result.get("status") == "registered":
             answer = "좋습니다. 아래 일정들을 Google Calendar에 등록했습니다."
+        elif calendar_tool_result.get("status") == "partial_success":
+            registered_count = calendar_tool_result.get("registered_event_count", 0)
+            failed_count = calendar_tool_result.get("failed_event_count", 0)
+            answer = (
+                f"일부 일정만 Google Calendar에 등록했습니다. "
+                f"등록 {registered_count}건, 실패 {failed_count}건입니다."
+            )
         elif calendar_tool_result.get("status") == "calendar_connection_required":
             answer = (
                 "Google Calendar 연결이 필요합니다.\n"
@@ -753,15 +760,12 @@ class BPartMVPGraph:
             )
         elif calendar_tool_result.get("status") == "not_configured":
             answer = (
-                "좋습니다. 아래 일정들은 Google Calendar에 등록할 수 있는 형식으로 검증되었습니다.\n"
-                "다만 현재 Google Calendar MCP 연결 코드가 아직 설정되지 않아 실제 등록은 수행하지 않았습니다."
+                "Google Calendar 등록 설정이 아직 완료되지 않았습니다. 연결 상태를 확인해 주세요."
             )
+        elif calendar_tool_result.get("status") == "failed":
+            answer = "Google Calendar 등록에 실패했습니다. 연결 상태와 권한을 확인해 주세요."
         else:
-            answer = (
-                "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
-                "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
-                "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
-            )
+            answer = "캘린더 등록 요청을 처리했습니다. 등록 결과를 확인해 주세요."
 
         final_state = {
             "question": question,
