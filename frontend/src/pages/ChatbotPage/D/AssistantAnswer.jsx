@@ -13,6 +13,13 @@ const STATUS_LABELS = {
   error: '오류',
 };
 
+// 화면 제목 ← 본문 머리글. 머리글(response.md가 강제하는 '### 해설' 등)은 모델과의 내부 계약이라
+// 표시 문구와 분리한다 — 카피를 다듬을 때마다 프롬프트를 건드리면 LLM 출력 형식이 흔들린다.
+const SECTION_TITLES = {
+  해설: '이런 사례예요',
+  상황적용: '내 상황은요',
+};
+
 function CitationModal({ citation, onClose }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -94,7 +101,11 @@ function DAssistantAnswer({ content }) {
           // 해설 → 상황적용. 머리글이 깨진 응답은 title이 null인 단일 섹션으로 온다(폴백).
           bodySections.map((section) => (
             <section className={styles.section} key={section.title ?? 'body'}>
-              {section.title && <h3 className={styles.sectionTitle}>{section.title}</h3>}
+              {section.title && (
+                <h3 className={styles.sectionTitle}>
+                  {SECTION_TITLES[section.title] ?? section.title}
+                </h3>
+              )}
               <p className={styles.sectionBody}>{section.body}</p>
             </section>
           ))
@@ -107,7 +118,7 @@ function DAssistantAnswer({ content }) {
         {/* 대응 — 백엔드가 큐레이션한 고정 텍스트라 프론트는 제목만 씌우고 문구는 손대지 않는다. */}
         {appendix && (
           <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>대응</h3>
+            <h3 className={styles.sectionTitle}>대응은요</h3>
             <p className={styles.sectionBody}>{appendix}</p>
           </section>
         )}
