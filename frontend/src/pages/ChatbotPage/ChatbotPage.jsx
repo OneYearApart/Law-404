@@ -17,6 +17,12 @@ import {
   uploadADocument,
 } from "../../api/chat/A/aApi.js";
 import { createBConversation, sendBChat } from "../../api/chat/B/bApi.js";
+import {
+  deleteCalendarConnection,
+  getCalendarConnectGuide,
+  getCalendarConnectionStatus,
+  saveCalendarConnection,
+} from "../../api/calendar/calendarApi.js";
 import { ApiError } from "../../api/common/apiClient.js";
 import ChatComposer from "../../components/chat/ChatComposer/ChatComposer.jsx";
 import AssistantThinking from "../../components/chat/AssistantThinking/AssistantThinking.jsx";
@@ -242,6 +248,13 @@ function ChatbotPage({ consultationType }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [calendarConnectionStatus, setCalendarConnectionStatus] = useState(null);
+  const [calendarConnectGuide, setCalendarConnectGuide] = useState(null);
+  const [calendarConnectionIdInput, setCalendarConnectionIdInput] =
+    useState("");
+  const [calendarEmailInput, setCalendarEmailInput] = useState("");
+  const [isCalendarConnectionLoading, setIsCalendarConnectionLoading] =
+    useState(false);
   const [attachDocumentAnalysisNextTurn, setAttachDocumentAnalysisNextTurn] =
     useState(false);
   const [error, setError] = useState("");
@@ -334,6 +347,40 @@ function ChatbotPage({ consultationType }) {
       block: "end",
     });
   }, [messages.length, isLoading]);
+
+  useEffect(() => {
+    if (!isBPart) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadCalendarConnection = async () => {
+      setIsCalendarConnectionLoading(true);
+      try {
+        const status = await getCalendarConnectionStatus();
+        if (cancelled) {
+          return;
+        }
+        setCalendarConnectionStatus(status);
+        setCalendarConnectionIdInput(status?.connection?.connection_id || "");
+        setCalendarEmailInput(status?.connection?.google_email || "");
+      } catch {
+        if (!cancelled) {
+          setCalendarConnectionStatus(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCalendarConnectionLoading(false);
+        }
+      }
+    };
+
+    loadCalendarConnection();
+    return () => {
+      cancelled = true;
+    };
+  }, [isBPart]);
 
   const appendMessages = (...nextMessages) => {
     setMessagesByType((current) => ({
@@ -501,6 +548,98 @@ function ChatbotPage({ consultationType }) {
         });
       },
     });
+  };
+
+  const handleShowCalendarConnectGuide = async () => {
+    if (isCalendarConnectionLoading) {
+      return;
+    }
+
+    setIsCalendarConnectionLoading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const guide = await getCalendarConnectGuide();
+      setCalendarConnectGuide(guide);
+      setCalendarConnectionIdInput((current) =>
+        current || guide.suggested_connection_id || "",
+      );
+      setNotice("Google Calendar 연결 명령어를 확인했습니다.");
+    } catch (requestError) {
+      setError(
+        getErrorMessage(
+          requestError,
+          "Google Calendar 연결 안내를 불러오지 못했습니다.",
+        ),
+      );
+    } finally {
+      setIsCalendarConnectionLoading(false);
+    }
+  };
+
+  const handleSaveCalendarConnection = async (event) => {
+    event.preventDefault();
+
+    const connectionId = calendarConnectionIdInput.trim();
+    const googleEmail = calendarEmailInput.trim();
+
+    if (!connectionId || isCalendarConnectionLoading) {
+      setError("Smithery connection id를 입력해 주세요.");
+      return;
+    }
+
+    setIsCalendarConnectionLoading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      await saveCalendarConnection({
+        connectionId,
+        connectionName: connectionId,
+        googleEmail: googleEmail || null,
+      });
+      const status = await getCalendarConnectionStatus();
+      setCalendarConnectionStatus(status);
+      setNotice("Google Calendar connection을 저장했습니다.");
+    } catch (requestError) {
+      setError(
+        getErrorMessage(
+          requestError,
+          "Google Calendar connection을 저장하지 못했습니다.",
+        ),
+      );
+    } finally {
+      setIsCalendarConnectionLoading(false);
+    }
+  };
+
+  const handleDeleteCalendarConnection = async () => {
+    if (isCalendarConnectionLoading) {
+      return;
+    }
+
+    setIsCalendarConnectionLoading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      await deleteCalendarConnection();
+      const status = await getCalendarConnectionStatus();
+      setCalendarConnectionStatus(status);
+      setCalendarConnectionIdInput("");
+      setCalendarEmailInput("");
+      setNotice("Google Calendar connection을 해제했습니다.");
+    } catch (requestError) {
+      setError(
+        getErrorMessage(
+          requestError,
+          "Google Calendar connection을 해제하지 못했습니다.",
+        ),
+      );
+    } finally {
+      setIsCalendarConnectionLoading(false);
+    }
   };
 
   const refreshDocuments = async (conversationId) => {
@@ -883,6 +1022,92 @@ function ChatbotPage({ consultationType }) {
             onAnalyze={handleAnalyzeDocuments}
             isBusy={isBusy}
           />
+        )}
+        {isBPart && (
+          <section className={styles.calendarConnectionPanel}>
+            <div className={styles.calendarConnectionHeader}>
+              <div>
+                <p className={styles.calendarConnectionEyebrow}>
+                  Google Calendar MCP
+                </p>
+                <strong>
+                  {calendarConnectionStatus?.connected
+                    ? "캘린더 연결됨"
+                    : "캘린더 연결 필요"}
+                </strong>
+              </div>
+              {calendarConnectionStatus?.connected ? (
+                <button
+                  type="button"
+                  onClick={handleDeleteCalendarConnection}
+                  disabled={isCalendarConnectionLoading}
+                >
+                  연결 해제
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleShowCalendarConnectGuide}
+                  disabled={isCalendarConnectionLoading}
+                >
+                  연결 방법 보기
+                </button>
+              )}
+            </div>
+
+            {calendarConnectionStatus?.connected ? (
+              <p className={styles.calendarConnectionDescription}>
+                저장된 connection id:{" "}
+                <code>{calendarConnectionStatus.connection?.connection_id}</code>
+                {calendarConnectionStatus.connection?.google_email
+                  ? ` · ${calendarConnectionStatus.connection.google_email}`
+                  : ""}
+              </p>
+            ) : (
+              <form
+                className={styles.calendarConnectionForm}
+                onSubmit={handleSaveCalendarConnection}
+              >
+                {calendarConnectGuide?.smithery_command && (
+                  <p className={styles.calendarConnectionCommand}>
+                    <span>Smithery 연결 명령어</span>
+                    <code>{calendarConnectGuide.smithery_command}</code>
+                  </p>
+                )}
+                <label>
+                  <span>Smithery connection id</span>
+                  <input
+                    type="text"
+                    value={calendarConnectionIdInput}
+                    onChange={(event) =>
+                      setCalendarConnectionIdInput(event.target.value)
+                    }
+                    placeholder="예: law404_googlecalendar_user_1"
+                  />
+                </label>
+                <label>
+                  <span>Google 이메일 선택 입력</span>
+                  <input
+                    type="email"
+                    value={calendarEmailInput}
+                    onChange={(event) =>
+                      setCalendarEmailInput(event.target.value)
+                    }
+                    placeholder="예: user@gmail.com"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={
+                    isCalendarConnectionLoading ||
+                    !calendarConnectionIdInput.trim()
+                  }
+                >
+                  connection 저장
+                </button>
+              </form>
+            )}
+          </section>
         )}
         <ChatComposer
           value={input}

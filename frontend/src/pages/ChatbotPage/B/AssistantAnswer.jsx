@@ -39,7 +39,7 @@ function getCalendarStatusText(calendarToolResult) {
   }
 
   if (calendarToolResult.status === 'partial_success') {
-    return `일부 일정만 등록됐습니다: ${registeredCount}건`;
+    return `일부 일정만 등록되었습니다: ${registeredCount}건`;
   }
 
   if (calendarToolResult.status === 'failed') {
@@ -47,7 +47,11 @@ function getCalendarStatusText(calendarToolResult) {
   }
 
   if (calendarToolResult.status === 'dry_run') {
-    return '캘린더 등록 준비가 완료됐습니다.';
+    return '캘린더 등록 준비가 완료되었습니다.';
+  }
+
+  if (calendarToolResult.status === 'calendar_connection_required') {
+    return 'Google Calendar 연결이 필요합니다. 아래 연결 정보를 먼저 저장해 주세요.';
   }
 
   return '';
@@ -65,12 +69,19 @@ function BAssistantAnswer({ content }) {
   const canRegister = pendingAction?.status === 'pending' && !isStreaming;
 
   return (
-    <motion.article className={styles.answer} initial={{ opacity: 0 }} animate={{ opacity: 1 }} whileHover={{ y: -2 }}>
+    <motion.article
+      className={styles.answer}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      whileHover={{ y: -2 }}
+    >
       <span className={styles.label}>
         <FiEdit3 aria-hidden="true" />
         계약 중 점검
       </span>
-      <p className={styles.answerText}>{text || '답변을 생성하고 있습니다.'}</p>
+      <p className={styles.answerText}>
+        {text || '답변을 생성하고 있습니다.'}
+      </p>
       {canRegister && (
         <button
           className={styles.calendarButton}
