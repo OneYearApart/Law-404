@@ -53,10 +53,10 @@ async def test_legal_fixed_answer_gets_disclaimer_once():
 
 
 @pytest.mark.asyncio
-async def test_llm_stream_gets_disclaimer_appended():
-    """LLM 응답 스트림은 항상 법률 정보 → 소진 후 말미에 면책을 덧붙인다."""
+async def test_llm_stream_exposes_disclaimer_as_slot_not_inline():
+    """LLM 응답 스트림은 항상 법률 정보 → 면책이 반드시 따라붙는다. 단 스트림에 인라인하지 않고
+    disclaimer_text 슬롯으로 넘긴다(호출부가 구조화해 내보내고 저장 텍스트에 이어붙임)."""
     async def _llm_stream():
-        yield "원문 "
         yield "해설 "
         yield "상황적용"
 
@@ -65,9 +65,8 @@ async def test_llm_stream_gets_disclaimer_appended():
     result = await finalize_response(state)
     text = await _collect(result)
 
-    assert text.startswith("원문 해설 상황적용")
-    assert text.count(DISCLAIMER) == 1
-    assert text.endswith(DISCLAIMER)
+    assert text == "해설 상황적용"       # 본문만 — 평문에 면책이 섞이지 않는다
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio
@@ -103,34 +102,40 @@ async def test_clean_response_logs_no_warning(caplog):
 # --- 단위 44: 지원절차 액션플랜 첨부(스트림 경로) -----------------------------------
 
 @pytest.mark.asyncio
-async def test_action_plan_appended_before_disclaimer_on_stream_path():
-    """판정 확정 턴: 본문 → 액션플랜 → 면책 순으로 붙는다."""
+async def test_action_plan_stays_out_of_body_stream():
+    """판정 확정 턴: 액션플랜은 본문 평문에 섞이지 않고 슬롯에 남아 있어야 한다 —
+    프론트가 정규식으로 '■'를 찾아 쪼개는 걸 막는 게 이 구조의 목적이다."""
     async def _body():
-        yield "원문 해설 상황적용"
+        yield "해설 상황적용"
 
     state = {
         "response_stream": _body(),
         "appendix_text": "■ 지금 확인·실행하실 점\n- ...",
     }
 
-    out = await _collect(await finalize_response(state))
+    result = await finalize_response(state)
+    out = await _collect(result)
 
-    assert out.index("상황적용") < out.index("■ 지금 확인") < out.index(DISCLAIMER)
+    assert "■" not in out
+    assert out == "해설 상황적용"
+    assert result["appendix_text"] == "■ 지금 확인·실행하실 점\n- ..."
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio
-async def test_no_appendix_text_yields_body_then_disclaimer_only():
-    """appendix_text가 없으면 기존과 동일하게 본문 → 면책만(회귀 없음)."""
+async def test_no_appendix_text_yields_body_only():
+    """appendix_text가 없는 턴(일반 질의응답)은 본문만 — 면책은 여전히 슬롯으로 보장된다."""
     async def _body():
         yield "본문"
 
     state = {"response_stream": _body()}          # appendix_text 없음
 
-    out = await _collect(await finalize_response(state))
+    result = await finalize_response(state)
+    out = await _collect(result)
 
-    assert out.startswith("본문")
-    assert DISCLAIMER in out
-    assert "■" not in out                          # 액션플랜 블록 없음
+    assert out == "본문"
+    assert result.get("appendix_text") is None
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio

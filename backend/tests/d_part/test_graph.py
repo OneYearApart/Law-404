@@ -71,7 +71,8 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
     assert result["response_stream"] is not None
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("판단 응답")
-    assert joined.endswith(DISCLAIMER)  # 법률 정보 응답 → 면책 첨부
+    # 법률 정보 응답 → 면책 보장. 스트림엔 인라인하지 않고 슬롯으로 넘긴다(호출부가 구조화해 첨부)
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio
@@ -102,7 +103,7 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
     assert result["response_stream"] is not None
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("일반 시나리오 응답")
-    assert joined.endswith(DISCLAIMER)
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio
@@ -134,7 +135,7 @@ async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(mo
     assert result["general_topic_matched"] == "전-③다가구_선순위보증금"
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("다가구주택 답변")
-    assert joined.endswith(DISCLAIMER)
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio
@@ -164,7 +165,7 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
 
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("open_qa 응답")
-    assert joined.endswith(DISCLAIMER)
+    assert result["disclaimer_text"] == DISCLAIMER
     assert "안내드릴 내용이 없습니다" not in joined
 
 
@@ -245,7 +246,7 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
     assert result["victim_flow_closed"] is True
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("보증보험 안내")
-    assert joined.endswith(DISCLAIMER)
+    assert result["disclaimer_text"] == DISCLAIMER
     assert "안내드릴 내용이 없습니다" not in joined
 
 
@@ -280,5 +281,5 @@ async def test_first_turn_answers_directly_without_stage_gate(monkeypatch):
     assert result["response_stream"] is not None
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("등기부등본 답변")
-    assert joined.endswith(DISCLAIMER)
+    assert result["disclaimer_text"] == DISCLAIMER
     assert "안내드릴 내용이 없습니다" not in joined

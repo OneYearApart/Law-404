@@ -35,12 +35,14 @@ async def _stream_text(text: str) -> AsyncGenerator[str, None]:
     yield text
 
 
-async def _with_appendix(
+async def _body_only(
     stream: AsyncIterator[str], appendix_text: str | None
 ) -> AsyncGenerator[str, None]:
-    """LLM 응답 스트림을 그대로 흘려보내고, 말미에 첨부 텍스트(있으면)와 면책 문구를 차례로 붙인다.
-    첨부 텍스트는 미인지형 액션플랜(43~45)/인지형 지원절차 개요(49)가 공유하는 결정론 슬롯이다.
-    스트림이라 finalize 시점엔 전체 텍스트를 알 수 없으므로 소진하며 모아 금칙어를 로깅한다.
+    """LLM 응답 스트림을 그대로 흘려보내기만 한다. 첨부 텍스트와 면책은 스트림에 인라인하지 않고
+    결정론 슬롯(appendix_text/disclaimer_text)으로 넘겨, 호출부가 별도 UI 블록으로 렌더할 수 있게 한다
+    — 프론트가 평문을 정규식으로 쪼개는 걸 막기 위함(값을 아는 쪽이 구조를 준다).
+
+    스트림이라 finalize 시점엔 본문 전체를 알 수 없으므로 소진하며 모아 금칙어를 로깅한다.
     첨부 텍스트는 큐레이션돼 금칙어가 없지만, 방어적으로 로깅 대상에 함께 포함한다."""
     collected = []
     async for token in stream:
@@ -48,18 +50,19 @@ async def _with_appendix(
         yield token
     if appendix_text:
         collected.append(appendix_text)
-        yield f"\n\n{appendix_text}"
     _log_banned_judgment("".join(collected))
-    yield f"\n\n{DISCLAIMER}"
 
 
 async def finalize_response(state: DPartGraphState) -> DPartGraphState:
-    # LLM 생성 응답(원문→해설→상황적용) — 항상 법률 정보이므로 면책 첨부.
-    # 판정 확정 턴이면 appendix_text가 채워져 있어 면책 앞에 함께 붙는다.
+    # LLM 생성 응답(해설→상황적용) — 항상 법률 정보이므로 면책 필요.
+    # 스트림 경로에선 액션플랜·면책을 인라인하지 않고 슬롯으로만 넘긴다. 스트림을 소비하는
+    # 호출부(routes/d_part.py)가 본문 뒤에 붙여 messages 저장용 전체 텍스트를 만들고,
+    # 동시에 구조화해서 클라이언트로 내보낸다 — 사용자가 보는 것과 저장되는 것은 동일해야 한다.
     if state.get("response_stream") is not None:
-        state["response_stream"] = _with_appendix(
+        state["response_stream"] = _body_only(
             state["response_stream"], state.get("appendix_text")
         )
+        state["disclaimer_text"] = DISCLAIMER
         return state
 
     # 고정 텍스트 경로: 법률 정보 응답에만 면책, 확인질문/fallthrough엔 붙이지 않는다

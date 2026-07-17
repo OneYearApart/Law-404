@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FiAlertTriangle } from 'react-icons/fi';
 
 import styles from './AssistantAnswer.module.css';
 
@@ -67,7 +66,7 @@ function CitationModal({ citation, onClose }) {
 }
 
 function DAssistantAnswer({ content }) {
-  const { status, citations, judgment, text, errorMessage } = content;
+  const { status, citations, judgment, text, appendix, disclaimer, errorMessage } = content;
   const [selectedCitation, setSelectedCitation] = useState(null);
   const statusLabel = STATUS_LABELS[status];
 
@@ -75,13 +74,13 @@ function DAssistantAnswer({ content }) {
     <>
       <motion.article className={styles.answer} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <header className={styles.header}>
-          <span className={styles.label}>
-            <FiAlertTriangle aria-hidden="true" />
-            전세사기 상담
-          </span>
+          <span className={styles.label}>전세사기 상담</span>
           {/* 판정 배지는 victim_check가 이번 턴에 판단을 새로 확정했을 때만 백엔드가 내려준다. */}
           {judgment ? (
-            <strong className={styles.judgment}>{judgment}</strong>
+            <span className={styles.judgmentGroup}>
+              <span className={styles.judgmentCaption}>전세사기 위험도</span>
+              <strong className={styles.judgment}>{judgment}</strong>
+            </span>
           ) : (
             statusLabel && <span className={styles.status}>{statusLabel}</span>
           )}
@@ -93,6 +92,15 @@ function DAssistantAnswer({ content }) {
           <p className={styles.body}>
             {text || (status === 'loading' ? '답변을 준비하고 있습니다.' : null)}
           </p>
+        )}
+
+        {/* 해설·상황적용(LLM 본문) 다음의 3번 블록. 내용은 백엔드가 큐레이션한 고정 텍스트라
+            프론트는 제목만 씌우고 문구는 손대지 않는다. */}
+        {appendix && (
+          <section className={styles.appendix}>
+            <h3 className={styles.appendixTitle}>대응</h3>
+            <p className={styles.appendixBody}>{appendix}</p>
+          </section>
         )}
 
         {citations.length > 0 && (
@@ -111,6 +119,10 @@ function DAssistantAnswer({ content }) {
             </div>
           </section>
         )}
+
+        {/* 면책은 §9.3상 법률 정보 응답에 반드시 따라붙어야 한다. 백엔드가 스트림에 인라인하지 않고
+            슬롯으로 넘기므로, 내려온 턴에는 이 블록이 빠짐없이 렌더돼야 한다. */}
+        {disclaimer && <p className={styles.disclaimer}>{disclaimer}</p>}
       </motion.article>
 
       <AnimatePresence>

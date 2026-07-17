@@ -77,7 +77,25 @@ async def chat_d(
             async for chunk in final_state["response_stream"]:
                 chunks.append(chunk)
                 yield f"data: {StreamEvent(type=EventType.TOKEN, data=chunk).model_dump_json()}\n\n"
-            final_answer = final_state.get("final_answer") or "".join(chunks)
+
+            # 액션플랜·면책은 코드가 만든 결정론 텍스트라 평문에 섞지 않고 구조화해서 내보낸다
+            # (클라이언트가 별도 UI 블록으로 렌더). 본문 스트림이 끝난 뒤 보내 읽기 순서를 지킨다.
+            tail = {
+                key: value
+                for key, value in (
+                    ("appendix", final_state.get("appendix_text")),
+                    ("disclaimer", final_state.get("disclaimer_text")),
+                )
+                if value
+            }
+            if tail:
+                yield f"data: {StreamEvent(type=EventType.META, data=tail).model_dump_json()}\n\n"
+
+            # 저장 텍스트는 사용자가 보는 것과 같아야 한다 — 구조화해 내보낸 블록도 이어붙인다.
+            # 고정 텍스트 경로(final_answer 세팅됨)는 면책이 이미 인라인돼 있어 그대로 쓴다.
+            final_answer = final_state.get("final_answer") or "\n\n".join(
+                part for part in ["".join(chunks), tail.get("appendix"), tail.get("disclaimer")] if part
+            )
 
             updated_session = DPartSessionState(
                 **{name: final_state[name] for name in DPartSessionState.model_fields if name in final_state}

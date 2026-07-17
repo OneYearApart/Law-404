@@ -23,10 +23,17 @@
   font-weight: var(--font-weight-bold);
 }
 
-.label {
+.judgmentGroup {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-6);
+}
+
+.judgmentCaption {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-white);
 }
 
 .status {
@@ -59,6 +66,34 @@
 
 .errorMessage {
   color: #b42318;
+}
+
+/* 대응(액션플랜) — 해설·상황적용 다음의 3번 블록. 본문(LLM)과 달리 코드가 큐레이션한
+   고정 절차 안내라 시각적으로 구분한다. */
+.appendix {
+  padding: var(--space-16) var(--space-20);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.appendixTitle {
+  margin-bottom: var(--space-8);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-deep-blue);
+}
+
+.appendixBody {
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+.disclaimer {
+  padding: var(--space-12) var(--space-20);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-subtle);
 }
 
 /* 근거 자료는 DB 원문 그대로다. 조문·판례 verbatim이라 길어서 본문에 인라인하지 않고
