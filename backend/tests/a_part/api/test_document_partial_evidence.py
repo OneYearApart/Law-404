@@ -64,4 +64,4 @@ def test_document_result_remains_answerable_when_rag_evidence_is_missing():
     assert updated.rag_generation_status == "partial_evidence"
     assert updated.rag_response.generation_status.value == "partial_evidence"
     assert updated.rag_response.evidence_status.value == "partial"
-    assert "첨부 문서 기준" in updated.rag_response.answer.core_judgment
+    assert "확인 가능한 임대차계약서 또는 등기부등본 내용을 찾지 못했습니다" in updated.rag_response.answer.core_judgment

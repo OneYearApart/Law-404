@@ -245,6 +245,7 @@ export async function sendATurn({
   relatedIssueIds = [],
   checklistUpdates = [],
   documentIds = [],
+  attachedDocumentIds = [],
   analyzeDocuments = false,
   forceDocumentAnalysis = false,
 }) {
@@ -257,6 +258,7 @@ export async function sendATurn({
       related_issue_ids: relatedIssueIds,
       checklist_updates: checklistUpdates,
       document_ids: documentIds,
+      attached_document_ids: attachedDocumentIds,
       analyze_documents: analyzeDocuments,
       force_document_analysis: forceDocumentAnalysis,
     },
@@ -270,32 +272,17 @@ export async function getAConversation(conversationId) {
   return unwrap(payload);
 }
 
-export async function deleteAConversation(conversationId) {
-  const payload = await apiRequest(`${A_BASE_PATH}/conversations/${conversationId}`, {
-    method: 'DELETE',
-  });
-
-  return unwrap(payload);
-}
-
 export async function uploadADocument({
   conversationId,
   file,
   documentType,
-  extractText = true,
-  forceExtraction = false,
 }) {
   const formData = new FormData();
   formData.append('document_type', documentType);
   formData.append('file', file);
 
-  const query = new URLSearchParams({
-    extract_text: String(extractText),
-    force_extraction: String(forceExtraction),
-  });
-
   const payload = await apiRequest(
-    `${A_BASE_PATH}/conversations/${conversationId}/documents?${query}`,
+    `${A_BASE_PATH}/conversations/${conversationId}/documents`,
     {
       method: 'POST',
       body: formData,
@@ -317,35 +304,6 @@ export async function deleteADocument({ conversationId, documentId }) {
   const payload = await apiRequest(
     `${A_BASE_PATH}/conversations/${conversationId}/documents/${documentId}`,
     { method: 'DELETE' },
-  );
-
-  return unwrap(payload);
-}
-
-export async function extractADocument({ conversationId, documentId, force = false }) {
-  const query = new URLSearchParams({ force: String(force) });
-  const payload = await apiRequest(
-    `${A_BASE_PATH}/conversations/${conversationId}/documents/${documentId}/extract?${query}`,
-    { method: 'POST' },
-  );
-
-  return unwrap(payload);
-}
-
-export async function analyzeADocuments({
-  conversationId,
-  documentIds = [],
-  force = false,
-}) {
-  const payload = await apiRequest(
-    `${A_BASE_PATH}/conversations/${conversationId}/documents/analyze`,
-    {
-      method: 'POST',
-      body: {
-        document_ids: documentIds,
-        force,
-      },
-    },
   );
 
   return unwrap(payload);
@@ -437,7 +395,12 @@ export function mapAConversationStateToMessages(state) {
       {
         id: `saved-${state.conversation_id}-${index}-user`,
         role: 'user',
-        content: snapshot.user_message,
+        content: (snapshot.attached_documents || []).length
+          ? {
+              text: snapshot.user_message,
+              attachments: normalizeADocumentList(snapshot.attached_documents),
+            }
+          : snapshot.user_message,
       },
       {
         id: `saved-${state.conversation_id}-${index}-assistant`,

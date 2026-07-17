@@ -53,7 +53,7 @@ function AssistantThinking({ progress = null, fallbackItems = [] }) {
         <img src="/images/thinking.png" alt="" />
       </span>
 
-      <div className={styles.bubble}>
+      <div className={`${styles.bubble} ${isOpen ? styles.bubbleOpen : styles.bubbleClosed}`}>
         <button
           type="button"
           className={styles.toggleButton}

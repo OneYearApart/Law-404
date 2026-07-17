@@ -127,7 +127,7 @@ function DocumentUploadDialog({
                 whileTap={isUploading || files.length === 0 ? undefined : { scale: 0.98 }}
               >
                 <FiUpload aria-hidden="true" />
-                <span>{isUploading ? '업로드·분석 중' : `${files.length}개 업로드`}</span>
+                <span>{isUploading ? '업로드 중' : `${files.length}개 업로드`}</span>
               </motion.button>
             </footer>
           </motion.section>
