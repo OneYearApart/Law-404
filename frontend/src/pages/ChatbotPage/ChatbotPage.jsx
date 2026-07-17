@@ -21,7 +21,6 @@ import {
   deleteCalendarConnection,
   getCalendarConnectGuide,
   getCalendarConnectionStatus,
-  saveCalendarConnection,
 } from "../../api/calendar/calendarApi.js";
 import { ApiError } from "../../api/common/apiClient.js";
 import ChatComposer from "../../components/chat/ChatComposer/ChatComposer.jsx";
@@ -250,10 +249,9 @@ function ChatbotPage({ consultationType }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [calendarConnectionStatus, setCalendarConnectionStatus] = useState(null);
   const [calendarConnectGuide, setCalendarConnectGuide] = useState(null);
-  const [calendarConnectionIdInput, setCalendarConnectionIdInput] =
-    useState("");
-  const [calendarEmailInput, setCalendarEmailInput] = useState("");
   const [isCalendarConnectionLoading, setIsCalendarConnectionLoading] =
+    useState(false);
+  const [isCalendarConnectionPolling, setIsCalendarConnectionPolling] =
     useState(false);
   const [attachDocumentAnalysisNextTurn, setAttachDocumentAnalysisNextTurn] =
     useState(false);
@@ -363,8 +361,6 @@ function ChatbotPage({ consultationType }) {
           return;
         }
         setCalendarConnectionStatus(status);
-        setCalendarConnectionIdInput(status?.connection?.connection_id || "");
-        setCalendarEmailInput(status?.connection?.google_email || "");
       } catch {
         if (!cancelled) {
           setCalendarConnectionStatus(null);
@@ -562,51 +558,67 @@ function ChatbotPage({ consultationType }) {
     try {
       const guide = await getCalendarConnectGuide();
       setCalendarConnectGuide(guide);
-      setCalendarConnectionIdInput((current) =>
-        current || guide.suggested_connection_id || "",
+      if (guide?.authorization_url) {
+        const popup = window.open(
+          guide.authorization_url,
+          "law404-google-calendar-oauth",
+          "width=520,height=720,noopener,noreferrer",
+        );
+
+        if (!popup) {
+          window.location.assign(guide.authorization_url);
+          return;
+        }
+
+        setNotice(
+          "Google Calendar 권한 승인 창을 열었습니다. 승인이 끝나면 이 화면에서 연결 상태를 자동으로 확인합니다.",
+        );
+        setIsCalendarConnectionPolling(true);
+
+        const startedAt = Date.now();
+        const pollConnection = window.setInterval(async () => {
+          try {
+            const status = await getCalendarConnectionStatus();
+            setCalendarConnectionStatus(status);
+
+            if (status?.connected) {
+              window.clearInterval(pollConnection);
+              setIsCalendarConnectionPolling(false);
+              setNotice("Google Calendar 연결이 완료되었습니다.");
+              popup.close?.();
+              return;
+            }
+          } catch {
+            // OAuth 진행 중 일시적인 조회 실패는 다음 polling에서 다시 확인합니다.
+          }
+
+          if (Date.now() - startedAt > 120000 || popup.closed) {
+            window.clearInterval(pollConnection);
+            setIsCalendarConnectionPolling(false);
+            setNotice(
+              "Google Calendar 승인 후 연결 상태가 바뀌지 않으면 연결하기를 다시 눌러 주세요.",
+            );
+          }
+        }, 2500);
+        return;
+      }
+
+      if (guide?.connected) {
+        const status = await getCalendarConnectionStatus();
+        setCalendarConnectionStatus(status);
+        setNotice("Google Calendar가 이미 연결되어 있습니다.");
+        return;
+      }
+
+      setNotice(
+        guide?.note ||
+          "Google Calendar 연결을 시작했습니다. 잠시 후 연결 상태를 다시 확인해 주세요.",
       );
-      setNotice("Google Calendar 연결 명령어를 확인했습니다.");
     } catch (requestError) {
       setError(
         getErrorMessage(
           requestError,
           "Google Calendar 연결 안내를 불러오지 못했습니다.",
-        ),
-      );
-    } finally {
-      setIsCalendarConnectionLoading(false);
-    }
-  };
-
-  const handleSaveCalendarConnection = async (event) => {
-    event.preventDefault();
-
-    const connectionId = calendarConnectionIdInput.trim();
-    const googleEmail = calendarEmailInput.trim();
-
-    if (!connectionId || isCalendarConnectionLoading) {
-      setError("Smithery connection id를 입력해 주세요.");
-      return;
-    }
-
-    setIsCalendarConnectionLoading(true);
-    setError("");
-    setNotice("");
-
-    try {
-      await saveCalendarConnection({
-        connectionId,
-        connectionName: connectionId,
-        googleEmail: googleEmail || null,
-      });
-      const status = await getCalendarConnectionStatus();
-      setCalendarConnectionStatus(status);
-      setNotice("Google Calendar connection을 저장했습니다.");
-    } catch (requestError) {
-      setError(
-        getErrorMessage(
-          requestError,
-          "Google Calendar connection을 저장하지 못했습니다.",
         ),
       );
     } finally {
@@ -627,8 +639,6 @@ function ChatbotPage({ consultationType }) {
       await deleteCalendarConnection();
       const status = await getCalendarConnectionStatus();
       setCalendarConnectionStatus(status);
-      setCalendarConnectionIdInput("");
-      setCalendarEmailInput("");
       setNotice("Google Calendar connection을 해제했습니다.");
     } catch (requestError) {
       setError(
@@ -1033,8 +1043,13 @@ function ChatbotPage({ consultationType }) {
                 <strong>
                   {calendarConnectionStatus?.connected
                     ? "캘린더 연결됨"
+                    : isCalendarConnectionPolling
+                      ? "캘린더 연결 확인 중"
                     : "캘린더 연결 필요"}
                 </strong>
+                <p className={styles.calendarConnectionDescription}>
+                  계약 종료일과 갱신요구 마감일을 내 Google Calendar에 등록할 수 있습니다.
+                </p>
               </div>
               {calendarConnectionStatus?.connected ? (
                 <button
@@ -1048,64 +1063,32 @@ function ChatbotPage({ consultationType }) {
                 <button
                   type="button"
                   onClick={handleShowCalendarConnectGuide}
-                  disabled={isCalendarConnectionLoading}
+                  disabled={
+                    isCalendarConnectionLoading || isCalendarConnectionPolling
+                  }
                 >
-                  연결 방법 보기
+                  {isCalendarConnectionPolling
+                    ? "연결 확인 중"
+                    : "Google Calendar 연결하기"}
                 </button>
               )}
             </div>
 
             {calendarConnectionStatus?.connected ? (
               <p className={styles.calendarConnectionDescription}>
-                저장된 connection id:{" "}
-                <code>{calendarConnectionStatus.connection?.connection_id}</code>
-                {calendarConnectionStatus.connection?.google_email
-                  ? ` · ${calendarConnectionStatus.connection.google_email}`
-                  : ""}
+                연결된 계정:{" "}
+                {calendarConnectionStatus.connection?.google_email ||
+                  calendarConnectionStatus.connection?.connection_name ||
+                  "Google Calendar"}
+              </p>
+            ) : calendarConnectGuide?.note ? (
+              <p className={styles.calendarConnectionDescription}>
+                {calendarConnectGuide.note}
               </p>
             ) : (
-              <form
-                className={styles.calendarConnectionForm}
-                onSubmit={handleSaveCalendarConnection}
-              >
-                {calendarConnectGuide?.smithery_command && (
-                  <p className={styles.calendarConnectionCommand}>
-                    <span>Smithery 연결 명령어</span>
-                    <code>{calendarConnectGuide.smithery_command}</code>
-                  </p>
-                )}
-                <label>
-                  <span>Smithery connection id</span>
-                  <input
-                    type="text"
-                    value={calendarConnectionIdInput}
-                    onChange={(event) =>
-                      setCalendarConnectionIdInput(event.target.value)
-                    }
-                    placeholder="예: law404_googlecalendar_user_1"
-                  />
-                </label>
-                <label>
-                  <span>Google 이메일 선택 입력</span>
-                  <input
-                    type="email"
-                    value={calendarEmailInput}
-                    onChange={(event) =>
-                      setCalendarEmailInput(event.target.value)
-                    }
-                    placeholder="예: user@gmail.com"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  disabled={
-                    isCalendarConnectionLoading ||
-                    !calendarConnectionIdInput.trim()
-                  }
-                >
-                  connection 저장
-                </button>
-              </form>
+              <p className={styles.calendarConnectionDescription}>
+                연결 버튼을 누르면 Google Calendar 권한 승인 화면으로 이동합니다.
+              </p>
             )}
           </section>
         )}
