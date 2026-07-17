@@ -79,6 +79,16 @@ class VictimRequirementSlots(BaseModel):
     has_relief_measure: Optional[bool] = None                      # 구제수단보유여부 — true면 판단 결과를 "제외"로 덮어씀. 자유서술 추론 금지, 명시 확인질문 필수
 
 
+# 요건 슬롯의 사람이 읽는 이름. LLM 컨텍스트에 필드명(moved_in_and_fixed_date 등)을 그대로
+# 넘기면 모델이 그 영문 키를 답변에 그대로 옮겨 적는다 — 사용자에게 내부 변수명이 노출된다.
+VICTIM_SLOT_LABELS = {
+    "moved_in_and_fixed_date": "전입신고·확정일자(대항력·우선변제권)",
+    "deposit_under_limit": "보증금 한도 이내",
+    "multiple_victims": "다수 피해 발생(예상)",
+    "no_intent_to_return": "임대인의 반환의도 부재를 의심할 상당한 이유",
+}
+
+
 class DPartGraphState(TypedDict, total=False):
     """LangGraph 1회 실행 동안만 유효한 전체 상태. 턴 종료 시 폐기되며,
     다음 턴으로 넘겨야 하는 부분집합만 DPartSessionState로 골라 영속화합니다.

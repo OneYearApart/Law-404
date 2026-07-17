@@ -149,7 +149,10 @@ def test_glossary_terms_cover_appendix_not_just_body(monkeypatch):
     """용어 스캔은 본문뿐 아니라 대응(액션플랜)까지 훑어야 한다 — 난해한 용어가 거기 몰려 있다."""
     _stub_route(
         monkeypatch,
-        {"appendix_text": "■ 지금 확인·실행하실 점\n- 우선매수권을 확인하세요."},
+        {
+            "answer_kind": "judgment",
+            "appendix_text": "■ 지금 확인·실행하실 점\n- 우선매수권을 확인하세요.",
+        },
         glossary=[{"term": "우선매수권", "description": "먼저 살 수 있는 권리예요."}],
     )
 
@@ -172,13 +175,25 @@ def test_terms_absent_when_no_glossary_word_appears(monkeypatch):
     assert '"terms"' not in body
 
 
+def test_terms_do_not_attach_to_question_turns(monkeypatch):
+    """요건을 되묻는 턴은 질문 한 줄이 전부인데 그 문구에도 '대항력' 같은 용어가 들어 있다
+    (구제수단 확인질문). 질문 밑에 용어 카드가 줄줄이 달리면 노이즈다."""
+    _stub_route(
+        monkeypatch,
+        {},   # answer_kind 없음 = 응답 생성 노드를 거치지 않은 턴
+        glossary=[{"term": "답변", "description": "풀이 문구예요."}],
+    )
+
+    assert '"terms"' not in _post()
+
+
 def test_terms_are_not_saved_to_messages(monkeypatch):
     """의도된 예외: terms는 본문에서 파생된 읽기 보조 정보라 messages에 저장하지 않는다.
     저장된 본문만 있으면 언제든 같은 결과로 재도출되므로 이력이 손실되지 않는다."""
     saved: list[str] = []
     _stub_route(
         monkeypatch,
-        {},
+        {"answer_kind": "open_qa"},
         saved=saved,
         glossary=[{"term": "답변", "description": "풀이 문구예요."}],
     )
