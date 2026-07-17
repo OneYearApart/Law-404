@@ -103,19 +103,18 @@ async def chat_d(
                 if value
             }
 
-            # 용어 풀이는 답변에 실제로 등장한 용어만 — 본문과 대응(액션플랜)을 함께 훑는다.
+            # 용어 풀이는 텍스트에 실제로 등장한 용어만 — 본문과 대응(액션플랜)을 함께 훑는다.
             # 우선매수권·조세채권 안분 같은 난해한 용어는 오히려 대응 쪽에 몰려 있다.
             #
-            # 단 실제 답변을 생성한 턴(answer_kind)에만 붙인다. 요건을 되묻는 턴은 질문 한 줄이
-            # 전부인데 그 문구에도 '대항력' 같은 용어가 들어 있어(구제수단 확인질문), 질문 밑에
-            # 용어 카드가 줄줄이 달리는 노이즈가 된다.
+            # 답변 생성 턴뿐 아니라 요건을 되묻는 슬롯 질문 턴에도 붙인다 — 그 질문에도 대항력·
+            # 확정일자·최우선변제 같은 용어가 나오는데, 혼란스러운 사용자에겐 오히려 그 시점에
+            # 풀이가 더 필요하다. 등장하지 않은 용어는 match_glossary_terms가 알아서 걸러낸다.
             body_text = "".join(chunks)
-            if final_state.get("answer_kind"):
-                terms = match_glossary_terms(
-                    f"{body_text}\n{tail.get('appendix', '')}", await _retriever.load_glossary()
-                )
-                if terms:
-                    tail["terms"] = terms
+            terms = match_glossary_terms(
+                f"{body_text}\n{tail.get('appendix', '')}", await _retriever.load_glossary()
+            )
+            if terms:
+                tail["terms"] = terms
 
             if tail:
                 yield f"data: {StreamEvent(type=EventType.META, data=tail).model_dump_json()}\n\n"
