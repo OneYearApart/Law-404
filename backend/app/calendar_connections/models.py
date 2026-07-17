@@ -34,11 +34,16 @@ class CalendarConnectionStatusResponse(BaseModel):
     connected: bool
     provider: str = DEFAULT_CALENDAR_PROVIDER
     connection: CalendarConnectionPublic | None = None
+    authorization_url: str | None = None
+    status: str | None = None
 
 
 class CalendarConnectGuideResponse(BaseModel):
     provider: str = DEFAULT_CALENDAR_PROVIDER
     status: str
+    connection_id: str | None = None
+    authorization_url: str | None = None
+    connected: bool = False
     suggested_connection_id: str
-    smithery_command: str
+    smithery_command: str | None = None
     note: str

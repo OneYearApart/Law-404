@@ -64,6 +64,26 @@ def upsert_calendar_connection(
     return connection
 
 
+def update_calendar_connection_status(
+    db: Session,
+    *,
+    connection: UserCalendarConnection,
+    status: str,
+    google_email: str | None = None,
+) -> UserCalendarConnection:
+    now = datetime.utcnow()
+    connection.status = status
+    connection.updated_at = now
+    if google_email is not None:
+        connection.google_email = google_email
+    if status == "connected":
+        connection.last_connected_at = now
+
+    db.commit()
+    db.refresh(connection)
+    return connection
+
+
 def delete_calendar_connection(
     db: Session,
     *,

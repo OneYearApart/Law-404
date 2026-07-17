@@ -15,12 +15,17 @@ import subprocess
 from datetime import date, timedelta
 from typing import Any
 
+import httpx
+
+from app.core.config import settings
+
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_TIMEZONE = "Asia/Seoul"
 KST_OFFSET = "+09:00"
 SMITHERY_CONNECTION_NAME = "googlecalendar"
 SMITHERY_CREATE_EVENT_TOOL_NAME = "create_event"
+SMITHERY_API_BASE_URL = "https://api.smithery.ai"
 
 
 def validate_calendar_event(event: dict[str, Any]) -> list[str]:
@@ -227,6 +232,97 @@ def _call_smithery_create_event(
     *,
     connection_id: str,
 ) -> dict[str, Any]:
+    """Smithery REST API를 우선 사용하고, 로컬 개발에서는 CLI로 fallback합니다."""
+    api_key = (settings.smithery_api_key or "").strip()
+    if api_key:
+        api_result = _call_smithery_create_event_via_api(
+            event_args,
+            connection_id=connection_id,
+            api_key=api_key,
+        )
+        if api_result.get("ok") or api_result.get("reason") != "smithery_api_failed":
+            return api_result
+
+    return _call_smithery_create_event_via_cli(
+        event_args,
+        connection_id=connection_id,
+    )
+
+
+def _call_smithery_create_event_via_api(
+    event_args: dict[str, Any],
+    *,
+    connection_id: str,
+    api_key: str,
+) -> dict[str, Any]:
+    """Smithery Connect MCP endpoint로 Google Calendar create_event tool을 호출합니다."""
+    namespace = (settings.smithery_namespace or "law404").strip()
+    url = f"{SMITHERY_API_BASE_URL}/connect/{namespace}/{connection_id}/mcp"
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "law404-calendar-create-event",
+        "method": "tools/call",
+        "params": {
+            "name": SMITHERY_CREATE_EVENT_TOOL_NAME,
+            "arguments": event_args,
+        },
+    }
+
+    try:
+        response = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        return {
+            "ok": False,
+            "reason": "smithery_api_failed",
+            "error": str(exc),
+            "event_args": event_args,
+        }
+
+    try:
+        response_payload = response.json()
+    except ValueError:
+        return {
+            "ok": False,
+            "reason": "smithery_api_response_not_json",
+            "status_code": response.status_code,
+            "text": response.text,
+            "event_args": event_args,
+        }
+
+    if response.status_code >= 400 or response_payload.get("error"):
+        return {
+            "ok": False,
+            "reason": "smithery_api_tool_error",
+            "status_code": response.status_code,
+            "response": response_payload,
+            "event_args": event_args,
+        }
+
+    result_payload = response_payload.get("result", response_payload)
+    response_data = _extract_smithery_response_data(result_payload)
+    return {
+        "ok": True,
+        "event_args": event_args,
+        "response": response_payload,
+        "response_data": response_data,
+        "provider_event_id": response_data.get("id") if isinstance(response_data, dict) else None,
+        "html_link": response_data.get("htmlLink") if isinstance(response_data, dict) else None,
+    }
+
+
+def _call_smithery_create_event_via_cli(
+    event_args: dict[str, Any],
+    *,
+    connection_id: str,
+) -> dict[str, Any]:
     """Smithery CLI를 통해 Google Calendar MCP create_event tool을 호출합니다."""
     smithery_command = shutil.which("smithery")
     if not smithery_command:
@@ -303,6 +399,21 @@ def _call_smithery_create_event(
 
 def _extract_smithery_response_data(response: dict[str, Any]) -> dict[str, Any]:
     """Smithery CLI 응답에서 실제 Google Calendar event payload를 추출합니다."""
+    if not isinstance(response, dict):
+        return {"value": response}
+
+    result = response.get("result")
+    if isinstance(result, dict):
+        result_response_data = result.get("response_data")
+        if isinstance(result_response_data, dict):
+            return result_response_data
+
+        structured_result = result.get("structuredContent")
+        if isinstance(structured_result, dict):
+            structured_result_response_data = structured_result.get("response_data")
+            if isinstance(structured_result_response_data, dict):
+                return structured_result_response_data
+
     direct_response_data = response.get("response_data")
     if isinstance(direct_response_data, dict):
         return direct_response_data
