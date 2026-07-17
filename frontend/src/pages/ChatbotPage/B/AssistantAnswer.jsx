@@ -85,6 +85,10 @@ function BAssistantAnswer({ content }) {
     calendarToolResult?.status === 'registered' ||
     calendarToolResult?.status === 'partial_success';
 
+  if (isStreaming && !text.trim()) {
+    return null;
+  }
+
   return (
     <motion.article
       className={styles.answer}
@@ -109,22 +113,26 @@ function BAssistantAnswer({ content }) {
           일정 등록하기
         </button>
       )}
-      {calendarStatusText && (
-        <p className={styles.calendarStatus}>
-          <FiCheckCircle aria-hidden="true" />
-          {calendarStatusText}
-        </p>
-      )}
-      {canOpenCalendar && (
-        <a
-          className={styles.calendarLink}
-          href={getGoogleCalendarUrl(calendarToolResult)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <FiExternalLink aria-hidden="true" />
-          Google Calendar에서 확인하기
-        </a>
+      {(calendarStatusText || canOpenCalendar) && (
+        <div className={styles.calendarResultActions}>
+          {calendarStatusText && (
+            <p className={styles.calendarStatus}>
+              <FiCheckCircle aria-hidden="true" />
+              {calendarStatusText}
+            </p>
+          )}
+          {canOpenCalendar && (
+            <a
+              className={styles.calendarLink}
+              href={getGoogleCalendarUrl(calendarToolResult)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FiExternalLink aria-hidden="true" />
+              Google Calendar에서 확인하기
+            </a>
+          )}
+        </div>
       )}
     </motion.article>
   );

@@ -1014,6 +1014,15 @@ function ChatbotPage({ consultationType }) {
         )}
 
         {messages.map((message, index) => {
+          if (
+            isBPart &&
+            message.role === "assistant" &&
+            message.content?.isStreaming &&
+            !String(message.content?.text || "").trim()
+          ) {
+            return null;
+          }
+
           const isCompletedCollectingQuestion =
             isAPart &&
             message.role === "assistant" &&
