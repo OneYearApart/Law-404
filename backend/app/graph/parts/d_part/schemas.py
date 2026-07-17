@@ -106,6 +106,10 @@ class DPartGraphState(TypedDict, total=False):
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     needs_response_assembly: bool                                     # victim_check가 이번 턴에 판단을 새로 확정했는지 —
                                                                         # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
+    answer_kind: Optional[str]                                        # 이번 턴 답변의 성격(judgment/scenario/
+                                                                        # special_case/open_qa). 응답을 만든 노드가
+                                                                        # 세팅한다 — 라우트가 route_target에서 재역산하면
+                                                                        # 실제 경로와 어긋날 수 있다. 이번 턴 전용
     disclaimer_text: Optional[str]                                    # 이번 턴 응답에 붙일 면책 문구 — 스트림 경로에서
                                                                         # finalize가 세팅하고 호출부가 본문 뒤에 붙인다.
                                                                         # 고정 텍스트 경로는 final_answer에 직접 인라인. 이번 턴 전용

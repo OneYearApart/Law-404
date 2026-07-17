@@ -8,7 +8,7 @@ from app.graph.parts.d_part.nodes import open_qa
 from app.rag.retrievers.base import Chunk
 
 
-async def _fake_generate_response(context: str):
+async def _fake_generate_response(context: str, answer_kind: str):
     yield "open_qa 응답"
 
 

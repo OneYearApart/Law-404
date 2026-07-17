@@ -22,7 +22,7 @@ async def _fake_search_by_topic(topic_key, query_text):
     }
 
 
-async def _fake_generate_response(context: str):
+async def _fake_generate_response(context: str, answer_kind: str):
     yield "원문 "
     yield "해설 "
     yield "상황적용"

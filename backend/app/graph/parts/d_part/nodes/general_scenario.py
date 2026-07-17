@@ -31,5 +31,6 @@ async def handle_general_scenario(state: DPartGraphState) -> DPartGraphState:
                                  + retrieved["cases"] + retrieved["guides"])
 
     context = _format_context(topic_key, state["retrieved_chunks"])
-    state["response_stream"] = llm_d_part.generate_response(context)
+    state["answer_kind"] = "scenario"
+    state["response_stream"] = llm_d_part.generate_response(context, "scenario")
     return state

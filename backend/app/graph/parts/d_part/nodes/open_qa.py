@@ -14,7 +14,7 @@ from app.rag.retrievers.d_part import DPartRetriever
 
 _retriever = DPartRetriever()
 
-# 단위 28: 쿼터/임계값으로도 뒷받침 근거(특히 법령원문)를 못 찾으면 response.md의
+# 단위 28: 쿼터/임계값으로도 뒷받침 근거(특히 법령원문)를 못 찾으면 response_open_qa.md의
 # 원문→해설→상황적용을 억지로 생성하지 않고 이 문구로 빠진다. finalize의
 # _FALLTHROUGH_MESSAGE("아무 데도 안 걸림")와는 구분 — 여기는 "질의는 받았으나 근거 없음".
 # victim_check._FALLBACK_MESSAGE 톤을 따르며, 실질 법률정보가 아니라 면책은 붙이지 않는다.
@@ -37,5 +37,6 @@ async def handle_open_qa(state: DPartGraphState) -> DPartGraphState:
         return state
 
     context = format_chunks(chunks)
-    state["response_stream"] = llm_d_part.generate_response(context)
+    state["answer_kind"] = "open_qa"
+    state["response_stream"] = llm_d_part.generate_response(context, "open_qa")
     return state

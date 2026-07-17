@@ -41,5 +41,6 @@ async def assemble_response(state: DPartGraphState) -> DPartGraphState:
                                  + retrieved["cases"] + retrieved.get("guides", []))
 
     context = _format_context(state)
-    state["response_stream"] = llm_d_part.generate_response(context)
+    state["answer_kind"] = "judgment"
+    state["response_stream"] = llm_d_part.generate_response(context, "judgment")
     return state

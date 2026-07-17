@@ -97,29 +97,17 @@ def test_slot_question_turn_has_no_meta(monkeypatch):
     assert '"type":"token"' in body
 
 
-def test_answer_kind_distinguishes_judgment_from_other_paths(monkeypatch):
-    """네 경로가 같은 프롬프트를 태우므로, 클라이언트가 답변 성격을 알아야 제목을 맞출 수 있다.
-    특히 판정 없는 턴의 '상황적용'은 내 상황 판단이 아니라 일반 유의사항이다."""
-    _stub_route(monkeypatch, {
-        "needs_response_assembly": True,
-        "victim_judgment": VictimJudgment.HIGH,
-        "route_target": "victim_check",
-    })
-    assert '"answer_kind":"judgment"' in _post()
-
-    _stub_route(monkeypatch, {"general_topic_matched": "전-①등기부등본_위험신호"})
-    assert '"answer_kind":"scenario"' in _post()
-
-    _stub_route(monkeypatch, {"special_case_matched": "임대인_사망"})
-    assert '"answer_kind":"special_case"' in _post()
-
-    _stub_route(monkeypatch, {"route_target": "open_qa"})
-    assert '"answer_kind":"open_qa"' in _post()
+def test_answer_kind_from_node_is_forwarded(monkeypatch):
+    """경로마다 같은 두 단계를 쓰지만 내용이 달라, 클라이언트가 제목을 맞추려면 성격을 알아야 한다.
+    응답을 만든 노드가 세팅한 값을 라우트가 그대로 전달한다(라우트가 재역산하지 않는다)."""
+    for kind in ("judgment", "scenario", "special_case", "open_qa"):
+        _stub_route(monkeypatch, {"answer_kind": kind})
+        assert f'"answer_kind":"{kind}"' in _post()
 
 
 def test_slot_question_turn_has_no_answer_kind(monkeypatch):
-    """요건을 더 묻는 턴(route_target=victim_check이나 판정 미확정)은 성격을 규정할 게 없다.
-    victim_check로 라우팅됐다는 이유만으로 judgment를 붙이면 안 된다."""
+    """요건을 더 묻는 턴은 응답 생성 노드를 거치지 않아 answer_kind가 없다 —
+    victim_check로 라우팅됐다는 이유만으로 judgment가 붙으면 안 된다."""
     _stub_route(monkeypatch, {"route_target": "victim_check", "needs_response_assembly": False})
 
     assert "answer_kind" not in _post()

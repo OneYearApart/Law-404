@@ -78,10 +78,20 @@ _CONFIRMATION_TOOL = {
 }
 
 
+def _read_prompt(prompt_name: str) -> str:
+    return (_PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
+
+
 def _render_prompt(prompt_name: str, **kwargs) -> str:
-    template = (_PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
     context_lines = "\n".join(f"{key}: {value}" for key, value in kwargs.items())
-    return f"{template}\n\n---\n\n{context_lines}"
+    return f"{_read_prompt(prompt_name)}\n\n---\n\n{context_lines}"
+
+
+# 답변 성격별 프롬프트. 네 경로가 한 장을 공유하던 때는 "판단 결과가 없으면 …", "근거가 없으면 …"
+# 같은 조건이 프롬프트 안에 쌓여, 모델이 자기 경로에 해당하지 않는 지시까지 읽어야 했다.
+# 이제 각 경로는 자기 지시만 받는다. 인용·형식 규칙은 경로별로 복제하면 드리프트가 나므로
+# response_common에 한 번만 두고 앞에 붙인다.
+RESPONSE_ANSWER_KINDS = ("judgment", "scenario", "special_case", "open_qa")
 
 
 async def _call_llm(prompt: str) -> str:
@@ -161,11 +171,20 @@ async def call_confirmation(question: str, user_input: str) -> dict:
     )
 
 
-async def generate_response(context: str) -> AsyncGenerator[str, None]:
-    """최종 응답(원문→해설→상황적용) 진짜 토큰 스트리밍 — 다른 call_*와 달리 전체를 모아
+async def generate_response(context: str, answer_kind: str) -> AsyncGenerator[str, None]:
+    """최종 응답(해설→상황적용) 진짜 토큰 스트리밍 — 다른 call_*와 달리 전체를 모아
     JSON 파싱하지 않고 그대로 흘려보낸다. 스트림 시작 후 실패하면 이미 클라이언트로
-    청크가 나간 상태라 재시도하지 않고 그대로 전파한다."""
-    prompt = _render_prompt("response", context=context)
+    청크가 나간 상태라 재시도하지 않고 그대로 전파한다.
+
+    answer_kind는 호출 노드가 자기 경로를 알려주는 값이다(RESPONSE_ANSWER_KINDS).
+    같은 두 단계를 쓰더라도 판정 유무·상황 정보 유무가 달라 지시가 갈린다.
+    """
+    if answer_kind not in RESPONSE_ANSWER_KINDS:
+        raise ValueError(f"알 수 없는 answer_kind: {answer_kind!r}")
+    prompt = (
+        f"{_read_prompt('response_common')}\n\n{_read_prompt(f'response_{answer_kind}')}"
+        f"\n\n---\n\ncontext: {context}"
+    )
     stream = await _client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],

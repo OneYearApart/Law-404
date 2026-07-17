@@ -53,6 +53,7 @@ async def match_special_case(state: DPartGraphState) -> DPartGraphState:
                                  + retrieved["cases"] + retrieved["guides"])
 
     context = f"특수상황: {category}\n\n{format_chunks(state['retrieved_chunks'])}"
-    state["response_stream"] = llm_d_part.generate_response(context)
+    state["answer_kind"] = "special_case"
+    state["response_stream"] = llm_d_part.generate_response(context, "special_case")
     state["appendix_text"] = _SPECIAL_CASE_GUIDANCE[category]   # finalize가 해설 뒤·면책 앞에 append
     return state

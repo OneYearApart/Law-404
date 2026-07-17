@@ -28,7 +28,7 @@ async def test_retrieves_by_mapped_tag_and_sets_stream_and_appendix(monkeypatch,
         return {"statute": [_chunk("법령원문", "조문")], "case_law": [_chunk("판례", "판례")],
                 "cases": [], "guides": []}
 
-    async def _fake_generate(context):
+    async def _fake_generate(context, answer_kind):
         yield "해설 상황적용"
 
     monkeypatch.setattr(special_cases._retriever, "search_by_topic", _fake_search_by_topic)

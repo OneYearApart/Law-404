@@ -25,7 +25,7 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
             "guides": [_make_chunk("생활법령", "상황적용 안내")],   # 작업단위 51 상황적용 grounding
         }
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "원문 "
         yield "해설 "
         yield "상황적용"
@@ -94,7 +94,7 @@ async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
         calls["retrieve"] += 1
         return {"statute": [], "case_law": [], "cases": [], "guides": []}
 
-    async def _counting_generate_response(context: str):
+    async def _counting_generate_response(context: str, answer_kind: str):
         calls["generate"] += 1
         yield "재생성된 응답"
 

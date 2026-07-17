@@ -44,7 +44,7 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
     async def _fake_search_by_requirement(slots, situation_query=None):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="제3조")], "case_law": [], "cases": [], "guides": []}
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "판단 응답"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor)
@@ -85,7 +85,7 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": [], "guides": []}
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "일반 시나리오 응답"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
@@ -118,7 +118,7 @@ async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(mo
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": [], "guides": []}
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "다가구주택 답변"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
@@ -149,7 +149,7 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
     async def _fake_search_balanced(query, quota=None):
         return [Chunk(id=1, source_type="법령원문", content="관련 조문")]
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "open_qa 응답"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
@@ -222,7 +222,7 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
     async def _fake_search_balanced(query, quota=None):
         return [Chunk(id=1, source_type="법령원문", content="보증보험 관련 조문")]
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "보증보험 안내"
 
     async def _unreachable_search_by_requirement(slots):
@@ -265,7 +265,7 @@ async def test_first_turn_answers_directly_without_stage_gate(monkeypatch):
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="등기부 관련 조문")], "case_law": [], "cases": [], "guides": []}
 
-    async def _fake_generate_response(context: str):
+    async def _fake_generate_response(context: str, answer_kind: str):
         yield "등기부등본 답변"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
