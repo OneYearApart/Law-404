@@ -715,7 +715,9 @@ function ChatbotPage({ consultationType }) {
               setNotice(
                 "Google Calendar 연결 후 일정 등록 여부를 다시 확인합니다.",
               );
-              handleShowCalendarConnectGuide();
+              setNotice(
+                "Google Calendar 연결이 필요합니다. 연결하기 버튼을 눌러 계정 연동을 진행해 주세요.",
+              );
               return;
             }
 
@@ -1229,7 +1231,7 @@ function ChatbotPage({ consultationType }) {
       </section>
 
       <AnimatePresence>
-        {(error || notice) && (
+        {(error || (notice && !(isBPart && showCalendarConnectionPanel))) && (
           <motion.div
             className={`${styles.feedback} ${error ? styles.error : styles.notice}`}
             initial={{ opacity: 0, y: 8 }}

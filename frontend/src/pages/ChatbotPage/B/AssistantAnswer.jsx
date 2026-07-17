@@ -78,6 +78,8 @@ function getGoogleCalendarUrl(calendarToolResult) {
 }
 
 function renderFormattedText(text) {
+  let isCalendarSection = false;
+
   return String(text || '')
     .split(/\r?\n/)
     .map((line, index) => {
@@ -85,6 +87,7 @@ function renderFormattedText(text) {
       const sectionHeading = trimmed.match(SECTION_HEADING_PATTERN);
 
       if (sectionHeading) {
+        isCalendarSection = sectionHeading[2].includes('캘린더');
         return (
           <h3 className={styles.answerHeading} key={`${line}-${index}`}>
             <span className={styles.headingNumber}>{sectionHeading[1]}</span>
@@ -93,8 +96,20 @@ function renderFormattedText(text) {
         );
       }
 
+      if (isCalendarSection && trimmed.startsWith('-')) {
+        return null;
+      }
+
       if (!trimmed) {
         return <span className={styles.answerSpacer} key={`space-${index}`} />;
+      }
+
+      if (isCalendarSection && /^\d+\.\s+.+:\s*\d{4}-\d{2}-\d{2}$/u.test(trimmed)) {
+        return (
+          <span className={styles.calendarEventLine} key={`${line}-${index}`}>
+            {line}
+          </span>
+        );
       }
 
       return (
