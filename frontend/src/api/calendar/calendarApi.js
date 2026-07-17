@@ -13,24 +13,6 @@ export async function getCalendarConnectGuide() {
   });
 }
 
-export async function saveCalendarConnection({
-  connectionId,
-  connectionName = null,
-  googleEmail = null,
-  provider = CALENDAR_PROVIDER,
-}) {
-  return apiRequest('/calendar/connection', {
-    method: 'POST',
-    body: {
-      provider,
-      connection_id: connectionId,
-      connection_name: connectionName || connectionId,
-      google_email: googleEmail || null,
-      status: 'connected',
-    },
-  });
-}
-
 export async function deleteCalendarConnection(provider = CALENDAR_PROVIDER) {
   const params = new URLSearchParams({ provider });
   return apiRequest(`/calendar/connection?${params.toString()}`, {

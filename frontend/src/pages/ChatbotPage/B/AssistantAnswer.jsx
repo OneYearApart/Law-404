@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion';
-import { FiCalendar, FiCheckCircle, FiEdit3 } from 'react-icons/fi';
+import { FiCalendar, FiCheckCircle, FiEdit3, FiExternalLink } from 'react-icons/fi';
 
 import styles from './AssistantAnswer.module.css';
+
+const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/u/0/r';
 
 function normalizeContent(content) {
   if (content && typeof content === 'object') {
@@ -23,16 +25,21 @@ function normalizeContent(content) {
   };
 }
 
+function getRegisteredCount(calendarToolResult) {
+  return (
+    calendarToolResult?.registered_event_count ??
+    calendarToolResult?.created_count ??
+    calendarToolResult?.registered_events?.length ??
+    0
+  );
+}
+
 function getCalendarStatusText(calendarToolResult) {
   if (!calendarToolResult) {
     return '';
   }
 
-  const registeredCount =
-    calendarToolResult.registered_event_count ??
-    calendarToolResult.created_count ??
-    calendarToolResult.registered_events?.length ??
-    0;
+  const registeredCount = getRegisteredCount(calendarToolResult);
 
   if (calendarToolResult.status === 'registered') {
     return `캘린더 등록 완료: ${registeredCount}건`;
@@ -51,10 +58,17 @@ function getCalendarStatusText(calendarToolResult) {
   }
 
   if (calendarToolResult.status === 'calendar_connection_required') {
-    return 'Google Calendar 연결이 필요합니다. 아래 연결 정보를 먼저 저장해 주세요.';
+    return 'Google Calendar 연결이 필요합니다.';
   }
 
   return '';
+}
+
+function getGoogleCalendarUrl(calendarToolResult) {
+  const firstRegisteredEvent = calendarToolResult?.registered_events?.find(
+    (event) => event?.html_link,
+  );
+  return firstRegisteredEvent?.html_link || GOOGLE_CALENDAR_URL;
 }
 
 function BAssistantAnswer({ content }) {
@@ -67,6 +81,9 @@ function BAssistantAnswer({ content }) {
   } = normalizeContent(content);
   const calendarStatusText = getCalendarStatusText(calendarToolResult);
   const canRegister = pendingAction?.status === 'pending' && !isStreaming;
+  const canOpenCalendar =
+    calendarToolResult?.status === 'registered' ||
+    calendarToolResult?.status === 'partial_success';
 
   return (
     <motion.article
@@ -97,6 +114,17 @@ function BAssistantAnswer({ content }) {
           <FiCheckCircle aria-hidden="true" />
           {calendarStatusText}
         </p>
+      )}
+      {canOpenCalendar && (
+        <a
+          className={styles.calendarLink}
+          href={getGoogleCalendarUrl(calendarToolResult)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <FiExternalLink aria-hidden="true" />
+          Google Calendar에서 확인하기
+        </a>
       )}
     </motion.article>
   );

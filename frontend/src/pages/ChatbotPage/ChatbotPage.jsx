@@ -224,6 +224,8 @@ function ChatbotPage({ consultationType }) {
   const messagesEndRef = useRef(null);
   const messageIdRef = useRef(0);
   const localMessageSequenceRef = useRef(0);
+  const calendarConnectionStatusRef = useRef(null);
+  const pendingCalendarRegistrationRef = useRef(null);
   const config = CHATBOT_CATEGORIES[consultationType];
   const starterGuide =
     STARTER_GUIDES[consultationType] || STARTER_GUIDES["before-contract"];
@@ -252,6 +254,8 @@ function ChatbotPage({ consultationType }) {
   const [isCalendarConnectionLoading, setIsCalendarConnectionLoading] =
     useState(false);
   const [isCalendarConnectionPolling, setIsCalendarConnectionPolling] =
+    useState(false);
+  const [showCalendarConnectionPanel, setShowCalendarConnectionPanel] =
     useState(false);
   const [attachDocumentAnalysisNextTurn, setAttachDocumentAnalysisNextTurn] =
     useState(false);
@@ -345,6 +349,10 @@ function ChatbotPage({ consultationType }) {
       block: "end",
     });
   }, [messages.length, isLoading]);
+
+  useEffect(() => {
+    calendarConnectionStatusRef.current = calendarConnectionStatus;
+  }, [calendarConnectionStatus]);
 
   useEffect(() => {
     if (!isBPart) {
@@ -456,6 +464,35 @@ function ChatbotPage({ consultationType }) {
       question,
     );
 
+  const submitCalendarRegistration = (action) => {
+    if (!action) return;
+
+    const registerQuestion = "캘린더에 등록해줘";
+    appendMessages({
+      id: createMessageId("user-calendar"),
+      role: "user",
+      content: registerQuestion,
+    });
+    setIsLoading(true);
+    setError("");
+    setNotice("");
+    runBChatTurn({
+      question: registerQuestion,
+      pendingAction: action,
+      calendarMode: "live",
+    })
+      .then(() => setNotice("캘린더 등록 요청을 처리했습니다."))
+      .catch((requestError) =>
+        setError(
+          getErrorMessage(
+            requestError,
+            "캘린더 등록 요청을 처리하지 못했습니다.",
+          ),
+        ),
+      )
+      .finally(() => setIsLoading(false));
+  };
+
   const runBChatTurn = async ({
     question,
     pendingAction = null,
@@ -498,30 +535,18 @@ function ChatbotPage({ consultationType }) {
           meta,
           onRegisterCalendar: (action) => {
             if (!action) return;
-            const registerQuestion = "캘린더에 등록해줘";
-            appendMessages({
-              id: createMessageId("user-calendar"),
-              role: "user",
-              content: registerQuestion,
-            });
-            setIsLoading(true);
-            setError("");
-            setNotice("");
-            runBChatTurn({
-              question: registerQuestion,
-              pendingAction: action,
-              calendarMode: "live",
-            })
-              .then(() => setNotice("캘린더 등록 요청을 처리했습니다."))
-              .catch((requestError) =>
-                setError(
-                  getErrorMessage(
-                    requestError,
-                    "캘린더 등록 요청을 처리하지 못했습니다.",
-                  ),
-                ),
-              )
-              .finally(() => setIsLoading(false));
+
+            if (!calendarConnectionStatusRef.current?.connected) {
+              pendingCalendarRegistrationRef.current = action;
+              setShowCalendarConnectionPanel(true);
+              setNotice(
+                "Google Calendar 연결 후 일정을 자동으로 등록합니다.",
+              );
+              handleShowCalendarConnectGuide();
+              return;
+            }
+
+            submitCalendarRegistration(action);
           },
         }));
       },
@@ -566,7 +591,8 @@ function ChatbotPage({ consultationType }) {
         );
 
         if (!popup) {
-          window.location.assign(guide.authorization_url);
+          pendingCalendarRegistrationRef.current = null;
+          setShowCalendarConnectionPanel(false);
           return;
         }
 
@@ -575,8 +601,9 @@ function ChatbotPage({ consultationType }) {
         );
         setIsCalendarConnectionPolling(true);
 
-        const startedAt = Date.now();
+        let pollAttempts = 0;
         const pollConnection = window.setInterval(async () => {
+          pollAttempts += 1;
           try {
             const status = await getCalendarConnectionStatus();
             setCalendarConnectionStatus(status);
@@ -584,15 +611,28 @@ function ChatbotPage({ consultationType }) {
             if (status?.connected) {
               window.clearInterval(pollConnection);
               setIsCalendarConnectionPolling(false);
-              setNotice("Google Calendar 연결이 완료되었습니다.");
+              setShowCalendarConnectionPanel(false);
               popup.close?.();
+
+              const pendingRegistration = pendingCalendarRegistrationRef.current;
+              pendingCalendarRegistrationRef.current = null;
+
+              if (pendingRegistration) {
+                setNotice(
+                  "Google Calendar 연결이 완료되어 일정을 자동으로 등록합니다.",
+                );
+                submitCalendarRegistration(pendingRegistration);
+                return;
+              }
+
+              setNotice("Google Calendar 연결이 완료되었습니다.");
               return;
             }
           } catch {
             // OAuth 진행 중 일시적인 조회 실패는 다음 polling에서 다시 확인합니다.
           }
 
-          if (Date.now() - startedAt > 120000 || popup.closed) {
+          if (pollAttempts >= 48 || popup.closed) {
             window.clearInterval(pollConnection);
             setIsCalendarConnectionPolling(false);
             setNotice(
@@ -606,6 +646,16 @@ function ChatbotPage({ consultationType }) {
       if (guide?.connected) {
         const status = await getCalendarConnectionStatus();
         setCalendarConnectionStatus(status);
+        setShowCalendarConnectionPanel(false);
+        const pendingRegistration = pendingCalendarRegistrationRef.current;
+        pendingCalendarRegistrationRef.current = null;
+
+        if (pendingRegistration) {
+          setNotice("Google Calendar 연결을 확인해 일정을 자동으로 등록합니다.");
+          submitCalendarRegistration(pendingRegistration);
+          return;
+        }
+
         setNotice("Google Calendar가 이미 연결되어 있습니다.");
         return;
       }
@@ -1033,7 +1083,9 @@ function ChatbotPage({ consultationType }) {
             isBusy={isBusy}
           />
         )}
-        {isBPart && (
+        {isBPart &&
+          showCalendarConnectionPanel &&
+          !calendarConnectionStatus?.connected && (
           <section className={styles.calendarConnectionPanel}>
             <div className={styles.calendarConnectionHeader}>
               <div>
