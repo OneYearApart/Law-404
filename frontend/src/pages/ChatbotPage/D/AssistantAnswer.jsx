@@ -109,11 +109,14 @@ function DAssistantAnswer({ content }) {
               <p className={styles.sectionBody}>{section.body}</p>
             </section>
           ))
-        ) : (
-          <p className={styles.sectionBody}>
-            {status === 'loading' ? '답변을 준비하고 있습니다.' : null}
-          </p>
-        )}
+        ) : status === 'loading' ? (
+          // 첫 토큰까지 supervisor→victim_check→RAG→LLM을 다 거쳐 대기가 길다.
+          // 멈춘 것처럼 보이지 않게 진행 중임을 계속 알린다.
+          <div className={styles.loading} role="status" aria-live="polite">
+            <span className={styles.loadingDots} aria-hidden="true" />
+            <span>답변을 준비하고 있습니다</span>
+          </div>
+        ) : null}
 
         {/* 대응 — 백엔드가 큐레이션한 고정 텍스트라 프론트는 제목만 씌우고 문구는 손대지 않는다. */}
         {appendix && (

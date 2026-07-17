@@ -63,6 +63,47 @@
   color: #b42318;
 }
 
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-16) var(--space-20);
+  font-size: var(--font-size-body-small);
+  color: var(--color-text-secondary);
+}
+
+/* 점 하나를 그리고 box-shadow로 오른쪽에 2개를 더 얹는다(요소 3개를 두지 않기 위함).
+   순서대로 옅어지게 해서 진행 방향을 만든다. */
+.loadingDots {
+  width: 0.6rem;
+  height: 0.6rem;
+  flex-shrink: 0;
+  margin-right: 1.8rem;
+  background: var(--color-primary);
+  border-radius: var(--radius-round);
+  box-shadow:
+    0.9rem 0 0 color-mix(in srgb, var(--color-primary) 55%, transparent),
+    1.8rem 0 0 color-mix(in srgb, var(--color-primary) 25%, transparent);
+  animation: d-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes d-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 움직임에 민감한 사용자에겐 애니메이션 대신 정지된 점만 보인다. */
+@media (prefers-reduced-motion: reduce) {
+  .loadingDots {
+    animation: none;
+  }
+}
+
 /* 해설 → 상황적용 → 대응 → 관련 법률 용어 풀이. 네 블록 모두 같은 프레임을 쓴다 —
    출처(LLM 생성 / 코드 큐레이션 / DB 원문)는 달라도 사용자에겐 한 답변의 목차다. */
 .section {
