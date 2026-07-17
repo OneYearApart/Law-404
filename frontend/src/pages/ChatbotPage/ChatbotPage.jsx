@@ -221,6 +221,7 @@ function ChatbotPage({ consultationType }) {
     newConversationVersion,
     activateAConversation,
     notifyAConversationSaved,
+    refreshConversations,
   } = useChatConversation();
   const [input, setInput] = useState('');
   const [messagesByType, setMessagesByType] = useState(createEmptyConversations);
@@ -415,6 +416,9 @@ function ChatbotPage({ consultationType }) {
           onEvent: (streamEvent) =>
             updateMessage(assistantId, (answer) => reduceDAnswer(answer, streamEvent)),
         });
+
+        // 첫 질문에 대화방이 생기고 제목도 이때부터 잡힌다 — 사이드바에 반영한다.
+        refreshConversations();
       } else if (isAPart) {
         const result = await sendATurn({
           question,

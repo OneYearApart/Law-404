@@ -24,5 +24,14 @@ export const CHATBOT_CATEGORIES = Object.freeze({
   },
 });
 
+// conversations 테이블의 part 컬럼('a'~'d')과 화면의 consultationType을 잇는 단일 매핑처.
+// 지금까지는 dApi가 'd'를 직접 박아 썼다 — 파트가 늘면 흩어지므로 여기로 모은다.
+export const CONSULTATION_TYPE_TO_PART = Object.freeze({
+  'before-contract': 'a',
+  'during-contract': 'b',
+  'after-contract': 'c',
+  'jeonse-fraud': 'd',
+});
+
 export const createEmptyConversations = () =>
   Object.fromEntries(Object.keys(CHATBOT_CATEGORIES).map((key) => [key, []]));
