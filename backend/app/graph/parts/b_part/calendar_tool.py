@@ -257,16 +257,10 @@ def _call_smithery_create_event_via_api(
 ) -> dict[str, Any]:
     """Smithery Connect MCP endpoint로 Google Calendar create_event tool을 호출합니다."""
     namespace = (settings.smithery_namespace or "law404").strip()
-    url = f"{SMITHERY_API_BASE_URL}/connect/{namespace}/{connection_id}/mcp"
-    payload = {
-        "jsonrpc": "2.0",
-        "id": "law404-calendar-create-event",
-        "method": "tools/call",
-        "params": {
-            "name": SMITHERY_CREATE_EVENT_TOOL_NAME,
-            "arguments": event_args,
-        },
-    }
+    url = (
+        f"{SMITHERY_API_BASE_URL}/connect/{namespace}/"
+        f"{connection_id}/.tools/{SMITHERY_CREATE_EVENT_TOOL_NAME}"
+    )
 
     try:
         response = httpx.post(
@@ -275,7 +269,7 @@ def _call_smithery_create_event_via_api(
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json=payload,
+            json=event_args,
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
@@ -297,7 +291,9 @@ def _call_smithery_create_event_via_api(
             "event_args": event_args,
         }
 
-    if response.status_code >= 400 or response_payload.get("error"):
+    if response.status_code >= 400 or (
+        isinstance(response_payload, dict) and response_payload.get("error")
+    ):
         return {
             "ok": False,
             "reason": "smithery_api_tool_error",
@@ -306,8 +302,7 @@ def _call_smithery_create_event_via_api(
             "event_args": event_args,
         }
 
-    result_payload = response_payload.get("result", response_payload)
-    response_data = _extract_smithery_response_data(result_payload)
+    response_data = _extract_smithery_response_data(response_payload)
     return {
         "ok": True,
         "event_args": event_args,

@@ -128,8 +128,6 @@ async def start_calendar_connection(
         connection_id=smithery_connection.connection_id or connection_id,
         authorization_url=smithery_connection.authorization_url,
         connected=smithery_connection.connected,
-        suggested_connection_id=connection_id,
-        smithery_command=None,
         note=note,
     )
 

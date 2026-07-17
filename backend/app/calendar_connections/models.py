@@ -44,6 +44,4 @@ class CalendarConnectGuideResponse(BaseModel):
     connection_id: str | None = None
     authorization_url: str | None = None
     connected: bool = False
-    suggested_connection_id: str
-    smithery_command: str | None = None
     note: str
