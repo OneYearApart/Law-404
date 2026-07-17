@@ -22,7 +22,12 @@ from typing import AsyncGenerator
 from openai import APIError, AsyncOpenAI, RateLimitError
 
 from app.core.config import settings
-from app.graph.parts.d_part.schemas import GENERAL_TOPIC_LABELS, SPECIAL_CASE_CATEGORIES
+from app.graph.parts.d_part.schemas import (
+    GENERAL_TOPIC_LABELS,
+    RISK_SIGNALS,
+    SPECIAL_CASE_CATEGORIES,
+    Stage,
+)
 
 MODEL = "gpt-4o"
 # 확인 응답 판별은 예/아니오/불명확 3-way 분류라 법률지식이 필요 없고 매 턴 호출되므로
@@ -33,29 +38,37 @@ MAX_RETRIES = 3
 _client = AsyncOpenAI(api_key=settings.openai_api_key)
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
 
-# supervisor가 고를 수 있는 전체 카테고리 — victim_interview(위험신호+미인지형) +
-# 특수상황 4종 + 일반시나리오 13종 + open_qa(어디에도 안 걸리는 질문). enum 값은
-# schemas.py의 GENERAL_TOPIC_LABELS/SPECIAL_CASE_CATEGORIES와 그대로 맞물려야
-# general_scenario.py/special_cases.py의 실행부가 같은 키로 조회할 수 있다.
-_SUPERVISOR_CATEGORIES = [
-    "victim_interview",
-    *[f"special_case:{name}" for name in SPECIAL_CASE_CATEGORIES],
-    *[f"general_topic:{key}" for key in GENERAL_TOPIC_LABELS],
-    "open_qa",
-]
-
+# supervisor는 카테고리 하나가 아니라 상황의 축을 각각 판별한다(SituationState). 예전엔 축들이
+# 카테고리 enum 하나로 압축돼 있어 인지여부가 topic에 가려지는 등 축끼리 서로를 덮어썼다.
+# enum 값은 schemas.py의 상수와 그대로 맞물려야 general_scenario.py/special_cases.py의 실행부가
+# 같은 키로 조회할 수 있다.
+#
+# stage/topic/special_case는 "해당 없음"이 정상값이라 required에 넣지 않는다 — JSON Schema의
+# null 유니온은 비-strict tool calling에서 모델이 문자열 "null"을 흘리는 등 불안정해서,
+# 미포함을 None으로 읽는 쪽이 안전하다(호출부가 .get()으로 받는다).
 _SUPERVISOR_TOOL = {
     "type": "function",
     "function": {
-        "name": "route",
-        "description": "사용자 발화를 카테고리 하나로 분류해 다음 처리 노드를 정한다.",
+        "name": "assess_situation",
+        "description": "사용자 발화에서 상황의 각 축을 독립적으로 판별한다.",
         "parameters": {
             "type": "object",
             "properties": {
-                "category": {"type": "string", "enum": _SUPERVISOR_CATEGORIES},
+                "recognized": {
+                    "type": "boolean",
+                    "description": "이미 법적으로 전세사기 피해자로 인정받은 상태라고 밝혔는지",
+                },
+                "stage": {"type": "string", "enum": [s.value for s in Stage], "description": "계약 단계"},
+                "risk_signals": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(RISK_SIGNALS)},
+                    "description": "발화에서 확인되는 위험신호 (없으면 빈 배열)",
+                },
+                "topic": {"type": "string", "enum": list(GENERAL_TOPIC_LABELS), "description": "일반 시나리오 13개 항목"},
+                "special_case": {"type": "string", "enum": list(SPECIAL_CASE_CATEGORIES), "description": "특수상황 4종"},
                 "reason": {"type": "string", "description": "판단 근거 한 줄"},
             },
-            "required": ["category"],
+            "required": ["recognized", "risk_signals"],
         },
     },
 }
@@ -158,6 +171,8 @@ async def call_victim_check(user_input: str, existing_slots: dict, pending_quest
 
 
 async def call_supervisor(user_input: str) -> dict:
+    """상황의 축별 판별 결과를 dict로 반환한다(SituationState 필드에 대응).
+    stage/topic/special_case는 해당 없으면 키 자체가 빠져 온다 — 호출부가 .get()으로 읽는다."""
     return await _call_tool("supervisor", _SUPERVISOR_TOOL, user_input=user_input)
 
 

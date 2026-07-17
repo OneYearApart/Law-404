@@ -17,7 +17,7 @@ D파트 그래프 상태 및 요건 슬롯 정의.
 from enum import Enum
 from typing import Any, AsyncIterator, Optional, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SlotStatus(str, Enum):
@@ -79,6 +79,14 @@ SPECIAL_CASE_TOPIC_TAGS: dict[str, str] = {
     "공인중개사 허위고지": "전-⑥공인중개사_허위고지",
 }
 
+# 일반주제 ↔ 특수상황 4종은 일부가 "같은 상황의 인정 전/후"다 — 13개 항목 설명이 전-⑤/전-⑥을
+# "아직 피해 인정 전 우려 단계"로 명시한다. 즉 어느 쪽이냐는 recognized 축이 정하지, 발화 내용이
+# 정하는 게 아니다. 그 대응을 SPECIAL_CASE_TOPIC_TAGS에서 뒤집어 쓴다(별도 목록을 만들면 둘이
+# 어긋난다). 트리거-임대인사망파산은 topic 키가 아니라 검색 태그라 여기서 빠진다.
+SITUATION_TOPIC_TO_SPECIAL_CASE: dict[str, str] = {
+    topic: case for case, topic in SPECIAL_CASE_TOPIC_TAGS.items() if topic in GENERAL_TOPIC_LABELS
+}
+
 
 class VictimRequirementSlots(BaseModel):
     moved_in_and_fixed_date: Optional[SlotStatus] = None      # ① 전입신고+확정일자
@@ -121,6 +129,25 @@ class SituationState(BaseModel):
     risk_signals: list[str] = Field(default_factory=list)   # RISK_SIGNALS 부분집합
     topic: Optional[str] = None               # GENERAL_TOPIC_LABELS 키 | None
     special_case: Optional[str] = None         # SPECIAL_CASE_CATEGORIES 중 하나 | None
+
+    # OpenAI tool calling은 strict 모드가 아니면 enum을 강제하지 않는다 — 모델이 정의된 어휘 밖의
+    # 값을 넘기는 걸 실호출로 확인했다(topic 키가 special_case 자리에 들어온 사례). 스키마에 enum을
+    # 적어둔 것만으론 안전하지 않아서, 어휘 검증을 이 타입의 책임으로 둔다. 라우팅이 이 값을 그대로
+    # 믿고 분기하므로 모르는 값은 받느니 버린다(None = 해당 없음, 이미 정상값이다).
+    @field_validator("topic")
+    @classmethod
+    def _known_topic(cls, value: Optional[str]) -> Optional[str]:
+        return value if value in GENERAL_TOPIC_LABELS else None
+
+    @field_validator("special_case")
+    @classmethod
+    def _known_special_case(cls, value: Optional[str]) -> Optional[str]:
+        return value if value in SPECIAL_CASE_CATEGORIES else None
+
+    @field_validator("risk_signals")
+    @classmethod
+    def _known_risk_signals(cls, value: list[str]) -> list[str]:
+        return [signal for signal in value if signal in RISK_SIGNALS]
 
 
 class DPartGraphState(TypedDict, total=False):

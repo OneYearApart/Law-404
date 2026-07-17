@@ -5,8 +5,18 @@ call_supervisor(LLM tool calling)는 monkeypatch로 흉내낸다.
 import pytest
 
 from app.graph.parts.d_part.nodes import supervisor
-from app.graph.parts.d_part.nodes.supervisor import run_supervisor
-from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimRequirementSlots
+from app.graph.parts.d_part.nodes.supervisor import (
+    derive_legacy_category,
+    run_supervisor,
+    situation_from_supervisor_result,
+)
+from app.graph.parts.d_part.schemas import (
+    SituationState,
+    SlotStatus,
+    Stage,
+    VictimJudgment,
+    VictimRequirementSlots,
+)
 
 
 async def _unreachable_call_supervisor(user_input: str) -> dict:
@@ -52,7 +62,7 @@ async def test_closed_victim_flow_is_reclassified(monkeypatch, closed_state):
     (종결 후 모든 후속 턴이 victim_check로 영구히 고정되던 버그의 회귀 테스트)."""
 
     async def _fake(user_input: str) -> dict:
-        return {"category": "open_qa"}
+        return {"recognized": False, "risk_signals": []}
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
     state = {**closed_state, "user_input": "전세보증보험은 언제 가입하나요?"}
@@ -65,7 +75,7 @@ async def test_closed_victim_flow_is_reclassified(monkeypatch, closed_state):
 @pytest.mark.asyncio
 async def test_victim_interview_category_routes_to_victim_check(monkeypatch):
     async def _fake(user_input: str) -> dict:
-        return {"category": "victim_interview"}
+        return {"recognized": False, "risk_signals": ["보증금미반환"]}
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
@@ -77,7 +87,9 @@ async def test_victim_interview_category_routes_to_victim_check(monkeypatch):
 @pytest.mark.asyncio
 async def test_special_case_category_routes_and_sets_matched(monkeypatch):
     async def _fake(user_input: str) -> dict:
-        return {"category": "special_case:신탁사기"}
+        # 실호출이 이 발화에서 실제로 뱉는 모양 — risk_signals는 6종 enum에 문자 매칭되므로
+        # "신탁을 걸어놨다"엔 아무것도 안 걸려 빈 배열로 온다
+        return {"recognized": True, "risk_signals": [], "special_case": "신탁사기"}
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
@@ -90,7 +102,7 @@ async def test_special_case_category_routes_and_sets_matched(monkeypatch):
 @pytest.mark.asyncio
 async def test_general_topic_category_routes_and_sets_matched(monkeypatch):
     async def _fake(user_input: str) -> dict:
-        return {"category": "general_topic:전-①등기부등본_위험신호"}
+        return {"recognized": False, "risk_signals": [], "topic": "전-①등기부등본_위험신호"}
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
@@ -103,7 +115,7 @@ async def test_general_topic_category_routes_and_sets_matched(monkeypatch):
 @pytest.mark.asyncio
 async def test_open_qa_category_routes_to_open_qa(monkeypatch):
     async def _fake(user_input: str) -> dict:
-        return {"category": "open_qa"}
+        return {"recognized": False, "risk_signals": []}
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
@@ -118,10 +130,144 @@ async def test_uses_active_query_over_raw_user_input_when_present(monkeypatch):
 
     async def _fake(user_input: str) -> dict:
         seen_input["value"] = user_input
-        return {"category": "open_qa"}
+        return {"recognized": False, "risk_signals": []}
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
     await run_supervisor({"user_input": "네", "active_query": "보증금 반환청구 소송은 어떻게 진행하나요"})
 
     assert seen_input["value"] == "보증금 반환청구 소송은 어떻게 진행하나요"
+
+
+@pytest.mark.asyncio
+async def test_situation_is_filled_per_axis(monkeypatch):
+    """축이 각각 독립적으로 situation에 담기는지 — 특히 recognized와 topic이 공존할 수 있어야
+    한다. 카테고리 하나로 압축하던 때는 이 발화에서 인지여부가 topic에 가려져 사라졌다."""
+
+    async def _fake(user_input: str) -> dict:
+        return {
+            "recognized": True,
+            "stage": "후",
+            "risk_signals": ["경공매개시", "다수피해"],
+            "topic": "전-③다가구_선순위보증금",
+            "special_case": "다가구주택",
+        }
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
+
+    result = await run_supervisor({"user_input": "피해자로 인정받았고 다가구 선순위가 궁금해요"})
+
+    situation = result["situation"]
+    assert situation.recognized is True
+    assert situation.stage is Stage.POST
+    assert situation.risk_signals == ["경공매개시", "다수피해"]
+    assert situation.topic == "전-③다가구_선순위보증금"
+    assert situation.special_case == "다가구주택"
+
+
+@pytest.mark.asyncio
+async def test_absent_axes_become_none_not_empty_string(monkeypatch):
+    """해당 없는 축은 tool 인자에서 아예 빠져 온다(스키마 required가 아님)."""
+
+    async def _fake(user_input: str) -> dict:
+        return {"recognized": False, "risk_signals": []}
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
+
+    situation = (await run_supervisor({"user_input": "전세 계약 갱신은 어떻게 하나요"}))["situation"]
+
+    assert situation.stage is None
+    assert situation.topic is None
+    assert situation.special_case is None
+    assert situation.risk_signals == []
+
+
+@pytest.mark.parametrize(
+    "situation, expected",
+    [
+        # 위험신호 있음 + 미인지 → 요건 인터뷰
+        (SituationState(recognized=False, risk_signals=["보증금미반환"]), "victim_interview"),
+        # 위험신호 있음 + 인지 + 특수 4종 → 특수상황
+        (
+            SituationState(recognized=True, risk_signals=["임대인사망파산"], special_case="임대인 사망/파산"),
+            "special_case:임대인 사망/파산",
+        ),
+        # 인지 + 특수 4종인데 위험신호가 안 잡힌 경우 → 여전히 특수상황.
+        # 위험신호를 요구하면 "인정받았고 신탁 걸려있다" 류 발화가 전부 자유질의로 새어나간다
+        # (6종 enum에 문자로 안 걸려 빈 배열이 오기 때문 — 실호출로 확인된 회귀).
+        (
+            SituationState(recognized=True, risk_signals=[], special_case="신탁사기"),
+            "special_case:신탁사기",
+        ),
+        # 위험신호 없음 + topic → 일반 시나리오
+        (SituationState(recognized=False, topic="전-①등기부등본_위험신호"), "general_topic:전-①등기부등본_위험신호"),
+        # 아무 축도 안 걸림 → 자유질의
+        (SituationState(recognized=False), "open_qa"),
+        # 위험신호 없이 인지만 → 단계 접두어 매칭이 우선(기존 규칙 그대로)
+        (SituationState(recognized=True, topic="후-②이중계약_배당순위"), "general_topic:후-②이중계약_배당순위"),
+    ],
+)
+def test_derive_legacy_category_reproduces_previous_rules(situation, expected):
+    """축별 판별로 바꾼 뒤에도 라우팅 결과가 이전과 동일한지 — 동작 불변의 증명."""
+    assert derive_legacy_category(situation) == expected
+
+
+@pytest.mark.parametrize(
+    "topic, expected_special_case",
+    [
+        ("전-③다가구_선순위보증금", "다가구주택"),
+        ("전-⑤신탁사기", "신탁사기"),
+        ("전-⑥공인중개사_허위고지", "공인중개사 허위고지"),
+        ("전-①등기부등본_위험신호", None),   # 특수 4종과 겹치지 않는 주제는 그대로 둔다
+    ],
+)
+def test_recognized_user_topic_infers_overlapping_special_case(topic, expected_special_case):
+    """전-③/⑤/⑥은 특수 4종과 같은 상황의 '인정 전' 판본이라, 인정받은 사용자면 특수상황이다.
+    모델이 이 겹침에서 special_case를 채울지 말지 일관되지 않아 규칙으로 정한다(실호출로 확인)."""
+    result = situation_from_supervisor_result({"recognized": True, "risk_signals": [], "topic": topic})
+
+    assert result.special_case == expected_special_case
+
+
+def test_unrecognized_user_topic_does_not_infer_special_case():
+    """인정 전이면 같은 주제라도 특수상황이 아니다 — 그게 두 목록을 가르는 축이다."""
+    result = situation_from_supervisor_result(
+        {"recognized": False, "risk_signals": [], "topic": "전-③다가구_선순위보증금"}
+    )
+
+    assert result.special_case is None
+    assert derive_legacy_category(result) == "general_topic:전-③다가구_선순위보증금"
+
+
+def test_model_supplied_special_case_wins_over_inference():
+    """모델이 이미 판단했으면 그 값을 존중한다 — 추론은 빈 자리를 메우는 용도다."""
+    result = situation_from_supervisor_result(
+        {"recognized": True, "risk_signals": [], "topic": "전-③다가구_선순위보증금", "special_case": "신탁사기"}
+    )
+
+    assert result.special_case == "신탁사기"
+
+
+def test_out_of_vocabulary_axis_values_are_dropped():
+    """tool calling은 strict가 아니면 enum을 강제하지 않는다 — 모델이 topic 키를 special_case
+    자리에 넣는 걸 실호출로 확인했다. 라우팅이 그대로 믿고 분기하므로 모르는 값은 버린다."""
+    result = situation_from_supervisor_result(
+        {
+            "recognized": False,
+            "risk_signals": ["보증금미반환", "그런거_없음"],
+            "topic": "존재하지_않는_주제",
+            "special_case": "전-①등기부등본_위험신호",   # topic 키가 여기로 새어들어온 실제 사례
+        }
+    )
+
+    assert result.topic is None
+    assert result.special_case is None
+    assert result.risk_signals == ["보증금미반환"]
+
+
+def test_recognized_non_special_victim_currently_falls_to_open_qa():
+    """인정받았지만 특수 4종이 아닌 피해자는 지금 자유질의로 떨어진다 — 인지형 지원절차
+    개요를 못 받는 빈칸이다. 전용 경로가 생기면 이 테스트는 뒤집혀야 한다(그게 해소의 증거)."""
+    situation = SituationState(recognized=True, risk_signals=["보증금미반환"], special_case=None)
+
+    assert derive_legacy_category(situation) == "open_qa"

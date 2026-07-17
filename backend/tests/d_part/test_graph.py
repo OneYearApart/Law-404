@@ -80,7 +80,7 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
     """위험신호도 없고 진행 중인 흐름도 없는 턴은 general_scenario에서 항목 매칭+응답 조립까지 간다."""
 
     async def _fake_call_supervisor(user_input: str) -> dict:
-        return {"category": "general_topic:전-①등기부등본_위험신호"}
+        return {"recognized": False, "risk_signals": [], "topic": "전-①등기부등본_위험신호"}
 
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": [], "guides": []}
@@ -113,7 +113,7 @@ async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(mo
     fallthrough로 빠졌다(2026-07-14에 고친 지점)."""
 
     async def _fake_call_supervisor(user_input: str) -> dict:
-        return {"category": "general_topic:전-③다가구_선순위보증금"}
+        return {"recognized": False, "risk_signals": [], "topic": "전-③다가구_선순위보증금"}
 
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")], "case_law": [], "cases": [], "guides": []}
@@ -144,7 +144,7 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
     받아야 하며, finalize의 fallthrough 문구로 빠지면 안 된다."""
 
     async def _fake_call_supervisor(user_input: str) -> dict:
-        return {"category": "open_qa"}
+        return {"recognized": False, "risk_signals": []}
 
     async def _fake_search_balanced(query, quota=None):
         return [Chunk(id=1, source_type="법령원문", content="관련 조문")]
@@ -217,7 +217,7 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
     고정되던 버그의 회귀 테스트 — 판정 확정 경로에선 응답까지 매 턴 재생성되고 있었다."""
 
     async def _fake_call_supervisor(user_input: str) -> dict:
-        return {"category": "open_qa"}
+        return {"recognized": False, "risk_signals": []}
 
     async def _fake_search_balanced(query, quota=None):
         return [Chunk(id=1, source_type="법령원문", content="보증보험 관련 조문")]
@@ -260,7 +260,7 @@ async def test_first_turn_answers_directly_without_stage_gate(monkeypatch):
     """
 
     async def _fake_call_supervisor(user_input: str) -> dict:
-        return {"category": "general_topic:전-①등기부등본_위험신호"}
+        return {"recognized": False, "risk_signals": [], "topic": "전-①등기부등본_위험신호"}
 
     async def _fake_search_by_topic(topic_key, query_text):
         return {"statute": [Chunk(id=1, source_type="법령원문", content="등기부 관련 조문")], "case_law": [], "cases": [], "guides": []}
