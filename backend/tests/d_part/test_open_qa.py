@@ -97,18 +97,23 @@ async def test_no_evidence_clears_retrieved_chunks(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_uses_active_query_over_raw_user_input(monkeypatch):
-    """확인게이트 대기 중 스택된 active_query를 raw user_input보다 우선해 검색한다."""
+async def test_context_carries_the_user_question(monkeypatch):
+    """자유질의 경로는 "질문과 관련된 법령을 설명하라"는 지시를 받으면서 정작 질문을 컨텍스트에
+    못 받고 있었다 — 검색만 발화에 반응하고 생성은 근거만 보던 grounding 불일치."""
     seen = {}
 
     async def _fake_search_balanced(query: str, quota=None):
-        seen["query"] = query
         return [Chunk(id=1, source_type="법령원문", content="관련 조문")]
 
+    async def _capture(context: str, answer_kind: str):
+        seen["context"] = context
+        yield "응답"
+
     monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
-    monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
+    monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _capture)
 
-    state = {"user_input": "네", "active_query": "보증금 반환청구 소송은 어떻게 진행하나요"}
-    await open_qa.handle_open_qa(state)
+    result = await open_qa.handle_open_qa({"user_input": "보증금 반환청구 소송은 어떻게 진행하나요"})
+    [c async for c in result["response_stream"]]
 
-    assert seen["query"] == "보증금 반환청구 소송은 어떻게 진행하나요"
+    assert "보증금 반환청구 소송은 어떻게 진행하나요" in seen["context"]
+    assert "관련 조문" in seen["context"]

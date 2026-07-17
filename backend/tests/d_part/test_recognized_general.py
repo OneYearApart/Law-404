@@ -53,22 +53,3 @@ async def test_no_evidence_falls_back_without_guidance(monkeypatch):
     assert result.get("response_stream") is None
     assert result.get("appendix_text") is None
     assert result["retrieved_chunks"] == []
-
-
-@pytest.mark.asyncio
-async def test_uses_active_query_over_raw_user_input(monkeypatch):
-    """확인게이트 대기 중 스택된 active_query를 raw user_input보다 우선해 검색한다."""
-    seen = {}
-
-    async def _fake_search_balanced(query: str, quota=None):
-        seen["query"] = query
-        return [Chunk(id=1, source_type="법령원문", content="관련 조문")]
-
-    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
-    monkeypatch.setattr(recognized_general.llm_d_part, "generate_response", _fake_generate_response)
-
-    await recognized_general.handle_recognized_general(
-        {"user_input": "네", "active_query": "인정받은 뒤 우선매수권은 어떻게 행사하나요"}
-    )
-
-    assert seen["query"] == "인정받은 뒤 우선매수권은 어떻게 행사하나요"

@@ -7,6 +7,7 @@ special_cases 실행 노드 테스트 (DB/네트워크는 monkeypatch로 흉내)
 import pytest
 
 from app.graph.parts.d_part.nodes import special_cases
+from app.graph.parts.d_part.schemas import SituationState
 from app.rag.retrievers.base import Chunk
 
 
@@ -35,7 +36,7 @@ async def test_retrieves_by_mapped_tag_and_sets_stream(monkeypatch, category, ta
     monkeypatch.setattr(special_cases._retriever, "search_by_topic", _fake_search_by_topic)
     monkeypatch.setattr(special_cases.llm_d_part, "generate_response", _fake_generate)
 
-    state = {"user_input": "…", "active_query": None, "special_case_matched": category}
+    state = {"user_input": "…", "situation": SituationState(recognized=True, special_case=category)}
     result = await special_cases.match_special_case(state)
 
     assert seen["tag"] == tag                              # 카테고리→태그 매핑
@@ -47,9 +48,10 @@ async def test_retrieves_by_mapped_tag_and_sets_stream(monkeypatch, category, ta
 
 @pytest.mark.asyncio
 async def test_pending_final_answer_is_not_overwritten():
-    """stage_router 확인질문 대기 중(final_answer 세팅됨)인 턴은 건드리지 않고 통과해야 한다."""
-    state = {"user_input": "…", "special_case_matched": "신탁사기",
-             "final_answer": "말씀하신 내용을 보면 '전' 단계로 보입니다. 맞으신가요?"}
+    """이미 final_answer가 확정된 턴은 건드리지 않고 통과해야 한다."""
+    state = {"user_input": "…",
+             "situation": SituationState(recognized=True, special_case="신탁사기"),
+             "final_answer": "이미 확정된 응답"}
     result = await special_cases.match_special_case(state)
-    assert result["final_answer"].endswith("맞으신가요?")
+    assert result["final_answer"] == "이미 확정된 응답"
     assert result.get("response_stream") is None

@@ -17,7 +17,12 @@ from app.graph.parts.d_part.nodes import (
     supervisor,
     victim_check,
 )
-from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimJudgment, VictimRequirementSlots
+from app.graph.parts.d_part.schemas import (
+    SituationState,
+    SlotStatus,
+    VictimJudgment,
+    VictimRequirementSlots,
+)
 from app.rag.retrievers.base import Chunk
 
 
@@ -29,12 +34,27 @@ def _fake_confirmation(answer):
 
 
 @pytest.mark.parametrize(
-    "route_target",
-    ["victim_check", "special_cases", "general_scenario", "recognized_general", "open_qa"],
+    "situation, expected",
+    [
+        (SituationState(recognized=True, special_case="신탁사기"), "special_cases"),
+        (SituationState(recognized=True), "recognized_general"),
+        (SituationState(recognized=False, risk_signals=["보증금미반환"]), "victim_check"),
+        (SituationState(recognized=False, topic="전-①등기부등본_위험신호"), "general_scenario"),
+        (SituationState(recognized=False), "open_qa"),
+    ],
 )
-def test_route_after_supervisor_follows_route_target(route_target):
-    state = {"route_target": route_target}
-    assert graph_module._route_after_supervisor(state) == route_target
+def test_route_after_supervisor_derives_from_situation(situation, expected):
+    """엣지가 상황모델에서 직접 파생시킨다 — supervisor가 써둔 라우팅 대상을 읽지 않는다."""
+    assert graph_module._route_after_supervisor({"situation": situation}) == expected
+
+
+def test_route_after_supervisor_continues_interview_without_reclassifying():
+    """인터뷰 진행 중이면 남아 있는 직전 턴 situation을 보지 않고 victim_check로 이어간다."""
+    state = {
+        "situation": SituationState(recognized=False, topic="전-①등기부등본_위험신호"),
+        "victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED),
+    }
+    assert graph_module._route_after_supervisor(state) == "victim_check"
 
 
 @pytest.mark.asyncio
@@ -64,7 +84,6 @@ async def test_full_graph_continues_pending_relief_question_to_judgment_response
     )
     initial_state = {
         "user_input": "아니요 없어요",
-        "stage": Stage.DURING,
         "victim_slots": slots,
         "awaiting_relief_confirmation": True,
     }
@@ -98,12 +117,11 @@ async def test_full_graph_no_risk_signal_routes_to_general_scenario(monkeypatch)
 
     initial_state = {
         "user_input": "등기부등본에 근저당이 많이 잡혀있어서 불안해요",
-        "stage": Stage.PRE,
     }
 
     result = await graph_module.graph.ainvoke(initial_state)
 
-    assert result["general_topic_matched"] == "전-①등기부등본_위험신호"
+    assert result["situation"].topic == "전-①등기부등본_위험신호"
     assert result["response_stream"] is not None
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("일반 시나리오 응답")
@@ -131,12 +149,11 @@ async def test_full_graph_matches_topic_from_a_different_stage_than_confirmed(mo
 
     initial_state = {
         "user_input": "다가구주택인데 선순위 보증금이 걱정돼요",
-        "stage": Stage.DURING,
     }
 
     result = await graph_module.graph.ainvoke(initial_state)
 
-    assert result["general_topic_matched"] == "전-③다가구_선순위보증금"
+    assert result["situation"].topic == "전-③다가구_선순위보증금"
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("다가구주택 답변")
     assert result["disclaimer_text"] == DISCLAIMER
@@ -162,7 +179,6 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
 
     initial_state = {
         "user_input": "보증금 반환청구 소송은 어떻게 진행하나요",
-        "stage": Stage.DURING,
     }
 
     result = await graph_module.graph.ainvoke(initial_state)
@@ -198,7 +214,6 @@ async def test_full_graph_routes_recognized_victim_to_recognized_general(monkeyp
     # answer_kind는 응답을 만든 노드가 세팅하므로 어느 노드가 실행됐는지의 증거가 된다
     # (open_qa로 샜다면 "open_qa"가 들어온다). llm_d_part는 두 노드가 공유하는 같은 모듈
     # 객체라 "open_qa엔 절대 안 간다"를 monkeypatch 가드로 세울 수는 없다 — 뒤 patch가 앞을 덮는다.
-    assert result["route_target"] == "recognized_general"
     assert result["answer_kind"] == "recognized_general"
     # 지원절차 개요는 support_appendix가 상황(recognized)을 보고 붙인다 — 이 경로가
     # 직접 세팅하지 않아도 종단에서는 붙어 있어야 한다(D3 부착 일관성)
@@ -232,7 +247,7 @@ async def test_full_graph_special_case_still_gets_its_guidance(monkeypatch):
         {"user_input": "신탁 등기가 되어 있고 이미 피해자로 인정받았어요"}
     )
 
-    assert result["route_target"] == "special_cases"
+    assert result["answer_kind"] == "special_case"
     assert result["appendix_text"] == support_data._SPECIAL_CASE_GUIDANCE["신탁사기"]
     assert result["disclaimer_text"] == DISCLAIMER
 
@@ -263,7 +278,7 @@ async def test_full_graph_attaches_support_guidance_on_general_scenario_when_rec
         {"user_input": "피해자로 인정받았는데 배당순위 다툼이 있어요"}
     )
 
-    assert result["route_target"] == "general_scenario"
+    assert result["answer_kind"] == "scenario"
     assert result["appendix_text"] == support_data._RECOGNIZED_GUIDANCE
 
 
@@ -288,7 +303,7 @@ async def test_full_graph_attaches_nothing_on_general_scenario_when_not_recogniz
 
     result = await graph_module.graph.ainvoke({"user_input": "배당순위 다툼이 걱정돼요"})
 
-    assert result["route_target"] == "general_scenario"
+    assert result["answer_kind"] == "scenario"
     assert result.get("appendix_text") is None
 
 
@@ -358,13 +373,11 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
 
     initial_state = {
         "user_input": "전세보증보험은 언제 가입하나요?",
-        "stage": Stage.DURING,
         **closed_session,
     }
 
     result = await graph_module.graph.ainvoke(initial_state)
 
-    assert result["route_target"] == "open_qa"
     # 종결 플래그는 victim_check를 거치지 않는 턴에도 그대로 살아남아 다음 턴에 재저장돼야 한다
     assert result["victim_flow_closed"] is True
     joined = "".join([c async for c in result["response_stream"]])
@@ -399,8 +412,7 @@ async def test_first_turn_answers_directly_without_stage_gate(monkeypatch):
         {"user_input": "계약 전인데 등기부등본을 어떻게 봐야 하나요"}
     )
 
-    assert result["general_topic_matched"] == "전-①등기부등본_위험신호"
-    assert result["stage"] == Stage.PRE  # "전-①…" 접두어에서 역산
+    assert result["situation"].topic == "전-①등기부등본_위험신호"
     assert result["response_stream"] is not None
     joined = "".join([c async for c in result["response_stream"]])
     assert joined.startswith("등기부등본 답변")

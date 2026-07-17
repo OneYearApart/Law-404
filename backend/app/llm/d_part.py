@@ -26,7 +26,6 @@ from app.graph.parts.d_part.schemas import (
     GENERAL_TOPIC_LABELS,
     RISK_SIGNALS,
     SPECIAL_CASE_CATEGORIES,
-    Stage,
 )
 
 MODEL = "gpt-4o"
@@ -43,7 +42,7 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_p
 # enum 값은 schemas.py의 상수와 그대로 맞물려야 general_scenario.py/special_cases.py의 실행부가
 # 같은 키로 조회할 수 있다.
 #
-# stage/topic/special_case는 "해당 없음"이 정상값이라 required에 넣지 않는다 — JSON Schema의
+# topic/special_case는 "해당 없음"이 정상값이라 required에 넣지 않는다 — JSON Schema의
 # null 유니온은 비-strict tool calling에서 모델이 문자열 "null"을 흘리는 등 불안정해서,
 # 미포함을 None으로 읽는 쪽이 안전하다(호출부가 .get()으로 받는다).
 _SUPERVISOR_TOOL = {
@@ -58,7 +57,6 @@ _SUPERVISOR_TOOL = {
                     "type": "boolean",
                     "description": "이미 법적으로 전세사기 피해자로 인정받은 상태라고 밝혔는지",
                 },
-                "stage": {"type": "string", "enum": [s.value for s in Stage], "description": "계약 단계"},
                 "risk_signals": {
                     "type": "array",
                     "items": {"type": "string", "enum": list(RISK_SIGNALS)},
@@ -172,7 +170,7 @@ async def call_victim_check(user_input: str, existing_slots: dict, pending_quest
 
 async def call_supervisor(user_input: str) -> dict:
     """상황의 축별 판별 결과를 dict로 반환한다(SituationState 필드에 대응).
-    stage/topic/special_case는 해당 없으면 키 자체가 빠져 온다 — 호출부가 .get()으로 읽는다."""
+    topic/special_case는 해당 없으면 키 자체가 빠져 온다 — 호출부가 .get()으로 읽는다."""
     return await _call_tool("supervisor", _SUPERVISOR_TOOL, user_input=user_input)
 
 

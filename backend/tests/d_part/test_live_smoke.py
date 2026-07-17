@@ -18,7 +18,6 @@ from app.graph.parts.d_part.schemas import (
     RISK_SIGNALS,
     SPECIAL_CASE_CATEGORIES,
     SlotStatus,
-    Stage,
     VictimRequirementSlots,
 )
 from app.llm import d_part as llm_d_part
@@ -70,8 +69,7 @@ async def test_call_supervisor_live():
     assert isinstance(result["recognized"], bool)
     assert set(result["risk_signals"]) <= set(RISK_SIGNALS)
     # 해당 없는 축은 키를 아예 빼도록 지시했다 — 빈 문자열/"없음"이 오면 안 된다
-    for axis, allowed in (("stage", [s.value for s in Stage]),
-                          ("topic", list(GENERAL_TOPIC_LABELS)),
+    for axis, allowed in (("topic", list(GENERAL_TOPIC_LABELS)),
                           ("special_case", list(SPECIAL_CASE_CATEGORIES))):
         if axis in result:
             assert result[axis] in allowed
@@ -137,7 +135,6 @@ async def test_full_graph_live_end_to_end(user_id):
     initial_state = {
         "user_input": "아니요 없어요",
         "session_id": str(conversation.id),
-        "stage": Stage.DURING,
         "victim_slots": slots,
         "awaiting_relief_confirmation": True,
     }

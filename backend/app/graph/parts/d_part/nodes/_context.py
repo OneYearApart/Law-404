@@ -1,8 +1,8 @@
 """
-RAG 컨텍스트 청크를 출처 메타데이터와 함께 직렬화하는 공용 헬퍼.
+LLM 생성에 넘길 컨텍스트를 조립하는 공용 헬퍼.
 
-general_scenario / open_qa / response_assembly 세 노드가 공유한다. 노드별 헤더
-(항목명/판단결과)는 각 노드가 이 결과 앞에 직접 붙인다.
+생성 경로(general_scenario / special_cases / recognized_general / open_qa /
+response_assembly)가 공유한다.
 
 기존에는 `[{source_type}] {content}`로 본문만 넘겨 statute_name/article_no/case_no를
 전부 버렸다 → 모델이 조문번호·사건번호를 지어낼 수밖에 없었다(환각). 출처를 함께 넘기고
@@ -47,6 +47,23 @@ def _source_label(chunk: Chunk) -> str:
         return " · ".join(p for p in [chunk.case_no or "", md.get("제목") or ""] if p)
     # HUG규정 등: 식별자(case_no)만
     return chunk.case_no or chunk.statute_name or ""
+
+
+def build_context(chunks: list[Chunk], *, header: str | None = None, query: str | None = None) -> str:
+    """근거 청크(+경로별 헤더 +사용자 발화)를 LLM 컨텍스트 한 덩어리로 조립한다.
+
+    발화를 넣는 이유: 생성 경로들이 발화를 검색 쿼리로만 쓰고 정작 생성 컨텍스트엔 안 넣고
+    있었다. open_qa는 "질문과 관련된 법령이 무엇을 정하는지 설명하라"는 지시를 받으면서 정작
+    질문을 못 봤고, general_scenario/special_cases는 13개 항목·4종 중 무엇인지만 알 뿐 사용자가
+    그 안에서 뭘 물었는지 몰랐다. 검색은 발화에 반응하는데 생성은 못 해서, 발화에 맞는 근거를
+    찾아놓고도 본문이 항목 일반론으로 흐르는 grounding 불일치가 났다.
+
+    발화를 안 넣는 경로도 있다(response_assembly) — 판정 확정 턴의 발화는 슬롯 질문에 대한
+    답("아니요 없어요")이라 질문이 아니고, 그 내용은 이미 요건 충족 현황으로 컨텍스트에 있다.
+    """
+    parts = [part for part in (header, f"사용자 발화: {query}" if query else None) if part]
+    parts.append(format_chunks(chunks))
+    return "\n\n".join(parts)
 
 
 def format_chunks(chunks: list[Chunk]) -> str:

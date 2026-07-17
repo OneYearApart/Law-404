@@ -6,6 +6,7 @@ import pytest
 
 from app.graph.parts.d_part.nodes import supervisor
 from app.graph.parts.d_part.nodes.supervisor import (
+    interview_in_progress,
     route,
     run_supervisor,
     situation_from_supervisor_result,
@@ -13,7 +14,6 @@ from app.graph.parts.d_part.nodes.supervisor import (
 from app.graph.parts.d_part.schemas import (
     SituationState,
     SlotStatus,
-    Stage,
     VictimJudgment,
     VictimRequirementSlots,
 )
@@ -35,9 +35,9 @@ async def test_in_progress_victim_check_skips_llm_call(monkeypatch, state):
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor)
     state = {**state, "user_input": "2억이에요"}
 
-    result = await run_supervisor(state)
+    await run_supervisor(state)
 
-    assert result["route_target"] == "victim_check"
+    assert interview_in_progress(state) is True
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,8 @@ async def test_closed_victim_flow_is_reclassified(monkeypatch, closed_state):
 
     result = await run_supervisor(state)
 
-    assert result["route_target"] == "open_qa"
+    assert interview_in_progress(result) is False       # 재분류 대상
+    assert route(result["situation"]) == "open_qa"
 
 
 @pytest.mark.asyncio
@@ -81,11 +82,11 @@ async def test_victim_interview_category_routes_to_victim_check(monkeypatch):
 
     result = await run_supervisor({"user_input": "보증금을 못 받고 있어요"})
 
-    assert result["route_target"] == "victim_check"
+    assert route(result["situation"]) == "victim_check"
 
 
 @pytest.mark.asyncio
-async def test_special_case_category_routes_and_sets_matched(monkeypatch):
+async def test_special_case_situation_routes_to_special_cases(monkeypatch):
     async def _fake(user_input: str) -> dict:
         # 실호출이 이 발화에서 실제로 뱉는 모양 — risk_signals는 6종 enum에 문자 매칭되므로
         # "신탁을 걸어놨다"엔 아무것도 안 걸려 빈 배열로 온다
@@ -95,12 +96,12 @@ async def test_special_case_category_routes_and_sets_matched(monkeypatch):
 
     result = await run_supervisor({"user_input": "신탁 등기가 되어 있고 이미 피해자로 인정받았어요"})
 
-    assert result["route_target"] == "special_cases"
-    assert result["special_case_matched"] == "신탁사기"
+    assert route(result["situation"]) == "special_cases"
+    assert result["situation"].special_case == "신탁사기"
 
 
 @pytest.mark.asyncio
-async def test_general_topic_category_routes_and_sets_matched(monkeypatch):
+async def test_general_topic_situation_routes_to_general_scenario(monkeypatch):
     async def _fake(user_input: str) -> dict:
         return {"recognized": False, "risk_signals": [], "topic": "전-①등기부등본_위험신호"}
 
@@ -108,8 +109,8 @@ async def test_general_topic_category_routes_and_sets_matched(monkeypatch):
 
     result = await run_supervisor({"user_input": "등기부등본에 근저당이 많이 잡혀있어서 불안해요"})
 
-    assert result["route_target"] == "general_scenario"
-    assert result["general_topic_matched"] == "전-①등기부등본_위험신호"
+    assert route(result["situation"]) == "general_scenario"
+    assert result["situation"].topic == "전-①등기부등본_위험신호"
 
 
 @pytest.mark.asyncio
@@ -121,22 +122,7 @@ async def test_open_qa_category_routes_to_open_qa(monkeypatch):
 
     result = await run_supervisor({"user_input": "보증금 반환청구 소송은 어떻게 진행하나요"})
 
-    assert result["route_target"] == "open_qa"
-
-
-@pytest.mark.asyncio
-async def test_uses_active_query_over_raw_user_input_when_present(monkeypatch):
-    seen_input = {}
-
-    async def _fake(user_input: str) -> dict:
-        seen_input["value"] = user_input
-        return {"recognized": False, "risk_signals": []}
-
-    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
-
-    await run_supervisor({"user_input": "네", "active_query": "보증금 반환청구 소송은 어떻게 진행하나요"})
-
-    assert seen_input["value"] == "보증금 반환청구 소송은 어떻게 진행하나요"
+    assert route(result["situation"]) == "open_qa"
 
 
 @pytest.mark.asyncio
@@ -147,7 +133,6 @@ async def test_situation_is_filled_per_axis(monkeypatch):
     async def _fake(user_input: str) -> dict:
         return {
             "recognized": True,
-            "stage": "후",
             "risk_signals": ["경공매개시", "다수피해"],
             "topic": "전-③다가구_선순위보증금",
             "special_case": "다가구주택",
@@ -159,7 +144,6 @@ async def test_situation_is_filled_per_axis(monkeypatch):
 
     situation = result["situation"]
     assert situation.recognized is True
-    assert situation.stage is Stage.POST
     assert situation.risk_signals == ["경공매개시", "다수피해"]
     assert situation.topic == "전-③다가구_선순위보증금"
     assert situation.special_case == "다가구주택"
@@ -176,7 +160,6 @@ async def test_absent_axes_become_none_not_empty_string(monkeypatch):
 
     situation = (await run_supervisor({"user_input": "전세 계약 갱신은 어떻게 하나요"}))["situation"]
 
-    assert situation.stage is None
     assert situation.topic is None
     assert situation.special_case is None
     assert situation.risk_signals == []
@@ -283,8 +266,7 @@ def test_recognized_non_special_victim_gets_own_path(situation):
 
 @pytest.mark.asyncio
 async def test_recognized_general_routes_without_matched_category(monkeypatch):
-    """전용 경로로 가는 턴은 매칭된 카테고리가 없다 — 실행 노드가 조회할 값이 없으므로
-    special_case_matched/general_topic_matched를 채우면 안 된다."""
+    """전용 경로로 가는 턴은 topic도 special_case도 비어 있다 — 그게 이 경로의 정의다."""
 
     async def _fake(user_input: str) -> dict:
         return {"recognized": True, "risk_signals": ["보증금미반환"]}
@@ -293,6 +275,6 @@ async def test_recognized_general_routes_without_matched_category(monkeypatch):
 
     result = await run_supervisor({"user_input": "피해자로 인정받았는데 보증금을 아직 못 받았어요"})
 
-    assert result["route_target"] == "recognized_general"
-    assert result.get("special_case_matched") is None
-    assert result.get("general_topic_matched") is None
+    assert route(result["situation"]) == "recognized_general"
+    assert result["situation"].special_case is None
+    assert result["situation"].topic is None

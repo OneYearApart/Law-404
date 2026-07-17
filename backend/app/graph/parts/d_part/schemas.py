@@ -2,7 +2,7 @@
 D파트 그래프 상태 및 요건 슬롯 정의.
 
 - SlotStatus / VictimRequirementSlots: 전세사기피해자법 제3조 요건 슬롯
-- Stage / VictimJudgment: 계약 단계, 판단 결과 어휘
+- VictimJudgment: 판단 결과 어휘
 - DPartGraphState: LangGraph 1회 실행(.ainvoke() 1건 = HTTP 요청 1건) 동안만 유효한 전체 상태
 - DPartSessionState: 턴을 넘어 conversations.state(JSONB)에 영속화되는 부분집합
   (둘을 분리한 이유는 DPartSessionState 문서 참고)
@@ -24,12 +24,6 @@ class SlotStatus(str, Enum):
     FILLED = "filled"
     UNFILLED = "unfilled"
     UNCLEAR = "unclear"
-
-
-class Stage(str, Enum):
-    PRE = "전"
-    DURING = "중"
-    POST = "후"
 
 
 class VictimJudgment(str, Enum):
@@ -112,20 +106,20 @@ VICTIM_SLOT_LABELS = {
 class SituationState(BaseModel):
     """supervisor가 매 턴 갱신하는 '사용자가 지금 어떤 상황인가'의 단일 진실원천.
 
-    도메인의 축(인지여부·계약단계·위험신호·topic·특수상황)을 1급 필드로 둔다. 예전에는
-    이 축들이 카테고리 enum 하나(route_target/*_matched)로 압축돼 있어, 축이 상충하는
-    발화에서 정보가 손실되고 부가기능이 "어느 노드가 실행됐나"에 묶였다.
+    도메인의 축(인지여부·위험신호·topic·특수상황)을 1급 필드로 둔다. 예전에는 이 축들이
+    카테고리 enum 하나로 압축돼 있어, 축이 상충하는 발화에서 정보가 손실되고 부가기능이
+    "어느 노드가 실행됐나"에 묶였다.
     특히 recognized와 topic이 별개 필드라, 한 축이 다른 축을 덮어쓸 자리가 구조적으로 없다.
 
     축은 실제로 라우팅이나 부가기능을 gate하는 것만 넣는다 — 소비처 없는 축은 넣지 않는다.
-    (그게 stage가 write-only dead code가 된 이유다.)
+    계약 단계(전/중/후)를 여기 뒀다가 뺀 이유가 그거다: 아무도 읽지 않아 매 턴 LLM 판별 비용만
+    쓰는 write-only 상태였고, 같은 정보가 필요한 곳엔 topic 키 접두어에 이미 들어 있었다.
 
-    interview_active(victim_check 인터뷰 진행 중인지)는 여기 두지 않는다. victim_flow_closed·
-    awaiting_relief_confirmation·슬롯 진행 여부에서 파생되는 값이라 저장하면 진실원천이 둘이
-    된다. 그 파생 로직은 supervisor._in_progress_route가 이미 갖고 있다.
+    interview_active(victim_check 인터뷰 진행 중인지)와 라우팅 대상도 여기 두지 않는다.
+    각각 기존 플래그와 이 상황모델에서 파생되는 값이라, 저장하면 진실원천이 둘이 된다.
+    파생 로직은 supervisor.interview_in_progress / supervisor.route가 갖고 있다.
     """
     recognized: Optional[bool] = None       # 피해자로 인정받은 상태인지 — topic과 독립적으로 판별
-    stage: Optional[Stage] = None            # 계약 단계(전/중/후)
     risk_signals: list[str] = Field(default_factory=list)   # RISK_SIGNALS 부분집합
     topic: Optional[str] = None               # GENERAL_TOPIC_LABELS 키 | None
     special_case: Optional[str] = None         # SPECIAL_CASE_CATEGORIES 중 하나 | None
@@ -156,18 +150,11 @@ class DPartGraphState(TypedDict, total=False):
     """
     user_input: str                                # 이번 턴 사용자 발화 원문 — 매 턴 새로 옴, carryover 아님
     situation: Optional[SituationState]               # supervisor가 매 턴 갱신하는 상황모델 — 축별 1급 상태.
-                                                         # 라우팅·부가기능이 참조할 단일 진실원천. carryover 대상
-    active_query: Optional[str]                       # 확인 게이트 대기 중 스택된 "실질적 질문" 원문.
-                                                         # 게이트를 소유한 노드(현재는 stage_router)가 생애주기를
-                                                         # 관리하며, 그 외 노드는 get_active_query()로만 읽는다
+                                                         # 라우팅·실행노드·부가기능이 참조할 단일 진실원천. carryover 대상.
+                                                         # 라우팅 대상은 여기서 파생만 하고(supervisor.route) 저장하지
+                                                         # 않는다 — 저장하면 진실원천이 둘이 된다
     session_id: Optional[str]                        # = conversations.id. 상태를 어디서 불러올지 가리키는 키일 뿐, 값 자체는 아님
     persona: Optional[str]                             # 사용자 유형(임차인/임대인 등) — 최초 판별 후 유지
-    stage: Optional[Stage]                              # 계약 단계(전/중/후) — supervisor가 general_topic 키
-                                                           # 접두어에서 역산(단위 29). 역산 불가한 턴은 이전 값 유지
-    route_target: Optional[str]                             # supervisor가 이번 턴 결정한 다음 노드
-                                                               # ("victim_check"/"special_cases"/"general_scenario"/
-                                                               # "recognized_general"/"open_qa") — supervisor.route가
-                                                               # situation에서 파생. 이번 턴 라우팅 전용, carryover 아님
     victim_slots: VictimRequirementSlots                     # 요건 슬롯 누적 결과 — 이 기능의 핵심 carryover 데이터
     victim_judgment: Optional[VictimJudgment]                 # 판단 결과(높음/있음/추가확인)
     victim_fallback: bool                                       # 반복 질문에도 슬롯 미충족 시 전문가 상담 안내로 폴백했는지
@@ -182,9 +169,8 @@ class DPartGraphState(TypedDict, total=False):
                                                                         # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
     answer_kind: Optional[str]                                        # 이번 턴 답변의 성격(judgment/scenario/
                                                                         # special_case/recognized_general/open_qa).
-                                                                        # 응답을 만든 노드가
-                                                                        # 세팅한다 — 라우트가 route_target에서 재역산하면
-                                                                        # 실제 경로와 어긋날 수 있다. 이번 턴 전용
+                                                                        # 응답을 만든 노드가 세팅한다 — 호출부가 상황모델에서
+                                                                        # 재역산하면 실제 경로와 어긋난다. 이번 턴 전용
     disclaimer_text: Optional[str]                                    # 이번 턴 응답에 붙일 면책 문구 — 스트림 경로에서
                                                                         # finalize가 세팅하고 호출부가 본문 뒤에 붙인다.
                                                                         # 고정 텍스트 경로는 final_answer에 직접 인라인. 이번 턴 전용
@@ -192,8 +178,6 @@ class DPartGraphState(TypedDict, total=False):
                                                                         # 미인지형 지원절차 액션플랜(43~45) / 인지형 지원절차
                                                                         # 개요(special_cases 49, recognized_general)가 공유.
                                                                         # finalize가 첨부. 이번 턴 전용(carryover 아님)
-    special_case_matched: Optional[str]                          # 매칭된 특수상황
-    general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(13개 항목 키) — 매 턴 재분류, carryover 아님
     retrieved_chunks: list[dict[str, Any]]                         # RAG 검색 결과 — 이번 턴 전용, carryover 아님
     # TODO: app/rag 쪽에 전용 Chunk 타입이 생기면 list[Chunk]로 교체 (2026-07-11 기준 미존재)
     final_answer: Optional[str]                                     # 이번 턴 최종 답변 — messages 테이블에 별도 저장되므로 state에 중복 보관 안 함
@@ -207,8 +191,6 @@ class DPartSessionState(BaseModel):
     다음 턴 시작 시 이 값으로 DPartGraphState의 대응 필드를 미리 채워 넣습니다.
     저장: state.model_dump(mode="json") / 로드: DPartSessionState.model_validate(raw_dict)
     """
-    stage: Optional[Stage] = None
-    active_query: Optional[str] = None
     persona: Optional[str] = None
     situation: Optional[SituationState] = None
     victim_slots: VictimRequirementSlots = Field(default_factory=VictimRequirementSlots)
@@ -218,25 +200,3 @@ class DPartSessionState(BaseModel):
     victim_check_attempts: int = 0
     victim_pending_slot: Optional[str] = None
     awaiting_relief_confirmation: bool = False
-    special_case_matched: Optional[str] = None
-
-
-def get_active_query(state: DPartGraphState) -> str:
-    """이번 턴 분류/매칭에 쓸 '실질적 사용자 발화'를 반환한다.
-    active_query가 채워져 있으면 그 값(확인 게이트 대기 중 이전 턴에 스택해둔 원문)을,
-    없으면 이번 턴 원문(user_input)을 그대로 반환한다.
-
-    컨벤션 (새로운 확인 게이트를 추가할 때 지켜야 할 규칙):
-      1) 게이트 질문을 처음 세팅하는 턴 — active_query를 이번 턴 user_input으로 세팅
-      2) 게이트 응답(긍정)을 받아 게이트를 통과시키는 턴 — active_query를 건드리지 않음
-         (다음 노드들이 이번 턴 raw user_input 대신 이 값을 읽어야 하므로)
-      3) 게이트 응답(부정)을 받아 리셋하는 턴 — active_query를 None으로 비움
-      4) 게이트 응답을 못 알아들어 재질문하는 턴 — active_query를 건드리지 않음
-
-    분류/매칭 로직만 있는 노드(supervisor, open_qa)는 이 함수를 통해서만 "분류 대상
-    텍스트"에 접근해야 하며, 게이트 자체를 소유한 노드(stage_router)나 자기 완결적
-    게이트를 가진 노드(victim_check의 awaiting_relief_confirmation)는 그대로 raw
-    user_input을 써도 된다 — 그 응답이 "예/아니오"류 제어신호일 뿐 재추출할 실질
-    콘텐츠가 없기 때문이다.
-    """
-    return state.get("active_query") or state["user_input"]

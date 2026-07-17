@@ -108,7 +108,7 @@ def test_answer_kind_from_node_is_forwarded(monkeypatch):
 def test_slot_question_turn_has_no_answer_kind(monkeypatch):
     """요건을 더 묻는 턴은 응답 생성 노드를 거치지 않아 answer_kind가 없다 —
     victim_check로 라우팅됐다는 이유만으로 judgment가 붙으면 안 된다."""
-    _stub_route(monkeypatch, {"route_target": "victim_check", "needs_response_assembly": False})
+    _stub_route(monkeypatch, {"needs_response_assembly": False})
 
     assert "answer_kind" not in _post()
 
