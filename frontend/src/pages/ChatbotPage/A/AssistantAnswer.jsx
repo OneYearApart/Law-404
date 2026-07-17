@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import styles from './AssistantAnswer.module.css';
@@ -18,6 +18,26 @@ function cleanItem(value) {
 
 function uniqueItems(values = [], limit = 10) {
   return [...new Set(values.map(cleanItem).filter(Boolean))].slice(0, limit);
+}
+
+
+function conclusionItems(value) {
+  const sentences = sentenceList(textValue(value));
+  if (sentences.length) {
+    return sentences;
+  }
+  const fallback = textValue(value);
+  return fallback ? [fallback] : [];
+}
+
+function conclusionLabel(index, total) {
+  if (index === 0) {
+    return '현재 상태';
+  }
+  if (index === total - 1) {
+    return '다음 행동';
+  }
+  return '주의할 내용';
 }
 
 function articleNumber(reference) {
@@ -106,16 +126,16 @@ function cleanReferenceContent(reference) {
 function referenceRank(reference) {
   const title = textValue(reference?.displayTitle || reference?.title);
 
-  if (title.includes('주택임대차보호법 해설집')) {
+  if (/민법\s*제114조/u.test(title)) {
     return 0;
   }
-  if (/민법\s*제114조/u.test(title)) {
+  if (/민법\s*제130조/u.test(title)) {
     return 1;
   }
-  if (/민법\s*제130조/u.test(title)) {
+  if (/민법\s*제135조/u.test(title)) {
     return 2;
   }
-  if (/민법\s*제135조/u.test(title)) {
+  if (title.includes('주택임대차보호법 해설집')) {
     return 3;
   }
   return 10;
@@ -310,9 +330,33 @@ function CompletedQuestionCard({ question, answerText, result }) {
 
 function QuestionCard({ question, completedCount, totalCount, onAnswer, disabled }) {
   const [customValue, setCustomValue] = useState('');
+  const dateInputRef = useRef(null);
+  const customInputType = question?.input_type === 'date' ? 'date' : 'text';
   if (!question?.question) {
     return null;
   }
+
+  const optionCount = question.options?.length || 0;
+  const choiceGridClassName = [
+    styles.choiceGrid,
+    optionCount === 3 ? styles.choiceGridThree : '',
+    optionCount === 4 ? styles.choiceGridFour : '',
+    optionCount === 5 ? styles.choiceGridFive : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const openDatePicker = () => {
+    if (customInputType !== 'date' || disabled) {
+      return;
+    }
+
+    try {
+      dateInputRef.current?.showPicker?.();
+    } catch {
+      // 브라우저가 showPicker를 지원하지 않으면 기본 date input 동작을 사용한다.
+    }
+  };
 
   const submitCustom = (event) => {
     event.preventDefault();
@@ -332,7 +376,7 @@ function QuestionCard({ question, completedCount, totalCount, onAnswer, disabled
       <h2>{question.question}</h2>
 
       {question.options?.length > 0 && (
-        <div className={styles.choiceGrid}>
+        <div className={choiceGridClassName}>
           {question.options.map((option) => (
             <button
               type="button"
@@ -349,10 +393,17 @@ function QuestionCard({ question, completedCount, totalCount, onAnswer, disabled
       {question.allow_custom_input !== false && (
         <form className={styles.customAnswer} onSubmit={submitCustom}>
           <input
-            type="text"
+            ref={customInputType === 'date' ? dateInputRef : undefined}
+            type={customInputType}
             value={customValue}
             onChange={(event) => setCustomValue(event.target.value)}
-            placeholder={question.placeholder || '직접 답변을 입력해 주세요.'}
+            onClick={customInputType === 'date' ? openDatePicker : undefined}
+            placeholder={
+              customInputType === 'date'
+                ? undefined
+                : question.placeholder || '직접 답변을 입력해 주세요.'
+            }
+            aria-label={customInputType === 'date' ? `${question.label || '날짜'} 선택` : undefined}
             disabled={disabled}
           />
           <button type="submit" disabled={!customValue.trim() || disabled}>입력</button>
@@ -362,16 +413,33 @@ function QuestionCard({ question, completedCount, totalCount, onAnswer, disabled
   );
 }
 
-function TextSection({ title, items }) {
+function TextSection({ title, items, variant = 'default', ordered = false }) {
   const values = uniqueItems(items);
   if (!values.length) {
     return null;
   }
+
+  const variantClass = {
+    confirmed: styles.confirmedSection,
+    unresolved: styles.unresolvedSection,
+    actions: styles.actionsSection,
+    hold: styles.holdSection,
+    reasons: styles.reasonsSection,
+  }[variant] || '';
+
   return (
-    <section className={styles.finalSection}>
-      <h3>{title}</h3>
-      <div className={styles.textRows}>
-        {values.map((item) => <p key={`${title}-${item}`}>{item}</p>)}
+    <section className={`${styles.finalSection} ${variantClass}`}>
+      <div className={styles.sectionHeading}>
+        <span aria-hidden="true" />
+        <h3>{title}</h3>
+      </div>
+      <div className={`${styles.textRows} ${ordered ? styles.orderedRows : ''}`}>
+        {values.map((item, index) => (
+          <div className={styles.textRow} key={`${title}-${item}`}>
+            {ordered && <b aria-hidden="true">{index + 1}</b>}
+            <p>{item}</p>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -381,9 +449,15 @@ function DocumentSummary({ summary }) {
   if (!summary?.sections?.length) {
     return null;
   }
+  const isLeaseReview = summary.sections.some((section) =>
+    ['핵심 계약 정보', '주의해서 볼 특약', '임차인에게 유리한 내용'].includes(section.title),
+  );
   return (
-    <section className={styles.finalSection}>
-      <h3>첨부 문서 분석 결과</h3>
+    <section className={`${styles.finalSection} ${styles.documentSummarySection}`}>
+      <div className={styles.sectionHeading}>
+        <span aria-hidden="true" />
+        <h3>{isLeaseReview ? '계약서 검토 내용' : '첨부 문서 핵심 요약'}</h3>
+      </div>
       <div className={styles.documentSections}>
         {summary.sections.map((section, index) => (
           <div key={`${section.title}-${index}`}>
@@ -397,28 +471,85 @@ function DocumentSummary({ summary }) {
 }
 
 function FinalAnswer({ answer, references, onSelectReference }) {
+  const riskText = textValue(answer.riskLevel || '확인 필요');
+  const isLeaseReview = Boolean(answer.documentSummary?.sections?.some((section) =>
+    ['핵심 계약 정보', '주의해서 볼 특약', '임차인에게 유리한 내용'].includes(section.title),
+  ));
+  const resultTitle = isLeaseReview ? '임대차계약서 검토 완료' : '계약 전 확인 완료';
+  const resultDescription = isLeaseReview
+    ? '첨부한 계약서와 입력한 답변을 기준으로 확인 결과와 필요한 조치를 정리했습니다.'
+    : '입력하신 답변을 기준으로 현재 확인 상태와 다음 행동을 정리했습니다.';
+  const riskToneClass = /보류/u.test(riskText)
+    ? styles.riskHold
+    : /주의/u.test(riskText)
+      ? styles.riskWarning
+      : /특이사항 없음/u.test(riskText)
+        ? styles.riskClear
+        : styles.riskCheck;
+
   return (
     <article className={styles.finalAnswer}>
       <header className={styles.finalHeader}>
-        <span>계약 전 확인 완료</span>
-        <strong>{answer.riskLevel}</strong>
+        <div className={styles.finalHeaderCopy}>
+          <span>상담 결과</span>
+          <h1>{resultTitle}</h1>
+          <p>{resultDescription}</p>
+        </div>
+        <strong className={`${styles.riskBadge} ${riskToneClass}`}>{riskText}</strong>
       </header>
 
       <section className={styles.conclusion}>
-        <h2>핵심 결론</h2>
-        <p>{answer.coreJudgment}</p>
+        <div className={styles.conclusionTitle}>
+          <span aria-hidden="true" />
+          <h2>핵심 결론</h2>
+        </div>
+        <div className={styles.conclusionRows}>
+          {conclusionItems(answer.coreJudgment).map((item, index, items) => (
+            <div className={styles.conclusionRow} key={`${index}-${item}`}>
+              <strong>{conclusionLabel(index, items.length)}</strong>
+              <p>{item}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
-      <TextSection title="확인된 사실" items={answer.knownFacts} />
-      <TextSection title="확인하지 못한 사실" items={answer.unresolvedFacts} />
-      <TextSection title="지금 해야 할 행동" items={answer.immediateActions} />
-      <TextSection title="아직 보류할 일" items={answer.holdActions} />
-      <TextSection title="판단 이유" items={answer.reasons} />
       <DocumentSummary summary={answer.documentSummary} />
 
+      <div className={styles.factGrid}>
+        <TextSection
+          title="확인된 사실"
+          items={answer.knownFacts}
+          variant="confirmed"
+        />
+        <TextSection
+          title="확인하지 못한 사실"
+          items={answer.unresolvedFacts}
+          variant="unresolved"
+        />
+      </div>
+
+      <div className={styles.actionGrid}>
+        <TextSection
+          title="지금 해야 할 행동"
+          items={answer.immediateActions}
+          variant="actions"
+          ordered
+        />
+        <TextSection
+          title="아직 보류할 일"
+          items={answer.holdActions}
+          variant="hold"
+        />
+      </div>
+
+      <TextSection title="판단 이유" items={answer.reasons} variant="reasons" />
+
       {references.length > 0 && (
-        <section className={styles.finalSection}>
-          <h3>참고 근거</h3>
+        <section className={`${styles.finalSection} ${styles.referencesSection}`}>
+          <div className={styles.sectionHeading}>
+            <span aria-hidden="true" />
+            <h3>참고 근거</h3>
+          </div>
           <div className={styles.referenceButtons}>
             {references.map((reference) => (
               <button

@@ -1,4 +1,4 @@
--- A파트 사용자 문서 원본·추출·분석·비교·상담 상태 저장
+-- A파트 사용자 문서 원본·추출·분석·비교 결과 저장
 -- 로컬 MVP에서는 원본 바이너리까지 PostgreSQL BYTEA로 보관한다.
 
 CREATE TABLE IF NOT EXISTS a_part_documents (
@@ -70,8 +70,3 @@ CREATE TABLE IF NOT EXISTS a_part_document_comparisons (
     PRIMARY KEY (conversation_id, source_type, analysis_version)
 );
 
-CREATE TABLE IF NOT EXISTS a_part_conversation_states (
-    conversation_id TEXT PRIMARY KEY,
-    state JSONB NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);

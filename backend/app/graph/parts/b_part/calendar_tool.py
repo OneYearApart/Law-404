@@ -15,12 +15,17 @@ import subprocess
 from datetime import date, timedelta
 from typing import Any
 
+import httpx
+
+from app.core.config import settings
+
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_TIMEZONE = "Asia/Seoul"
 KST_OFFSET = "+09:00"
 SMITHERY_CONNECTION_NAME = "googlecalendar"
 SMITHERY_CREATE_EVENT_TOOL_NAME = "create_event"
+SMITHERY_API_BASE_URL = "https://api.smithery.ai"
 
 
 def validate_calendar_event(event: dict[str, Any]) -> list[str]:
@@ -222,7 +227,97 @@ def dry_run_calendar_registration(
     }
 
 
-def _call_smithery_create_event(event_args: dict[str, Any]) -> dict[str, Any]:
+def _call_smithery_create_event(
+    event_args: dict[str, Any],
+    *,
+    connection_id: str,
+) -> dict[str, Any]:
+    """Smithery REST API를 우선 사용하고, 로컬 개발에서는 CLI로 fallback합니다."""
+    api_key = (settings.smithery_api_key or "").strip()
+    if api_key:
+        api_result = _call_smithery_create_event_via_api(
+            event_args,
+            connection_id=connection_id,
+            api_key=api_key,
+        )
+        if api_result.get("ok") or api_result.get("reason") != "smithery_api_failed":
+            return api_result
+
+    return _call_smithery_create_event_via_cli(
+        event_args,
+        connection_id=connection_id,
+    )
+
+
+def _call_smithery_create_event_via_api(
+    event_args: dict[str, Any],
+    *,
+    connection_id: str,
+    api_key: str,
+) -> dict[str, Any]:
+    """Smithery Connect MCP endpoint로 Google Calendar create_event tool을 호출합니다."""
+    namespace = (settings.smithery_namespace or "law404").strip()
+    url = (
+        f"{SMITHERY_API_BASE_URL}/connect/{namespace}/"
+        f"{connection_id}/.tools/{SMITHERY_CREATE_EVENT_TOOL_NAME}"
+    )
+
+    try:
+        response = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=event_args,
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        return {
+            "ok": False,
+            "reason": "smithery_api_failed",
+            "error": str(exc),
+            "event_args": event_args,
+        }
+
+    try:
+        response_payload = response.json()
+    except ValueError:
+        return {
+            "ok": False,
+            "reason": "smithery_api_response_not_json",
+            "status_code": response.status_code,
+            "text": response.text,
+            "event_args": event_args,
+        }
+
+    if response.status_code >= 400 or (
+        isinstance(response_payload, dict) and response_payload.get("error")
+    ):
+        return {
+            "ok": False,
+            "reason": "smithery_api_tool_error",
+            "status_code": response.status_code,
+            "response": response_payload,
+            "event_args": event_args,
+        }
+
+    response_data = _extract_smithery_response_data(response_payload)
+    return {
+        "ok": True,
+        "event_args": event_args,
+        "response": response_payload,
+        "response_data": response_data,
+        "provider_event_id": response_data.get("id") if isinstance(response_data, dict) else None,
+        "html_link": response_data.get("htmlLink") if isinstance(response_data, dict) else None,
+    }
+
+
+def _call_smithery_create_event_via_cli(
+    event_args: dict[str, Any],
+    *,
+    connection_id: str,
+) -> dict[str, Any]:
     """Smithery CLI를 통해 Google Calendar MCP create_event tool을 호출합니다."""
     smithery_command = shutil.which("smithery")
     if not smithery_command:
@@ -236,7 +331,7 @@ def _call_smithery_create_event(event_args: dict[str, Any]) -> dict[str, Any]:
         smithery_command,
         "tool",
         "call",
-        SMITHERY_CONNECTION_NAME,
+        connection_id,
         SMITHERY_CREATE_EVENT_TOOL_NAME,
         json.dumps(event_args, ensure_ascii=False),
     ]
@@ -299,6 +394,21 @@ def _call_smithery_create_event(event_args: dict[str, Any]) -> dict[str, Any]:
 
 def _extract_smithery_response_data(response: dict[str, Any]) -> dict[str, Any]:
     """Smithery CLI 응답에서 실제 Google Calendar event payload를 추출합니다."""
+    if not isinstance(response, dict):
+        return {"value": response}
+
+    result = response.get("result")
+    if isinstance(result, dict):
+        result_response_data = result.get("response_data")
+        if isinstance(result_response_data, dict):
+            return result_response_data
+
+        structured_result = result.get("structuredContent")
+        if isinstance(structured_result, dict):
+            structured_result_response_data = structured_result.get("response_data")
+            if isinstance(structured_result_response_data, dict):
+                return structured_result_response_data
+
     direct_response_data = response.get("response_data")
     if isinstance(direct_response_data, dict):
         return direct_response_data
@@ -396,8 +506,22 @@ def register_smithery_google_calendar_events(
     *,
     calendar_id: str = "primary",
     timezone_str: str = DEFAULT_TIMEZONE,
+    connection_id: str | None = None,
 ) -> dict[str, Any]:
     """Smithery Google Calendar MCP를 통해 실제 캘린더 일정을 등록합니다."""
+    if not connection_id:
+        return {
+            "status": "calendar_connection_required",
+            "provider": "smithery_googlecalendar",
+            "reason": "smithery_connection_id_not_found",
+            "event_count": 0,
+            "events": [],
+            "registered_event_count": 0,
+            "registered_events": [],
+            "failed_event_count": 0,
+            "failed_events": [],
+        }
+
     dry_run_result = dry_run_calendar_registration(calendar_registration)
     if dry_run_result.get("status") != "dry_run":
         return {
@@ -419,7 +543,10 @@ def register_smithery_google_calendar_events(
     failed_events: list[dict[str, Any]] = []
 
     for event, event_args in zip(events, smithery_create_event_args, strict=False):
-        result = _call_smithery_create_event(event_args)
+        result = _call_smithery_create_event(
+            event_args,
+            connection_id=connection_id,
+        )
         if result.get("ok"):
             registered_events.append(
                 {
@@ -453,6 +580,7 @@ def register_smithery_google_calendar_events(
     return {
         "status": status,
         "provider": "smithery_googlecalendar",
+        "connection_id": connection_id,
         "calendar_id": calendar_id or "primary",
         "event_count": len(events),
         "events": dry_run_result.get("events", []),
@@ -470,6 +598,7 @@ def run_calendar_registration(
     mode: str = "dry_run",
     provider: str = "google_calendar",
     calendar_id: str = "primary",
+    connection_id: str | None = None,
 ) -> dict[str, Any]:
     """
     calendar_registration을 실행 모드에 맞게 처리합니다.
@@ -488,6 +617,7 @@ def run_calendar_registration(
         return register_smithery_google_calendar_events(
             calendar_registration,
             calendar_id=calendar_id or "primary",
+            connection_id=connection_id,
         )
 
     if normalized_provider == "google_calendar":

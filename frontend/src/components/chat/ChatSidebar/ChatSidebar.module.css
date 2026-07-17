@@ -66,86 +66,12 @@
 }
 
 .recentSection {
-  padding: var(--space-24) var(--space-16);
-}
-
-.sectionTitle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  margin-top: var(--space-24);
-  padding: 0 var(--space-8);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-body-small);
-  font-weight: var(--font-weight-semibold);
-}
-
-.sectionTitle svg {
-  width: 1.6rem;
-  height: 1.6rem;
-}
-
-.historyList {
-  display: grid;
-  gap: var(--space-4);
-  margin-top: var(--space-12);
-}
-
-.historyList button {
-  width: 100%;
-  min-height: 4.4rem;
-  display: flex;
-  align-items: center;
-  gap: var(--space-10);
-  overflow: hidden;
-  padding: 0 var(--space-12);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-body-small);
-  text-align: left;
-  white-space: nowrap;
-  border-radius: var(--radius-medium);
-}
-
-.historyList button svg {
-  width: 1.6rem;
-  height: 1.6rem;
-  flex-shrink: 0;
-  color: var(--color-text-secondary);
-}
-
-.historyList button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.historyList button:hover {
-  color: var(--color-primary);
-  background: var(--color-surface-subtle);
-}
-
-@media (max-width: 900px) {
-  .sidebar {
-    width: 20rem;
-  }
-}
-
-@media (max-width: 700px) {
-  .sidebar {
-    display: none;
-  }
-}
-
-
-.emptyHistory {
-  margin-top: var(--space-12);
-  padding: var(--space-12) var(--space-8);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-caption);
+  padding: var(--space-20) var(--space-14) var(--space-28);
 }
 
 .newConversationButton {
   width: 100%;
-  min-height: 4.4rem;
+  min-height: 4.6rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -162,31 +88,73 @@
   border-color: var(--color-primary);
 }
 
-.loadingHistory {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  margin-top: var(--space-12);
-  padding: var(--space-12) var(--space-8);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-caption);
+.historySection {
+  margin-top: 2rem;
 }
 
-.loadingHistory svg {
-  animation: history-spin 0.9s linear infinite;
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.65rem 0.9rem;
+  border-bottom: var(--border-width) solid #e6eaf0;
+}
+
+.historyHeader strong {
+  color: #344054;
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.historyHeader span {
+  min-width: 2.3rem;
+  height: 2.3rem;
+  display: grid;
+  place-items: center;
+  color: #667085;
+  font-size: 1.15rem;
+  font-weight: 750;
+  background: #edf1f6;
+  border-radius: 999px;
+}
+
+.historyList {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.65rem;
 }
 
 .historyList button {
+  width: 100%;
+  min-height: 5.4rem;
+  display: flex;
   align-items: flex-start;
-  min-height: 5.6rem;
-  padding-top: var(--space-10);
-  padding-bottom: var(--space-10);
+  gap: var(--space-10);
+  overflow: hidden;
+  padding: 0.9rem 0.85rem;
+  color: var(--color-text-primary);
+  text-align: left;
+  border-radius: 0.9rem;
+}
+
+.historyList button > svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: var(--color-text-secondary);
+}
+
+.historyList button:hover {
+  color: var(--color-primary);
+  background: var(--color-surface-subtle);
 }
 
 .historyText {
   min-width: 0;
   display: grid;
-  gap: var(--space-4);
+  gap: 0.35rem;
 }
 
 .historyText strong,
@@ -197,22 +165,63 @@
 }
 
 .historyText strong {
-  font-size: var(--font-size-body-small);
-  font-weight: var(--font-weight-medium);
+  font-size: 1.3rem;
+  font-weight: 600;
 }
 
 .historyText small {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-caption);
+  font-size: 1.1rem;
 }
 
 .historyList .activeHistory {
   color: var(--color-primary);
-  background: var(--color-surface-subtle);
+  background: #edf4ff;
+}
+
+.historyList .activeHistory > svg {
+  color: var(--color-primary);
+}
+
+.emptyHistory,
+.loadingHistory {
+  margin-top: 0.65rem;
+  padding: 1.4rem 0.8rem;
+  color: #98a2b3;
+  font-size: 1.2rem;
+  line-height: 1.55;
+}
+
+.loadingHistory {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--color-text-secondary);
+}
+
+.loadingHistory svg {
+  animation: history-spin 0.9s linear infinite;
 }
 
 @keyframes history-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 22rem;
+  }
+
+  .recentSection {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .sidebar {
+    display: none;
   }
 }

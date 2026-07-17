@@ -50,10 +50,15 @@ def _require_owned(db: Session, conversation_id: int, user_id: int) -> Conversat
 
 
 @_threadpooled
-def create_conversation(user_id: int, part: str) -> ConversationSchema:
+def create_conversation(
+    user_id: int,
+    part: str,
+    title: str | None = None,
+) -> ConversationSchema:
     db = SessionLocal()
     try:
-        conversation = Conversation(user_id=user_id, part=part)
+        normalized_title = str(title or "").strip()[:200] or None
+        conversation = Conversation(user_id=user_id, part=part, title=normalized_title)
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
@@ -68,7 +73,11 @@ def save_message(user_id: int | None, part: str, role: str, content: str, conver
         return  # 비로그인 사용자는 저장하지 않음
     db = SessionLocal()
     try:
-        _require_owned(db, conversation_id, user_id)  # 타인 대화방에 메시지 이어쓰기 차단
+        conversation = _require_owned(
+            db, conversation_id, user_id
+        )  # 타인 대화방에 메시지 이어쓰기 차단
+        if part and conversation.part != part:
+            raise ConversationNotFoundError(conversation_id)
         db.add(Message(conversation_id=conversation_id, role=role, content=content))
         db.query(Conversation).filter(
             Conversation.id == conversation_id, Conversation.user_id == user_id

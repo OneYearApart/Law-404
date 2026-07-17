@@ -19,6 +19,7 @@ from app.graph.parts.c_part.agents.document_agent import (
 )
 from app.rag.retrievers.c_part import CPartRetriever
 from app.rag.repositories.cost_repository import CostRepository
+
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
 

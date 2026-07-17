@@ -24,3 +24,90 @@
   font-size: var(--font-size-body);
   line-height: var(--line-height-relaxed);
 }
+
+.answerText {
+  white-space: pre-wrap;
+}
+
+.calendarButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-16);
+  padding: var(--space-10) var(--space-14);
+  color: var(--color-white);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  background: var(--color-primary);
+  border-radius: var(--radius-medium);
+}
+
+.calendarButton svg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.calendarResultActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  align-items: center;
+  margin-top: var(--space-12);
+}
+
+.calendarStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-8) var(--space-10);
+  color: var(--color-primary);
+  font-size: var(--font-size-body-small);
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-medium);
+}
+
+.calendarStatus svg {
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+}
+
+.calendarLink {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-8) var(--space-10);
+  color: var(--color-primary);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+  background: var(--color-white);
+  border: var(--border-width) solid var(--color-secondary);
+  border-radius: var(--radius-medium);
+}
+
+.calendarLink:hover {
+  background: var(--color-surface-subtle);
+}
+
+.calendarLink svg {
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .calendarResultActions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .calendarStatus,
+  .calendarLink {
+    width: fit-content;
+    max-width: 100%;
+  }
+}
