@@ -3,8 +3,9 @@ Conversation / Message 모델.
 사이드바 대화 목록은 파트 무관 공통 도메인이며, part 컬럼으로만 구분합니다.
 """
 from datetime import datetime
-from typing import Any
-from pydantic import BaseModel
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
 
 
 class Conversation(BaseModel):
@@ -41,4 +42,11 @@ class Message(BaseModel):
 
 
 class CreateConversationRequest(BaseModel):
-    part: str            # "a" | "b" | "c" | "d"
+    part: Literal["a", "b", "c", "d"]
+    title: str | None = Field(default=None, max_length=200)
+
+
+class CreateMessageRequest(BaseModel):
+    part: Literal["a", "b", "c", "d"]
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=20000)

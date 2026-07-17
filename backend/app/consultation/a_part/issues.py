@@ -264,7 +264,7 @@ ISSUE_DEFINITIONS: dict[str, IssueDefinition] = {
             _slot("balance_date", "잔금일", "잔금일은 언제인가요?", 30),
             _slot("move_in_date", "입주 예정일", "실제 입주 예정일은 언제인가요?", 40),
             _slot("latest_registry_recheck_planned", "잔금 전 등기부 재확인", "잔금 전에 최신 등기부등본을 다시 확인할 예정인가요?", 50, risk_critical=True),
-            _slot("lease_report_status", "임대차신고", "주택 임대차신고 대상 여부와 처리 상태를 확인했나요?", 60),
+            _slot("lease_report_status", "임대차신고", "이 계약의 임대차신고는 어떻게 처리했나요?", 60),
             _slot("move_in_report_plan", "전입신고 계획", "입주일에 전입신고할 계획이 있나요?", 70),
             _slot("fixed_date_plan", "확정일자 계획", "확정일자를 받을 시점을 정했나요?", 80),
         ),

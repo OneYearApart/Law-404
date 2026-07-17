@@ -61,6 +61,24 @@ class FollowUpQuestion(BaseModel):
 def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str | None]:
     """질문 문장과 슬롯 특성으로 프론트 입력 방식을 결정한다."""
 
+    if slot.key in {"balance_date", "move_in_date", "contract_date"}:
+        return "date", [], True, "날짜를 선택해 주세요."
+
+    if slot.key == "lease_report_status":
+        return (
+            "single_choice",
+            [
+                QuestionOption(label="신고를 완료했어요", answer_text="임대차신고를 완료했습니다."),
+                QuestionOption(label="신고 대상이 아니에요", answer_text="임대차신고 대상이 아닌 것으로 확인했습니다."),
+                QuestionOption(
+                    label="아직 확인하지 못했어요",
+                    answer_text="임대차신고 대상 여부와 신고 여부를 아직 확인하지 못했습니다.",
+                ),
+            ],
+            False,
+            None,
+        )
+
     asks_for_value = any(
         marker in slot.question
         for marker in ("누구", "언제", "얼마", "무엇", "어디", "어떤", "어떻게")

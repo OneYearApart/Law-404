@@ -28,7 +28,6 @@ from app.graph.parts.b_part.calendar_events import (
     build_calendar_pending_action,
     build_calendar_registration_ready_action,
     format_calendar_events_for_answer,
-    is_calendar_registration_approved,
 )
 from app.graph.parts.b_part.calendar_tool import run_calendar_registration
 from app.graph.parts.b_part.memory import (
@@ -92,6 +91,60 @@ CATEGORY_GROUPS = {
     "계약갱신": ["계약갱신", "계약갱신요구권", "묵시적갱신"],
     "묵시적갱신": ["묵시적갱신", "계약갱신", "계약갱신요구권"],
 }
+
+OUT_OF_SCOPE_RULES = [
+    {
+        "reason": "계약 전/전세사기 위험 분석",
+        "patterns": [
+            r"전세\s*사기",
+            r"깡통\s*전세",
+            r"등기부\s*등본",
+            r"신탁",
+            r"선순위",
+            r"근저당",
+            r"전입\s*신고\s*전",
+            r"계약\s*전",
+        ],
+    },
+    {
+        "reason": "계약 종료 후/보증금 반환",
+        "patterns": [
+            r"보증금.*(반환|안\s*줘|안\s*주|안\s*돌려|못\s*받|돌려주지|돈\s*안|돈을\s*안|돈\s*주지)",
+            r"임차권\s*등기\s*명령",
+            r"임차권\s*등기",
+        ],
+    },
+    {
+        "reason": "권리분석/경매·배당",
+        "patterns": [
+            r"대항력",
+            r"우선\s*변제권",
+            r"최우선\s*변제권",
+            r"경매",
+            r"배당",
+            r"확정\s*일자\s*순위",
+        ],
+    },
+    {
+        "reason": "계약 종료 후/명도·원상회복",
+        "patterns": [
+            r"명도",
+            r"원상\s*회복",
+            r"퇴거\s*후",
+            r"이사\s*후",
+        ],
+    },
+    {
+        "reason": "비주택 임대차",
+        "patterns": [
+            r"상가",
+            r"점포",
+            r"사무실",
+            r"공장",
+            r"토지\s*임대차",
+        ],
+    },
+]
 
 
 def extract_user_question(request: dict[str, Any]) -> str:
@@ -161,53 +214,11 @@ def has_schedule_signal(question: str) -> bool:
 
 def detect_out_of_scope_reason(question: str) -> dict[str, Any] | None:
     """B파트 담당 범위를 벗어난 질문인지 먼저 확인합니다."""
-    out_of_scope_keywords = {
-        "계약 전/전세사기 위험 분석": [
-            "전세사기",
-            "깡통전세",
-            "등기부등본",
-            "신탁",
-            "선순위",
-            "근저당",
-            "전입신고 전",
-            "계약 전",
-        ],
-        "계약 종료 후/보증금 반환": [
-            "보증금 반환",
-            "보증금을 안 돌려",
-            "보증금 안 돌려",
-            "보증금을 못 받",
-            "임차권등기명령",
-            "임차권 등기",
-        ],
-        "권리분석/경매·배당": [
-            "대항력",
-            "우선변제권",
-            "최우선변제권",
-            "경매",
-            "배당",
-            "확정일자 순위",
-        ],
-        "계약 종료 후/명도·원상회복": [
-            "명도",
-            "원상회복",
-            "퇴거 후",
-            "이사 후",
-        ],
-        "비주택 임대차": [
-            "상가",
-            "점포",
-            "사무실",
-            "공장",
-            "토지 임대차",
-        ],
-    }
-
-    for reason, keywords in out_of_scope_keywords.items():
-        if any(keyword in question for keyword in keywords):
+    for rule in OUT_OF_SCOPE_RULES:
+        if any(re.search(pattern, question) for pattern in rule["patterns"]):
             return {
                 "is_out_of_scope": True,
-                "reason": reason,
+                "reason": rule["reason"],
             }
 
     return None
@@ -643,7 +654,10 @@ class BPartMVPGraph:
         context_result = state["context_result"]
         memory_meta = state["memory_meta"]
 
-        out_of_scope = detect_out_of_scope_reason(original_question)
+        out_of_scope = (
+            detect_out_of_scope_reason(original_question)
+            or detect_out_of_scope_reason(question)
+        )
         if not out_of_scope:
             return state
 
@@ -704,35 +718,54 @@ class BPartMVPGraph:
         memory_meta = state["memory_meta"]
 
         pending_action = request.get("pending_action")
-        if not (
-            isinstance(pending_action, dict)
-            and is_calendar_registration_approved(original_question)
-        ):
+        if not isinstance(pending_action, dict):
             return state
 
         calendar_registration = build_calendar_registration_ready_action(pending_action)
         if not calendar_registration:
             return state
-        calendar_tool_result = run_calendar_registration(
-            calendar_registration,
-            mode=str(request.get("calendar_mode", "dry_run")),
-            provider=str(request.get("calendar_provider", "google_calendar")),
-            calendar_id=str(request.get("calendar_id", "primary")),
-        )
+
+        if request.get("calendar_connection_required"):
+            calendar_tool_result = {
+                "status": "calendar_connection_required",
+                "provider": str(request.get("calendar_provider", "smithery_googlecalendar")),
+                "reason": "user_calendar_connection_not_found",
+                "event_count": len(calendar_registration.get("events", [])),
+                "events": calendar_registration.get("events", []),
+                "registered_event_count": 0,
+                "registered_events": [],
+            }
+        else:
+            calendar_tool_result = run_calendar_registration(
+                calendar_registration,
+                mode=str(request.get("calendar_mode", "dry_run")),
+                provider=str(request.get("calendar_provider", "google_calendar")),
+                calendar_id=str(request.get("calendar_id", "primary")),
+                connection_id=request.get("calendar_connection_id"),
+            )
 
         if calendar_tool_result.get("status") == "registered":
             answer = "좋습니다. 아래 일정들을 Google Calendar에 등록했습니다."
+        elif calendar_tool_result.get("status") == "partial_success":
+            registered_count = calendar_tool_result.get("registered_event_count", 0)
+            failed_count = calendar_tool_result.get("failed_event_count", 0)
+            answer = (
+                f"일부 일정만 Google Calendar에 등록했습니다. "
+                f"등록 {registered_count}건, 실패 {failed_count}건입니다."
+            )
+        elif calendar_tool_result.get("status") == "calendar_connection_required":
+            answer = (
+                "Google Calendar 연결이 필요합니다.\n"
+                "캘린더에 등록하려면 먼저 내 계정의 Google Calendar connection을 연결해 주세요."
+            )
         elif calendar_tool_result.get("status") == "not_configured":
             answer = (
-                "좋습니다. 아래 일정들은 Google Calendar에 등록할 수 있는 형식으로 검증되었습니다.\n"
-                "다만 현재 Google Calendar MCP 연결 코드가 아직 설정되지 않아 실제 등록은 수행하지 않았습니다."
+                "Google Calendar 등록 설정이 아직 완료되지 않았습니다. 연결 상태를 확인해 주세요."
             )
+        elif calendar_tool_result.get("status") == "failed":
+            answer = "Google Calendar 등록에 실패했습니다. 연결 상태와 권한을 확인해 주세요."
         else:
-            answer = (
-                "좋습니다. 아래 일정들을 캘린더에 등록할 준비가 완료되었습니다.\n"
-                "현재 단계에서는 실제 Calendar MCP 호출 전까지 확인했으며, "
-                "Calendar MCP가 연결되면 이 일정들을 그대로 등록하면 됩니다."
-            )
+            answer = "캘린더 등록 요청을 처리했습니다. 등록 결과를 확인해 주세요."
 
         final_state = {
             "question": question,

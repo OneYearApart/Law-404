@@ -1,39 +1,97 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { listAConversations } from '../api/chat/A/aApi.js';
-import { listConversations } from '../api/common/conversationsApi.js';
+import { listConversations } from '../api/chat/conversationsApi.js';
 import { ChatConversationContext } from './chatConversationContext.js';
 
+function normalizeAPartConversation(conversation) {
+  return {
+    ...conversation,
+    conversation_id: String(conversation.conversation_id),
+    part: 'a',
+  };
+}
+
+function mergeConversationLists(commonConversations, aConversations) {
+  const mergedById = new Map(
+    commonConversations.map((conversation) => [
+      String(conversation.conversation_id),
+      conversation,
+    ]),
+  );
+
+  aConversations.forEach((conversation) => {
+    const normalized = normalizeAPartConversation(conversation);
+    const conversationId = String(normalized.conversation_id);
+    const commonConversation = mergedById.get(conversationId);
+    mergedById.set(
+      conversationId,
+      commonConversation
+        ? { ...commonConversation, ...normalized, part: 'a' }
+        : normalized,
+    );
+  });
+
+  return [...mergedById.values()].sort((left, right) => {
+    const leftTime = new Date(left.updated_at || left.created_at || 0).getTime();
+    const rightTime = new Date(right.updated_at || right.created_at || 0).getTime();
+    return rightTime - leftTime;
+  });
+}
+
+async function loadConversationLists() {
+  const [commonResult, aResult] = await Promise.allSettled([
+    listConversations(),
+    listAConversations(),
+  ]);
+
+  const commonConversations = commonResult.status === 'fulfilled' ? commonResult.value : [];
+  const aConversations = aResult.status === 'fulfilled' ? aResult.value : [];
+
+  if (commonResult.status === 'rejected' && aResult.status === 'rejected') {
+    throw commonResult.reason;
+  }
+
+  return {
+    commonConversations,
+    aConversations,
+    merged: mergeConversationLists(commonConversations, aConversations),
+  };
+}
+
 export function ChatConversationProvider({ children }) {
-  const [aConversations, setAConversations] = useState([]);
-  // 공용 라우트가 전 파트를 한 번에 준다 — 파트별로 나눠 담지 않고 소비하는 쪽이 part로 고른다.
-  // A는 전용 라우트(aConversations)를 계속 쓴다: 그쪽 제목 폴백·전용 필드를 잃지 않기 위함.
   const [conversations, setConversations] = useState([]);
+  const [aConversations, setAConversations] = useState([]);
   const [activeAConversationId, setActiveAConversationId] = useState(null);
   const [newConversationVersion, setNewConversationVersion] = useState(0);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
-  const refreshAConversations = useCallback(async ({ selectLatest = false } = {}) => {
+  const refreshConversations = useCallback(async () => {
     setIsHistoryLoading(true);
     try {
-      const conversations = await listAConversations();
-      setAConversations(conversations);
-      if (selectLatest && conversations.length) {
-        setActiveAConversationId((current) => current || conversations[0].conversation_id);
-      }
-      return conversations;
+      const result = await loadConversationLists();
+      setAConversations(result.aConversations);
+      setConversations(result.merged);
+      return result.merged;
     } finally {
       setIsHistoryLoading(false);
     }
   }, []);
 
-  // 전 파트 목록. A와 달리 selectLatest가 없다 — A만 마지막 대화를 자동 복원하고,
-  // 나머지 파트는 아직 복원 경로가 없어 목록 표시 용도로만 쓴다.
-  const refreshConversations = useCallback(async () => {
+  const refreshAConversations = useCallback(async ({ selectLatest = false } = {}) => {
+    setIsHistoryLoading(true);
     try {
-      setConversations(await listConversations());
-    } catch {
-      // 상담 화면 자체는 쓸 수 있도록 사이드바 오류는 조용히 처리한다(A 경로와 동일 방침).
+      const result = await loadConversationLists();
+      setAConversations(result.aConversations);
+      setConversations(result.merged);
+      if (selectLatest && result.aConversations.length) {
+        setActiveAConversationId(
+          (current) => current || result.aConversations[0].conversation_id,
+        );
+      }
+      return result.aConversations;
+    } finally {
+      setIsHistoryLoading(false);
     }
   }, []);
 
@@ -46,44 +104,47 @@ export function ChatConversationProvider({ children }) {
     setNewConversationVersion((current) => current + 1);
   }, []);
 
-  const notifyAConversationSaved = useCallback(async (conversationId) => {
-    setActiveAConversationId(String(conversationId));
-
+  const notifyConversationSaved = useCallback(async () => {
     const refresh = async () => {
       try {
-        const conversations = await listAConversations();
-        setAConversations(conversations);
+        await refreshConversations();
       } catch {
-        // 대화 자체는 저장됐으므로 목록 갱신 실패가 상담 흐름을 막지 않게 한다.
+        // 대화 저장 성공 후 목록 갱신 실패가 상담 흐름을 막지 않게 한다.
       }
     };
 
     await refresh();
-    window.setTimeout(refresh, 2500);
-    window.setTimeout(refresh, 6000);
-  }, []);
+    window.setTimeout(refresh, 1200);
+  }, [refreshConversations]);
+
+  const notifyAConversationSaved = useCallback(async (conversationId) => {
+    setActiveAConversationId(String(conversationId));
+    await notifyConversationSaved();
+  }, [notifyConversationSaved]);
 
   const value = useMemo(() => ({
-    aConversations,
     conversations,
+    aConversations,
     activeAConversationId,
     newConversationVersion,
     isHistoryLoading,
-    refreshAConversations,
     refreshConversations,
+    refreshAConversations,
     activateAConversation,
     startNewAConversation,
+    notifyConversationSaved,
     notifyAConversationSaved,
   }), [
-    aConversations,
     conversations,
+    aConversations,
     activeAConversationId,
     newConversationVersion,
     isHistoryLoading,
-    refreshAConversations,
     refreshConversations,
+    refreshAConversations,
     activateAConversation,
     startNewAConversation,
+    notifyConversationSaved,
     notifyAConversationSaved,
   ]);
 

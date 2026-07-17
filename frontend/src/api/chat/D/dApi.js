@@ -1,12 +1,14 @@
 import { API_BASE_URL, ApiError, refreshAccessToken } from '../../common/apiClient.js';
 import { getAccessToken } from '../../common/authToken.js';
-import { createConversation } from '../../common/conversationsApi.js';
+import { createConversation } from '../conversationsApi.js';
 
 export const D_API_PATH = '/chat/d/';
 
 // D파트는 대화방을 만들어주지 않는다. conversation_id는 반드시 먼저 발급받아 보내야 한다.
+// 공용 createConversation은 정규화된 대화 객체를 주므로 여기서 id만 꺼내 쓴다.
 export async function createDConversation() {
-  return createConversation('d');
+  const conversation = await createConversation({ part: 'd' });
+  return conversation.conversation_id;
 }
 
 // EventSource는 GET 전용이고 Authorization 헤더를 붙일 수 없다. D파트는 POST + Bearer라서

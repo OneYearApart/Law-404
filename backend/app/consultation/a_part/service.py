@@ -42,7 +42,6 @@ from app.consultation.a_part.state_updater import (
 from app.consultation.a_part.store import (
     DEFAULT_CONVERSATION_STORE,
     MemoryConversationStore,
-    PostgresConversationStore,
     SharedConversationStore,
 )
 from app.documents.models import UploadedDocument
@@ -84,7 +83,7 @@ class APartConversationService:
     def __init__(
         self,
         *,
-        store: MemoryConversationStore | PostgresConversationStore | SharedConversationStore | None = None,
+        store: MemoryConversationStore | SharedConversationStore | None = None,
         slot_extractor: SlotUpdateExtractor | None = None,
         rag_answerer: RAGAnswerer | None = None,
     ) -> None:
@@ -94,7 +93,7 @@ class APartConversationService:
         self._uses_default_rag = rag_answerer is None
 
     @property
-    def store(self) -> MemoryConversationStore | PostgresConversationStore | SharedConversationStore:
+    def store(self) -> MemoryConversationStore | SharedConversationStore:
         return self._store
 
     def _get_slot_extractor(self) -> SlotUpdateExtractor:
@@ -372,53 +371,3 @@ class APartConversationService:
 
     def delete(self, conversation_id: str) -> bool:
         return self._store.delete(conversation_id)
-
-
-DEFAULT_CONVERSATION_SERVICE = APartConversationService()
-
-
-def handle_consultation(
-    question: str,
-    *,
-    conversation_id: str | None = None,
-    issue_id: str | None = None,
-    related_issue_ids: list[str] | None = None,
-    slot_updates: list[ExtractedSlotUpdate | dict[str, Any]] | None = None,
-    rag_options: dict[str, Any] | None = None,
-) -> ConsultationTurnResponse:
-    return DEFAULT_CONVERSATION_SERVICE.handle(
-        question,
-        conversation_id=conversation_id,
-        issue_id=issue_id,
-        related_issue_ids=related_issue_ids,
-        slot_updates=slot_updates,
-        rag_options=rag_options,
-    )
-
-
-def get_conversation_state(conversation_id: str) -> ConversationState:
-    return DEFAULT_CONVERSATION_SERVICE.get_state(conversation_id)
-
-
-def update_conversation_document(
-    conversation_id: str,
-    document: UploadedDocument,
-) -> ConversationState:
-    return DEFAULT_CONVERSATION_SERVICE.update_document(
-        conversation_id,
-        document,
-    )
-
-
-def reset_conversation(conversation_id: str) -> ConversationState:
-    return DEFAULT_CONVERSATION_SERVICE.reset(conversation_id)
-
-
-def attach_document_to_conversation(
-    conversation_id: str,
-    document: UploadedDocument,
-) -> ConversationState:
-    return DEFAULT_CONVERSATION_SERVICE.attach_document(
-        conversation_id,
-        document,
-    )
