@@ -3,7 +3,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
+  background: #f7f9fd;
 }
 
 .messages {
@@ -14,12 +14,13 @@
   gap: var(--space-24);
   overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--space-32) var(--space-40);
+  padding: clamp(2.4rem, 3vw, 4rem);
+  scrollbar-gutter: stable;
 }
 
 .feedback {
   width: calc(100% - 4.8rem);
-  max-width: 90rem;
+  max-width: 96rem;
   display: flex;
   align-items: center;
   gap: var(--space-8);
@@ -51,18 +52,8 @@
   border-top: var(--border-width) solid var(--color-border);
 }
 
-@media (max-width: 700px) {
-  .messages {
-    padding: var(--space-24) var(--space-16);
-  }
-
-  .composerDock {
-    padding: var(--space-12) var(--space-16) var(--space-16);
-  }
-}
-
 .emptyState {
-  width: min(68rem, 100%);
+  width: min(104rem, 100%);
   min-width: 0;
   display: flex;
   align-items: center;
@@ -71,70 +62,94 @@
   flex-direction: column;
   justify-content: center;
   margin: auto;
-  padding: clamp(2rem, 5vw, 4rem) 0;
-  text-align: center;
+  padding: clamp(2rem, 4vw, 4.8rem) 0;
+  animation: empty-state-enter 180ms ease-out both;
+}
+
+.emptyStateIntro {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 7.2rem minmax(0, 1fr);
+  align-items: center;
+  gap: 2.2rem;
+  padding: 2.8rem 3.2rem;
+  background: var(--color-white);
+  border: var(--border-width) solid #dce5f3;
+  border-radius: 2rem;
+  box-shadow: 0 1.2rem 3.2rem rgb(23 27 38 / 6%);
 }
 
 .emptyStateIcon {
-  width: 5.6rem;
-  height: 5.6rem;
+  width: 7.2rem;
+  height: 7.2rem;
   display: grid;
   place-items: center;
   color: var(--color-primary);
-  font-size: 2.8rem;
-  background: #edf3ff;
-  border: var(--border-width) solid #d8e5ff;
-  border-radius: 1.8rem;
+  font-size: 3.4rem;
+  background: #eaf2ff;
+  border: var(--border-width) solid #cfe0ff;
+  border-radius: 2rem;
+}
+
+.emptyStateCopy {
+  min-width: 0;
+  text-align: left;
 }
 
 .emptyStateEyebrow {
-  margin-top: 1.8rem;
   color: var(--color-primary);
   font-size: 1.25rem;
   font-weight: 750;
 }
 
 .emptyState h1 {
-  margin-top: 0.7rem;
+  margin-top: 0.55rem;
   color: #171b26;
-  font-size: clamp(2.4rem, 4vw, 3.2rem);
-  line-height: 1.35;
+  font-size: clamp(2.6rem, 3vw, 3.4rem);
+  line-height: 1.28;
+  letter-spacing: -0.025em;
 }
 
 .emptyStateDescription {
-  max-width: 54rem;
-  margin-top: 1.2rem;
+  max-width: 76rem;
+  margin-top: 0.9rem;
   color: #667085;
-  font-size: 1.45rem;
-  line-height: 1.75;
+  font-size: 1.48rem;
+  line-height: 1.7;
 }
 
 .exampleQuestions {
   width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 2.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+  margin-top: 1.8rem;
 }
 
 .exampleQuestions button {
   min-width: 0;
-  min-height: 7.6rem;
-  padding: 1.4rem 1.5rem;
-  overflow-wrap: anywhere;
-  color: #344054;
+  min-height: 8.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.6rem 1.8rem;
+  color: #25324b;
   font: inherit;
-  font-size: 1.35rem;
-  font-weight: 650;
-  line-height: 1.55;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.5;
+  word-break: keep-all;
+  text-align: center;
   cursor: pointer;
   background: var(--color-white);
-  border: var(--border-width) solid #dfe3e8;
+  border: var(--border-width) solid #dce5f3;
   border-radius: 1.4rem;
   box-shadow: 0 0.6rem 1.8rem rgb(15 23 42 / 4%);
   transition:
     color 160ms ease,
+    background 160ms ease,
     border-color 160ms ease,
     transform 160ms ease,
     box-shadow 160ms ease;
@@ -142,7 +157,8 @@
 
 .exampleQuestions button:hover:not(:disabled) {
   color: var(--color-primary);
-  border-color: #9db9ed;
+  background: #f7faff;
+  border-color: #8eafe9;
   box-shadow: 0 0.9rem 2.2rem rgb(1 64 191 / 9%);
   transform: translateY(-0.2rem);
 }
@@ -154,14 +170,33 @@
 
 .emptyStateHint {
   margin-top: 1.4rem;
-  color: #98a2b3;
-  font-size: 1.2rem;
+  color: #7f8a9d;
+  font-size: 1.25rem;
+  text-align: center;
 }
 
-@media (max-width: 760px) {
+@media (min-width: 900px) {
+  .emptyState h1 {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 900px) {
   .emptyState {
     justify-content: flex-start;
-    padding-top: 3rem;
+    padding-top: 2rem;
+  }
+
+  .emptyStateIntro {
+    grid-template-columns: 6.2rem minmax(0, 1fr);
+    gap: 1.6rem;
+    padding: 2.2rem;
+  }
+
+  .emptyStateIcon {
+    width: 6.2rem;
+    height: 6.2rem;
+    font-size: 3rem;
   }
 
   .exampleQuestions {
@@ -170,12 +205,33 @@
 
   .exampleQuestions button {
     min-height: 5.8rem;
+    justify-content: flex-start;
     text-align: left;
   }
 }
 
-.emptyState {
-  animation: empty-state-enter 180ms ease-out both;
+@media (max-width: 700px) {
+  .messages {
+    padding: var(--space-24) var(--space-16);
+  }
+
+  .composerDock {
+    padding: var(--space-12) var(--space-16) var(--space-16);
+  }
+
+  .emptyStateIntro {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .emptyStateCopy {
+    text-align: center;
+  }
+
+  .emptyStateDescription {
+    max-width: 46rem;
+  }
 }
 
 @keyframes empty-state-enter {
