@@ -186,6 +186,20 @@ class DPartGraphState(TypedDict, total=False):
     response_stream: Optional[AsyncIterator[str]]                    # 스트리밍 청크 제너레이터 — JSON 직렬화 불가, 절대 영속화 금지
 
 
+class DPartAnswerSnapshot(BaseModel):
+    """복원용으로 저장하는 완성된 D 답변 1턴. 프론트 reduceDAnswer가 스트림으로 누적하는 것과
+    같은 필드 구성이라, 사이드바에서 다시 열면 라이브 턴과 동일하게 렌더된다.
+    (평문은 messages 테이블에도 있지만, 판정배지·인용카드·용어까지 살리려면 구조를 보존해야 한다.)"""
+    user_input: str
+    text: str = ""
+    citations: list[dict] = Field(default_factory=list)
+    judgment: Optional[str] = None
+    appendix: str = ""
+    disclaimer: str = ""
+    terms: list[dict] = Field(default_factory=list)
+    answer_kind: Optional[str] = None
+
+
 class DPartSessionState(BaseModel):
     """conversations.state(JSONB)에 그대로 직렬화되는 턴 간 carryover 상태.
     다음 턴 시작 시 이 값으로 DPartGraphState의 대응 필드를 미리 채워 넣습니다.
@@ -200,3 +214,6 @@ class DPartSessionState(BaseModel):
     victim_check_attempts: int = 0
     victim_pending_slot: Optional[str] = None
     awaiting_relief_confirmation: bool = False
+    # 캐리오버가 아니라 복원용 누적 이력 — 사이드바 재열람 전용. graph_input에는 넣지 않는다
+    # (그래프는 이전 답변 텍스트가 아니라 carryover 상태만 본다). d_part 라우트가 매 턴 append한다.
+    turn_history: list[DPartAnswerSnapshot] = Field(default_factory=list)

@@ -26,6 +26,8 @@ import {
 import {
   createDConversation,
   createEmptyDAnswer,
+  getDConversation,
+  mapDConversationStateToMessages,
   reduceDAnswer,
   streamDChat,
 } from "../../api/chat/D/dApi.js";
@@ -459,19 +461,28 @@ function ChatbotPage({ consultationType }) {
       }
 
       try {
-        const storedMessages = await loadStoredConversation(
-          requestedConversationId,
-        );
+        let restored;
+        if (isDPart) {
+          // D는 평문 messages가 아니라 전용 상태(turn_history)에서 구조화 답변을 그대로 복원한다
+          // — 라이브 턴과 동일한 카드(판정·인용·용어)를 살리기 위함(A파트와 같은 상태기반 방식).
+          const state = await getDConversation(requestedConversationId);
+          restored = mapDConversationStateToMessages(state);
+        } else {
+          const storedMessages = await loadStoredConversation(
+            requestedConversationId,
+          );
+          restored = storedMessages.map((message) => ({
+            id: `stored-${message.id}`,
+            role: message.role,
+            content: message.content,
+          }));
+        }
         if (cancelled) {
           return;
         }
         setMessagesByType((current) => ({
           ...current,
-          [consultationType]: storedMessages.map((message) => ({
-            id: `stored-${message.id}`,
-            role: message.role,
-            content: message.content,
-          })),
+          [consultationType]: restored,
         }));
         setConversationIds((current) => ({
           ...current,
@@ -492,7 +503,7 @@ function ChatbotPage({ consultationType }) {
     return () => {
       cancelled = true;
     };
-  }, [consultationType, isAPart, location.key, location.state]);
+  }, [consultationType, isAPart, isDPart, location.key, location.state]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({

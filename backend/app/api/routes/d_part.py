@@ -16,7 +16,7 @@ from app.conversations.repository import get_session_state, save_message, update
 from app.conversations.summarizer import maybe_summarize_conversation
 from app.graph.parts.d_part.graph import graph as d_graph
 from app.graph.parts.d_part.nodes._context import build_citation_cards, match_glossary_terms
-from app.graph.parts.d_part.schemas import DPartSessionState
+from app.graph.parts.d_part.schemas import DPartAnswerSnapshot, DPartSessionState
 from app.rag.retrievers.d_part import DPartRetriever
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,11 @@ async def chat_d(
         yield f"data: {StreamEvent(type=EventType.LOADING).model_dump_json()}\n\n"
 
         try:
+            # turn_history는 복원용 누적 이력이라 그래프에 넣지 않는다 — 그래프는 carryover 상태만 본다.
             graph_input = {
-                name: getattr(session_state, name) for name in DPartSessionState.model_fields
+                name: getattr(session_state, name)
+                for name in DPartSessionState.model_fields
+                if name != "turn_history"
             } | request.model_dump()
 
             await save_message(user.id, "d", "user", request.user_input, conversation_id)
@@ -125,9 +128,30 @@ async def chat_d(
                 part for part in [body_text, tail.get("appendix"), tail.get("disclaimer")] if part
             )
 
-            updated_session = DPartSessionState(
-                **{name: final_state[name] for name in DPartSessionState.model_fields if name in final_state}
+            # 사이드바 재열람용 완성 답변 스냅샷 — 스트림으로 내보낸 것과 같은 조각을 그대로 보존해
+            # 복원 시 라이브 턴과 동일하게 렌더한다. terms는 저장 텍스트와 달리 여기선 보존한다
+            # (복원은 본문 재파싱이 아니라 저장된 구조를 그대로 쓰므로).
+            snapshot = DPartAnswerSnapshot(
+                user_input=request.user_input,
+                text=body_text,
+                citations=meta.get("citations", []),
+                judgment=meta.get("judgment"),
+                appendix=tail.get("appendix", ""),
+                disclaimer=tail.get("disclaimer", ""),
+                terms=tail.get("terms", []),
+                answer_kind=meta.get("answer_kind"),
             )
+
+            # reflective 재구성은 final_state에 없는 turn_history를 빈 리스트로 되돌리므로,
+            # 직전 이력을 명시적으로 이어붙인다(제외 목록에 두고 아래서 직접 세팅).
+            updated_session = DPartSessionState(
+                **{
+                    name: final_state[name]
+                    for name in DPartSessionState.model_fields
+                    if name in final_state and name != "turn_history"
+                }
+            )
+            updated_session.turn_history = [*session_state.turn_history, snapshot]
             await update_session_state(conversation_id, user.id, updated_session.model_dump(mode="json"))
 
             await save_message(user.id, "d", "assistant", final_answer, conversation_id)
@@ -142,8 +166,28 @@ async def chat_d(
             # (이 저장마저 실패하면 로그만 남기고 error 이벤트는 그대로 내보낸다)
             try:
                 await save_message(user.id, "d", "assistant", _ERROR_MESSAGE, conversation_id)
+                # 복원(turn_history)에서도 이 턴이 빠지지 않도록 에러 스냅샷을 남긴다.
+                # 대부분의 예외는 상태 저장 전에 나므로 session_state(직전 이력)에 이어붙인다.
+                error_session = session_state.model_copy(update={
+                    "turn_history": [
+                        *session_state.turn_history,
+                        DPartAnswerSnapshot(user_input=request.user_input, text=_ERROR_MESSAGE),
+                    ]
+                })
+                await update_session_state(
+                    conversation_id, user.id, error_session.model_dump(mode="json")
+                )
             except Exception:
                 logger.exception("에러 placeholder 저장 실패 (conversation_id=%s)", conversation_id)
             yield f"data: {StreamEvent(type=EventType.ERROR, data=_ERROR_MESSAGE).model_dump_json()}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream", background=background_tasks)
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_d_conversation(conversation_id: int, user=Depends(get_current_user)):
+    """사이드바에서 저장된 D 대화를 다시 열 때, 복원용 세션 상태(turn_history 포함)를 돌려준다.
+    get_session_state가 소유권을 검증한다 — 타인/미존재 대화방이면 ConversationNotFoundError → 404."""
+    raw_state = await get_session_state(conversation_id, user.id)
+    session_state = DPartSessionState.model_validate(raw_state) if raw_state else DPartSessionState()
+    return session_state.model_dump(mode="json")

@@ -1,4 +1,4 @@
-import { API_BASE_URL, ApiError, refreshAccessToken } from '../../common/apiClient.js';
+import { API_BASE_URL, ApiError, apiRequest, refreshAccessToken } from '../../common/apiClient.js';
 import { getAccessToken } from '../../common/authToken.js';
 import { createConversation } from '../conversationsApi.js';
 
@@ -206,4 +206,34 @@ export function reduceDAnswer(answer, event) {
     default:
       return answer;
   }
+}
+
+// 사이드바에서 저장된 D 대화를 다시 열 때 쓰는 세션 상태(turn_history 포함).
+// A파트의 getAConversation과 같은 역할 — 스트림이 아니라 단순 GET이라 apiRequest(Bearer+401 갱신)를 쓴다.
+export async function getDConversation(conversationId) {
+  return apiRequest(`${D_API_PATH}conversations/${conversationId}`);
+}
+
+// 저장 스냅샷(백엔드 DPartAnswerSnapshot, snake_case) → 화면이 기대하는 완성 답변 객체.
+// createEmptyDAnswer로 필드 기본값을 깔아 라이브 스트림 결과와 같은 모양을 보장한다.
+function mapDStoredAnswer(turn) {
+  return {
+    ...createEmptyDAnswer(),
+    status: 'done',
+    text: turn.text || '',
+    citations: turn.citations || [],
+    judgment: turn.judgment ?? null,
+    appendix: turn.appendix || '',
+    disclaimer: turn.disclaimer || '',
+    terms: turn.terms || [],
+    answerKind: turn.answer_kind ?? null,   // snake→camel (reduceDAnswer와 동일 규칙)
+  };
+}
+
+// turn_history를 화면 메시지 배열로 편다 — 턴마다 사용자 발화 + 완성 답변 카드.
+export function mapDConversationStateToMessages(state) {
+  return (state?.turn_history || []).flatMap((turn, index) => [
+    { id: `d-hist-${index}-user`, role: 'user', content: turn.user_input },
+    { id: `d-hist-${index}-assistant`, role: 'assistant', content: mapDStoredAnswer(turn) },
+  ]);
 }
