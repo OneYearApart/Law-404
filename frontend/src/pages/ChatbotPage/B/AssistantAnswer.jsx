@@ -106,7 +106,7 @@ function BAssistantAnswer({ content }) {
           onClick={() => onRegisterCalendar?.(pendingAction)}
         >
           <FiCalendar aria-hidden="true" />
-          캘린더에 등록하기
+          일정 등록하기
         </button>
       )}
       {calendarStatusText && (

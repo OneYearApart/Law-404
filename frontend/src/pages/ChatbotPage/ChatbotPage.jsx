@@ -493,6 +493,24 @@ function ChatbotPage({ consultationType }) {
       .finally(() => setIsLoading(false));
   };
 
+  const appendCalendarRegistrationPrompt = (action) => {
+    if (!action) return;
+
+    appendMessages({
+      id: createMessageId("assistant-calendar-ready"),
+      role: "assistant",
+      content: {
+        text: "Google Calendar 연동이 완료되었습니다. 일정을 등록하시겠습니까?",
+        pendingAction: action,
+        calendarEvents: action.events || [],
+        calendarRegistration: null,
+        calendarToolResult: null,
+        isStreaming: false,
+        onRegisterCalendar: submitCalendarRegistration,
+      },
+    });
+  };
+
   const runBChatTurn = async ({
     question,
     pendingAction = null,
@@ -540,7 +558,7 @@ function ChatbotPage({ consultationType }) {
               pendingCalendarRegistrationRef.current = action;
               setShowCalendarConnectionPanel(true);
               setNotice(
-                "Google Calendar 연결 후 일정을 자동으로 등록합니다.",
+                "Google Calendar 연결 후 일정 등록 여부를 다시 확인합니다.",
               );
               handleShowCalendarConnectGuide();
               return;
@@ -587,7 +605,7 @@ function ChatbotPage({ consultationType }) {
         const popup = window.open(
           guide.authorization_url,
           "law404-google-calendar-oauth",
-          "width=520,height=720,noopener,noreferrer",
+          "width=520,height=720",
         );
 
         if (!popup) {
@@ -618,10 +636,8 @@ function ChatbotPage({ consultationType }) {
               pendingCalendarRegistrationRef.current = null;
 
               if (pendingRegistration) {
-                setNotice(
-                  "Google Calendar 연결이 완료되어 일정을 자동으로 등록합니다.",
-                );
-                submitCalendarRegistration(pendingRegistration);
+                appendCalendarRegistrationPrompt(pendingRegistration);
+                setNotice("Google Calendar 연결이 완료되었습니다.");
                 return;
               }
 
@@ -632,14 +648,14 @@ function ChatbotPage({ consultationType }) {
             // OAuth 진행 중 일시적인 조회 실패는 다음 polling에서 다시 확인합니다.
           }
 
-          if (pollAttempts >= 48 || popup.closed) {
+          if (pollAttempts >= 48) {
             window.clearInterval(pollConnection);
             setIsCalendarConnectionPolling(false);
             setNotice(
               "Google Calendar 승인 후 연결 상태가 바뀌지 않으면 연결하기를 다시 눌러 주세요.",
             );
           }
-        }, 2500);
+        }, 2000);
         return;
       }
 
@@ -651,8 +667,8 @@ function ChatbotPage({ consultationType }) {
         pendingCalendarRegistrationRef.current = null;
 
         if (pendingRegistration) {
-          setNotice("Google Calendar 연결을 확인해 일정을 자동으로 등록합니다.");
-          submitCalendarRegistration(pendingRegistration);
+          appendCalendarRegistrationPrompt(pendingRegistration);
+          setNotice("Google Calendar 연결이 완료되었습니다.");
           return;
         }
 
