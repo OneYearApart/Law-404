@@ -1,9 +1,15 @@
 import { motion } from 'framer-motion';
-import { FiCalendar, FiCheckCircle, FiEdit3, FiExternalLink } from 'react-icons/fi';
+import {
+  FiCalendar,
+  FiCheckCircle,
+  FiEdit3,
+  FiExternalLink,
+} from 'react-icons/fi';
 
 import styles from './AssistantAnswer.module.css';
 
 const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/u/0/r';
+const SECTION_HEADING_PATTERN = /^([①②③④⑤⑥⑦⑧])\s*(.+)$/u;
 
 function normalizeContent(content) {
   if (content && typeof content === 'object') {
@@ -71,6 +77,34 @@ function getGoogleCalendarUrl(calendarToolResult) {
   return firstRegisteredEvent?.html_link || GOOGLE_CALENDAR_URL;
 }
 
+function renderFormattedText(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const trimmed = line.trim();
+      const sectionHeading = trimmed.match(SECTION_HEADING_PATTERN);
+
+      if (sectionHeading) {
+        return (
+          <h3 className={styles.answerHeading} key={`${line}-${index}`}>
+            <span className={styles.headingNumber}>{sectionHeading[1]}</span>
+            <span className={styles.headingTitle}>{sectionHeading[2]}</span>
+          </h3>
+        );
+      }
+
+      if (!trimmed) {
+        return <span className={styles.answerSpacer} key={`space-${index}`} />;
+      }
+
+      return (
+        <span className={styles.answerLine} key={`${line}-${index}`}>
+          {line}
+        </span>
+      );
+    });
+}
+
 function BAssistantAnswer({ content }) {
   const {
     text,
@@ -100,9 +134,11 @@ function BAssistantAnswer({ content }) {
         <FiEdit3 aria-hidden="true" />
         계약 중 점검
       </span>
-      <p className={styles.answerText}>
-        {text || '답변을 생성하고 있습니다.'}
-      </p>
+
+      <div className={styles.answerText}>
+        {renderFormattedText(text || '답변을 생성하고 있습니다.')}
+      </div>
+
       {canRegister && (
         <button
           className={styles.calendarButton}
@@ -113,6 +149,7 @@ function BAssistantAnswer({ content }) {
           일정 등록하기
         </button>
       )}
+
       {(calendarStatusText || canOpenCalendar) && (
         <div className={styles.calendarResultActions}>
           {calendarStatusText && (
