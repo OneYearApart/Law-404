@@ -12,10 +12,10 @@ general_scenario의 매칭부를 흡수해 카테고리 판단을 한 곳으로 
 한 번에 판별해 state["situation"]에 담는다(call_supervisor). 호출은 1회 그대로다 — 축이 늘었다고
 축마다 호출하면 여러 노드로 쪼개져 있던 시절의 비용으로 되돌아간다.
 
-라우팅은 아직 예전 카테고리 문자열로 한다(derive_legacy_category). 상황모델을 먼저 들여놓고
-라우팅은 나중에 옮기는 순서라, 이 단계에서는 라우팅 결과가 리팩터링 전과 동일해야 한다.
-special_case/general_topic 카테고리는 그 실행 노드가 바로 조회할 수 있도록
-special_case_matched/general_topic_matched에 값을 채워 넘긴다.
+라우팅은 그 상황모델에서 규칙으로 파생시킨다(route) — LLM에게 "어디로 보낼까"를 묻지 않는다.
+축을 어떻게 조합해 경로를 정하는지는 도메인이 고정해둔 규칙이라 매 턴 추론할 값이 아니고,
+순수함수라 LLM 호출 없이 그대로 테스트할 수 있다. special_case/general_topic은 그 실행 노드가
+바로 조회할 수 있도록 special_case_matched/general_topic_matched에 값을 채워 넘긴다.
 """
 from typing import Optional
 
@@ -95,30 +95,36 @@ def situation_from_supervisor_result(result: dict) -> SituationState:
     return situation
 
 
-def derive_legacy_category(situation: SituationState) -> str:
-    """상황모델에서 예전 카테고리 문자열을 파생시킨다.
+def route(situation: SituationState) -> str:
+    """상황모델에서 이번 턴 실행 노드를 파생시키는 순수함수.
 
-    supervisor가 카테고리 하나를 고르던 때의 판별 규칙을 재현하는 어댑터다. 축별 판별로 바꾸면서도
-    라우팅 결과가 리팩터링 전후로 동일함을 이걸로 보장한다. 라우팅을 상황모델 기반 순수함수로
-    옮기고 나면 이 함수와 route_target/*_matched는 함께 사라진다.
+    인터뷰 축(victim_check 진행 중)은 여기 없다 — 상황모델이 아니라 기존 플래그에서 파생되는
+    값이라 run_supervisor가 앞단(_in_progress_route)에서 먼저 처리한다.
 
     특수상황 분기는 예전 프롬프트 문언("위험신호가 있고 + 인정된 상태")과 달리 위험신호를
     요구하지 않는다. 예전엔 그 조건을 LLM이 뭉뚱그려 판단했지만, 이제 risk_signals는 6종 enum에
     문자로 매칭된 결과라 "신탁을 걸어놨다" 같은 발화에선 빈 배열로 온다 — 옛/새 코드를 같은 발화로
     실호출 비교해 확인했다. 위험신호를 요구하면 인정받은 사용자가 특수상황을 말해도 자유질의로
     새어나간다. 애초에 이미 인정받은 사용자에게 위험신호 유무를 다시 묻는 건 의미가 없다.
+
+    인정받았는데 특수 4종도 topic도 아닌 사용자는 recognized_general이 받는다. 예전엔 이들이
+    제약 없는 자유질의(open_qa)로 떨어져 인지형 지원절차 개요를 못 받았다 — 납작한 카테고리
+    구조라 코드에 드러나지 않던 빈칸이었다.
+
+    인정받았어도 topic이 잡히면 general_scenario 그대로다. 13개 항목은 항목별 topic_tag로 조문·
+    판례를 정조준해 검색하는데, 인지 여부를 이유로 recognized_general(전체 검색)로 보내면 애써
+    판별한 topic 축을 버리게 된다. "인정받은 사람에게 예방 톤이 나온다"는 건 라우팅이 아니라
+    프롬프트에서 다룰 문제다.
     """
     if situation.recognized:
         if situation.special_case:
-            return f"special_case:{situation.special_case}"
-        if situation.risk_signals:
-            # 인정받았지만 특수 4종이 아닌 피해자 — 제약 없는 자유질의로 떨어져 인지형 지원절차
-            # 개요를 못 받는다. 예전엔 이 빈칸이 프롬프트 산문에 묻혀 있었다. 전용 경로가 필요하다.
-            return "open_qa"
+            return "special_cases"
+        if not situation.topic:
+            return "recognized_general"
     elif situation.risk_signals:
-        return "victim_interview"
+        return "victim_check"
     if situation.topic:
-        return f"general_topic:{situation.topic}"
+        return "general_scenario"
     return "open_qa"
 
 
@@ -132,21 +138,15 @@ async def run_supervisor(state: DPartGraphState) -> DPartGraphState:
     result = await llm_d_part.call_supervisor(get_active_query(state))
     situation = situation_from_supervisor_result(result)
     state["situation"] = situation
-    category = derive_legacy_category(situation)
+    target = route(situation)
+    state["route_target"] = target
 
-    if category == "victim_interview":
-        state["route_target"] = "victim_check"
-    elif category.startswith("special_case:"):
-        state["special_case_matched"] = category.removeprefix("special_case:")
-        state["route_target"] = "special_cases"
-    elif category.startswith("general_topic:"):
-        topic_key = category.removeprefix("general_topic:")
-        state["general_topic_matched"] = topic_key
-        derived_stage = _stage_from_topic_key(topic_key)
+    if target == "special_cases":
+        state["special_case_matched"] = situation.special_case
+    elif target == "general_scenario":
+        state["general_topic_matched"] = situation.topic
+        derived_stage = _stage_from_topic_key(situation.topic)
         if derived_stage is not None:
             state["stage"] = derived_stage
-        state["route_target"] = "general_scenario"
-    else:
-        state["route_target"] = "open_qa"
 
     return state

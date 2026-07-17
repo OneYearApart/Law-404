@@ -6,7 +6,7 @@ import pytest
 
 from app.graph.parts.d_part.nodes import supervisor
 from app.graph.parts.d_part.nodes.supervisor import (
-    derive_legacy_category,
+    route,
     run_supervisor,
     situation_from_supervisor_result,
 )
@@ -186,30 +186,31 @@ async def test_absent_axes_become_none_not_empty_string(monkeypatch):
     "situation, expected",
     [
         # 위험신호 있음 + 미인지 → 요건 인터뷰
-        (SituationState(recognized=False, risk_signals=["보증금미반환"]), "victim_interview"),
+        (SituationState(recognized=False, risk_signals=["보증금미반환"]), "victim_check"),
         # 위험신호 있음 + 인지 + 특수 4종 → 특수상황
         (
             SituationState(recognized=True, risk_signals=["임대인사망파산"], special_case="임대인 사망/파산"),
-            "special_case:임대인 사망/파산",
+            "special_cases",
         ),
         # 인지 + 특수 4종인데 위험신호가 안 잡힌 경우 → 여전히 특수상황.
         # 위험신호를 요구하면 "인정받았고 신탁 걸려있다" 류 발화가 전부 자유질의로 새어나간다
         # (6종 enum에 문자로 안 걸려 빈 배열이 오기 때문 — 실호출로 확인된 회귀).
         (
             SituationState(recognized=True, risk_signals=[], special_case="신탁사기"),
-            "special_case:신탁사기",
+            "special_cases",
         ),
         # 위험신호 없음 + topic → 일반 시나리오
-        (SituationState(recognized=False, topic="전-①등기부등본_위험신호"), "general_topic:전-①등기부등본_위험신호"),
+        (SituationState(recognized=False, topic="전-①등기부등본_위험신호"), "general_scenario"),
         # 아무 축도 안 걸림 → 자유질의
         (SituationState(recognized=False), "open_qa"),
-        # 위험신호 없이 인지만 → 단계 접두어 매칭이 우선(기존 규칙 그대로)
-        (SituationState(recognized=True, topic="후-②이중계약_배당순위"), "general_topic:후-②이중계약_배당순위"),
+        # 인지 + topic → 일반 시나리오 그대로. 인지 여부를 이유로 recognized_general(전체 검색)로
+        # 보내면 항목별 topic_tag 정조준 검색을 버리게 된다 — 인지형 톤은 프롬프트가 담당한다.
+        (SituationState(recognized=True, topic="후-②이중계약_배당순위"), "general_scenario"),
     ],
 )
-def test_derive_legacy_category_reproduces_previous_rules(situation, expected):
-    """축별 판별로 바꾼 뒤에도 라우팅 결과가 이전과 동일한지 — 동작 불변의 증명."""
-    assert derive_legacy_category(situation) == expected
+def test_route_preserves_existing_paths(situation, expected):
+    """라우팅을 순수함수로 옮긴 뒤에도 기존 4경로의 결과가 그대로인지 — 무회귀의 증명."""
+    assert route(situation) == expected
 
 
 @pytest.mark.parametrize(
@@ -236,7 +237,7 @@ def test_unrecognized_user_topic_does_not_infer_special_case():
     )
 
     assert result.special_case is None
-    assert derive_legacy_category(result) == "general_topic:전-③다가구_선순위보증금"
+    assert route(result) == "general_scenario"
 
 
 def test_model_supplied_special_case_wins_over_inference():
@@ -265,9 +266,33 @@ def test_out_of_vocabulary_axis_values_are_dropped():
     assert result.risk_signals == ["보증금미반환"]
 
 
-def test_recognized_non_special_victim_currently_falls_to_open_qa():
-    """인정받았지만 특수 4종이 아닌 피해자는 지금 자유질의로 떨어진다 — 인지형 지원절차
-    개요를 못 받는 빈칸이다. 전용 경로가 생기면 이 테스트는 뒤집혀야 한다(그게 해소의 증거)."""
-    situation = SituationState(recognized=True, risk_signals=["보증금미반환"], special_case=None)
+@pytest.mark.parametrize(
+    "situation",
+    [
+        # 위험신호를 말한 인정 피해자
+        SituationState(recognized=True, risk_signals=["보증금미반환"]),
+        # 상황을 특정하지 않고 인정 사실만 밝힌 경우("인정받았는데 이제 뭘 해야 하나요")
+        SituationState(recognized=True, risk_signals=[]),
+    ],
+)
+def test_recognized_non_special_victim_gets_own_path(situation):
+    """인정받았지만 특수 4종도 13개 항목도 아닌 피해자는 자유질의(open_qa)로 떨어졌다 —
+    사용자 상황을 모른다고 전제한 일반론 답변을 받고 인지형 지원절차 개요도 못 받는 빈칸이었다."""
+    assert route(situation) == "recognized_general"
 
-    assert derive_legacy_category(situation) == "open_qa"
+
+@pytest.mark.asyncio
+async def test_recognized_general_routes_without_matched_category(monkeypatch):
+    """전용 경로로 가는 턴은 매칭된 카테고리가 없다 — 실행 노드가 조회할 값이 없으므로
+    special_case_matched/general_topic_matched를 채우면 안 된다."""
+
+    async def _fake(user_input: str) -> dict:
+        return {"recognized": True, "risk_signals": ["보증금미반환"]}
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
+
+    result = await run_supervisor({"user_input": "피해자로 인정받았는데 보증금을 아직 못 받았어요"})
+
+    assert result["route_target"] == "recognized_general"
+    assert result.get("special_case_matched") is None
+    assert result.get("general_topic_matched") is None

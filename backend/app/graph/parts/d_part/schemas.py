@@ -166,7 +166,8 @@ class DPartGraphState(TypedDict, total=False):
                                                            # 접두어에서 역산(단위 29). 역산 불가한 턴은 이전 값 유지
     route_target: Optional[str]                             # supervisor가 이번 턴 결정한 다음 노드
                                                                # ("victim_check"/"special_cases"/"general_scenario"/
-                                                               # "open_qa") — 이번 턴 라우팅 전용, carryover 아님
+                                                               # "recognized_general"/"open_qa") — supervisor.route가
+                                                               # situation에서 파생. 이번 턴 라우팅 전용, carryover 아님
     victim_slots: VictimRequirementSlots                     # 요건 슬롯 누적 결과 — 이 기능의 핵심 carryover 데이터
     victim_judgment: Optional[VictimJudgment]                 # 판단 결과(높음/있음/추가확인)
     victim_fallback: bool                                       # 반복 질문에도 슬롯 미충족 시 전문가 상담 안내로 폴백했는지
@@ -180,14 +181,16 @@ class DPartGraphState(TypedDict, total=False):
     needs_response_assembly: bool                                     # victim_check가 이번 턴에 판단을 새로 확정했는지 —
                                                                         # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
     answer_kind: Optional[str]                                        # 이번 턴 답변의 성격(judgment/scenario/
-                                                                        # special_case/open_qa). 응답을 만든 노드가
+                                                                        # special_case/recognized_general/open_qa).
+                                                                        # 응답을 만든 노드가
                                                                         # 세팅한다 — 라우트가 route_target에서 재역산하면
                                                                         # 실제 경로와 어긋날 수 있다. 이번 턴 전용
     disclaimer_text: Optional[str]                                    # 이번 턴 응답에 붙일 면책 문구 — 스트림 경로에서
                                                                         # finalize가 세팅하고 호출부가 본문 뒤에 붙인다.
                                                                         # 고정 텍스트 경로는 final_answer에 직접 인라인. 이번 턴 전용
     appendix_text: Optional[str]                                      # 스트림 말미(면책 앞)에 붙일 결정론적 첨부 텍스트 —
-                                                                        # 미인지형 지원절차 액션플랜(43~45) / 인지형 지원절차 개요(49)가 공유.
+                                                                        # 미인지형 지원절차 액션플랜(43~45) / 인지형 지원절차
+                                                                        # 개요(special_cases 49, recognized_general)가 공유.
                                                                         # finalize가 첨부. 이번 턴 전용(carryover 아님)
     special_case_matched: Optional[str]                          # 매칭된 특수상황
     general_topic_matched: Optional[str]                           # 매칭된 일반 시나리오 항목(13개 항목 키) — 매 턴 재분류, carryover 아님

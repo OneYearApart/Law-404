@@ -1,10 +1,11 @@
 """
 open_qa 노드 테스트 (DB/네트워크는 monkeypatch로 흉내).
 단위 28: search_balanced(쿼터+임계값) 사용 + 법령원문 근거가 없으면 '근거 없음' 폴백.
+검색과 폴백 규칙은 recognized_general과 공유하므로 _open_search가 소유한다.
 """
 import pytest
 
-from app.graph.parts.d_part.nodes import open_qa
+from app.graph.parts.d_part.nodes import _open_search, open_qa
 from app.rag.retrievers.base import Chunk
 
 
@@ -24,7 +25,7 @@ async def test_generates_response_when_statute_present(monkeypatch):
             Chunk(id=2, source_type="판례", content="관련 판례"),
         ]
 
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     state = {"user_input": "보증금 반환청구 소송은 어떻게 진행하나요"}
@@ -45,13 +46,13 @@ async def test_no_evidence_when_no_chunks(monkeypatch):
     async def _fake_search_balanced(query: str, quota=None):
         return []
 
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     state = {"user_input": "관련 근거가 전혀 없는 질문"}
     result = await open_qa.handle_open_qa(state)
 
-    assert result["final_answer"] == open_qa._NO_EVIDENCE_MESSAGE
+    assert result["final_answer"] == _open_search.NO_EVIDENCE_MESSAGE
     assert result.get("response_stream") is None
 
 
@@ -65,13 +66,13 @@ async def test_no_evidence_when_no_statute(monkeypatch):
             Chunk(id=2, source_type="HUG규정", content="규정만"),
         ]
 
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     state = {"user_input": "판례만 걸리는 질문"}
     result = await open_qa.handle_open_qa(state)
 
-    assert result["final_answer"] == open_qa._NO_EVIDENCE_MESSAGE
+    assert result["final_answer"] == _open_search.NO_EVIDENCE_MESSAGE
     assert result.get("response_stream") is None
 
 
@@ -86,7 +87,7 @@ async def test_no_evidence_clears_retrieved_chunks(monkeypatch):
             Chunk(id=2, source_type="HUG규정", content="규정만"),
         ]
 
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     state = {"user_input": "판례만 걸리는 질문"}
@@ -104,7 +105,7 @@ async def test_uses_active_query_over_raw_user_input(monkeypatch):
         seen["query"] = query
         return [Chunk(id=1, source_type="법령원문", content="관련 조문")]
 
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     state = {"user_input": "네", "active_query": "보증금 반환청구 소송은 어떻게 진행하나요"}

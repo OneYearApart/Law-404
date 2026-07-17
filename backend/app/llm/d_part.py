@@ -100,11 +100,11 @@ def _render_prompt(prompt_name: str, **kwargs) -> str:
     return f"{_read_prompt(prompt_name)}\n\n---\n\n{context_lines}"
 
 
-# 답변 성격별 프롬프트. 네 경로가 한 장을 공유하던 때는 "판단 결과가 없으면 …", "근거가 없으면 …"
+# 답변 성격별 프롬프트. 모든 경로가 한 장을 공유하던 때는 "판단 결과가 없으면 …", "근거가 없으면 …"
 # 같은 조건이 프롬프트 안에 쌓여, 모델이 자기 경로에 해당하지 않는 지시까지 읽어야 했다.
 # 이제 각 경로는 자기 지시만 받는다. 인용·형식 규칙은 경로별로 복제하면 드리프트가 나므로
 # response_common에 한 번만 두고 앞에 붙인다.
-RESPONSE_ANSWER_KINDS = ("judgment", "scenario", "special_case", "open_qa")
+RESPONSE_ANSWER_KINDS = ("judgment", "scenario", "special_case", "recognized_general", "open_qa")
 
 
 async def _call_llm(prompt: str) -> str:

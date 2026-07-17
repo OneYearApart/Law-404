@@ -7,8 +7,10 @@ import pytest
 from app.graph.parts.d_part import graph as graph_module
 from app.graph.parts.d_part.nodes._disclaimer import DISCLAIMER
 from app.graph.parts.d_part.nodes import (
+    _open_search,
     general_scenario,
     open_qa,
+    recognized_general,
     response_assembly,
     supervisor,
     victim_check,
@@ -26,7 +28,7 @@ def _fake_confirmation(answer):
 
 @pytest.mark.parametrize(
     "route_target",
-    ["victim_check", "special_cases", "general_scenario", "open_qa"],
+    ["victim_check", "special_cases", "general_scenario", "recognized_general", "open_qa"],
 )
 def test_route_after_supervisor_follows_route_target(route_target):
     state = {"route_target": route_target}
@@ -153,7 +155,7 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
         yield "open_qa 응답"
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
 
     initial_state = {
@@ -167,6 +169,40 @@ async def test_full_graph_routes_unmatched_question_to_open_qa_instead_of_fallth
     assert joined.startswith("open_qa 응답")
     assert result["disclaimer_text"] == DISCLAIMER
     assert "안내드릴 내용이 없습니다" not in joined
+
+
+@pytest.mark.asyncio
+async def test_full_graph_routes_recognized_victim_to_recognized_general(monkeypatch):
+    """인정받았지만 특수 4종에도 13개 항목에도 안 걸리는 피해자는 open_qa가 아니라 전용 경로로
+    가서, 사용자 상황을 모른다고 전제한 일반론 대신 인지형 응답 + 지원절차 개요를 받아야 한다."""
+
+    async def _fake_call_supervisor(user_input: str) -> dict:
+        return {"recognized": True, "risk_signals": ["보증금미반환"]}
+
+    async def _fake_search_balanced(query, quota=None):
+        return [Chunk(id=1, source_type="법령원문", content="전세사기피해자법 제3조")]
+
+    async def _fake_generate_response(context: str, answer_kind: str):
+        yield "인지형 응답"
+
+    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(recognized_general.llm_d_part, "generate_response", _fake_generate_response)
+
+    result = await graph_module.graph.ainvoke(
+        {"user_input": "피해자로 인정받았는데 보증금을 아직 못 받고 있어요"}
+    )
+
+    # answer_kind는 응답을 만든 노드가 세팅하므로 어느 노드가 실행됐는지의 증거가 된다
+    # (open_qa로 샜다면 "open_qa"가 들어온다). llm_d_part는 두 노드가 공유하는 같은 모듈
+    # 객체라 "open_qa엔 절대 안 간다"를 monkeypatch 가드로 세울 수는 없다 — 뒤 patch가 앞을 덮는다.
+    assert result["route_target"] == "recognized_general"
+    assert result["answer_kind"] == "recognized_general"
+    # 지원절차 개요는 인지형 special_cases와 같은 자리(해설 뒤·면책 앞)에 슬롯으로 넘어간다
+    assert result["appendix_text"] == recognized_general._RECOGNIZED_GUIDANCE
+    joined = "".join([c async for c in result["response_stream"]])
+    assert joined.startswith("인지형 응답")
+    assert result["disclaimer_text"] == DISCLAIMER
 
 
 @pytest.mark.asyncio
@@ -229,7 +265,7 @@ async def test_full_graph_reclassifies_followup_after_victim_flow_closed(monkeyp
         raise AssertionError("종결된 인터뷰의 후속 턴에서 판정 응답을 재조립하면 안 된다")
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake_call_supervisor)
-    monkeypatch.setattr(open_qa._retriever, "search_balanced", _fake_search_balanced)
+    monkeypatch.setattr(_open_search.retriever, "search_balanced", _fake_search_balanced)
     monkeypatch.setattr(open_qa.llm_d_part, "generate_response", _fake_generate_response)
     monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _unreachable_search_by_requirement)
 
