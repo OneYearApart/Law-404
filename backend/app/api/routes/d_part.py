@@ -55,9 +55,20 @@ async def chat_d(
 
             # 근거 카드(조문/판례 verbatim)를 토큰 스트림 앞에 먼저 내보낸다(B파트 META 패턴, 단위 46).
             # retrieved_chunks가 없는 경로(스테이지 확인질문/special_cases/fallback/근거없음)는 emit 안 함.
+            meta: dict = {}
             cards = build_citation_cards(final_state.get("retrieved_chunks", []))
             if cards:
-                yield f"data: {StreamEvent(type=EventType.META, data={'citations': cards}).model_dump_json()}\n\n"
+                meta["citations"] = cards
+
+            # 판정은 이번 턴에 새로 확정됐을 때만 싣는다 — victim_judgment는 carryover라
+            # 그대로 내보내면 판정 이후 모든 턴에 재부착된다. needs_response_assembly가
+            # "이번 턴에 새로 확정했는지" 플래그(action_plan/response_assembly와 동일 게이트).
+            # 지원대상 제외 경로는 victim_judgment가 None이라 자연히 빠진다.
+            if final_state.get("needs_response_assembly") and final_state.get("victim_judgment"):
+                meta["judgment"] = final_state["victim_judgment"].value
+
+            if meta:
+                yield f"data: {StreamEvent(type=EventType.META, data=meta).model_dump_json()}\n\n"
 
             # 최종 답변만 토큰 단위로 스트리밍. response_assembly가 조립한 응답은 final_answer를
             # 일부러 비워두므로(ainvoke() 반환 dict는 노드가 사후에 채운 값을 반영 못 함) 여기서

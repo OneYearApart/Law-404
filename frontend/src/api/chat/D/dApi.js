@@ -126,7 +126,7 @@ export async function streamDChat({ conversationId, userInput, signal, onEvent }
 }
 
 export function createEmptyDAnswer() {
-  return { status: 'loading', citations: [], text: '', errorMessage: '' };
+  return { status: 'loading', citations: [], judgment: null, text: '', errorMessage: '' };
 }
 
 // 스트림 이벤트를 화면 상태로 접는다. done/error는 배타적 종료 이벤트다.
@@ -134,8 +134,14 @@ export function reduceDAnswer(answer, event) {
   switch (event.type) {
     case 'loading':
       return { ...answer, status: 'loading' };
+    // META는 근거 카드와 판정을 각각 실을 수 있고 둘 다 선택적이다. 없는 키를 기본값으로
+    // 덮어쓰면 판정만 담긴 META가 근거 카드를 날리므로, 빠진 키는 기존 값을 유지한다.
     case 'meta':
-      return { ...answer, citations: event.data?.citations ?? [] };
+      return {
+        ...answer,
+        citations: event.data?.citations ?? answer.citations,
+        judgment: event.data?.judgment ?? answer.judgment,
+      };
     case 'token':
       return { ...answer, status: 'streaming', text: answer.text + (event.data ?? '') };
     case 'done':
