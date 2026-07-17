@@ -138,8 +138,13 @@ async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs)
             await asyncio.sleep(2**attempt)
 
 
-async def call_victim_check(user_input: str, existing_slots: dict) -> dict:
-    return await _call_structured("victim_check", user_input=user_input, existing_slots=existing_slots)
+async def call_victim_check(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
+    return await _call_structured(
+        "victim_check",
+        user_input=user_input,
+        existing_slots=existing_slots,
+        pending_question=pending_question or "(없음 — 사용자가 먼저 상황을 서술한 턴)",
+    )
 
 
 async def call_supervisor(user_input: str) -> dict:

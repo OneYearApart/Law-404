@@ -11,7 +11,7 @@ from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimReq
 
 
 def _fake_call_victim_check(payload: dict):
-    async def _fake(user_input: str, existing_slots: dict) -> dict:
+    async def _fake(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
         return payload
 
     return _fake

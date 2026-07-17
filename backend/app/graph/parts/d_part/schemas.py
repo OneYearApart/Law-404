@@ -100,6 +100,9 @@ class DPartGraphState(TypedDict, total=False):
     victim_flow_closed: bool                                      # 인터뷰가 종결됐는지(판정 확정/지원대상 제외/fallback).
                                                                      # True면 supervisor가 이번 턴 발화를 정상 재분류한다
     victim_check_attempts: int                                   # 슬롯 진전 없이 머문 연속 턴 수 — fallback 판단용
+    victim_pending_slot: Optional[str]                             # 직전 턴에 질문을 던진 슬롯 이름 — 이번 턴 발화가
+                                                                     # "아니요" 같은 맥락 의존 답변일 때 어느 슬롯에 대한
+                                                                     # 답인지 추출기에 알려주는 용도. carryover 필수
     awaiting_relief_confirmation: bool                             # 구제수단보유여부 명시적 질문에 대한 응답을 기다리는 중인지
     needs_response_assembly: bool                                     # victim_check가 이번 턴에 판단을 새로 확정했는지 —
                                                                         # response_assembly 실행 조건, 이번 턴 전용(carryover 아님)
@@ -129,6 +132,7 @@ class DPartSessionState(BaseModel):
     victim_fallback: bool = False
     victim_flow_closed: bool = False
     victim_check_attempts: int = 0
+    victim_pending_slot: Optional[str] = None
     awaiting_relief_confirmation: bool = False
     special_case_matched: Optional[str] = None
 
