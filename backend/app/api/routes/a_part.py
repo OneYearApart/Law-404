@@ -32,12 +32,13 @@ from app.consultation.a_part.models import (
 )
 from app.consultation.a_part.service import APartConversationService
 from app.consultation.a_part.state_updater import ExtractedSlotUpdate
+from app.consultation.a_part.state_policy import owner_proxy_progress_display
 from app.consultation.a_part.store import SharedConversationStore
 from app.conversations.summarizer import maybe_summarize_conversation
 from app.core.config import settings
 from app.documents.db_storage import DocumentDatabaseRepository
 from app.documents.models import DocumentType
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -47,6 +48,15 @@ _SUPPORTED_DOCUMENT_TYPES = {
     DocumentType.LEASE_CONTRACT,
     DocumentType.REGISTRY,
 }
+_OWNER_PROXY_SCENARIO_MARKERS = (
+    "대리",
+    "위임",
+    "대신 계약",
+    "집주인 가족",
+    "집주인 아들",
+    "집주인 딸",
+    "소유자 가족",
+)
 _DEFAULT_CONVERSATION_SERVICE = APartConversationService(
     store=SharedConversationStore(part="a")
 )
@@ -79,14 +89,24 @@ class ChatTurnAPIRequest(BaseModel):
         max_length=30,
     )
     document_ids: list[str] = Field(default_factory=list, max_length=10)
+    attached_document_ids: list[str] = Field(default_factory=list, max_length=10)
     analyze_documents: bool = False
     force_document_analysis: bool = False
 
 
-class AnalyzeDocumentsRequest(BaseModel):
-    document_ids: list[str] = Field(default_factory=list, max_length=10)
-    force: bool = False
 
+def _is_owner_proxy_scenario(question: str) -> bool:
+    normalized = str(question or "").replace(" ", "")
+    return any(marker.replace(" ", "") in normalized for marker in _OWNER_PROXY_SCENARIO_MARKERS)
+
+
+def _has_lease_contract(state: ConversationState | None) -> bool:
+    if state is None:
+        return False
+    return any(
+        document.document_type == DocumentType.LEASE_CONTRACT
+        for document in state.documents
+    )
 
 def get_a_part_chatbot_service() -> APartChatbotService:
     """테스트에서 교체할 수 있는 서비스 의존성."""
@@ -261,10 +281,16 @@ def _build_consultation_progress(
 
     for issue_id in state.all_issue_ids:
         for slot in state.issue_slots.get(issue_id, {}).values():
+            default_display_value = _progress_value(slot.value, slot.status)
+            display_label, display_value = owner_proxy_progress_display(
+                state,
+                slot,
+                default_display_value=default_display_value,
+            )
             item = {
                 "issue_id": issue_id,
                 "slot_key": slot.key,
-                "label": slot.label,
+                "label": display_label,
                 "status": slot.status.value,
                 "source": slot.source.value if slot.source else None,
             }
@@ -283,13 +309,13 @@ def _build_consultation_progress(
                 unresolved_items.append({
                     **item,
                     "value": slot.value,
-                    "display_value": _progress_value(slot.value, slot.status),
+                    "display_value": display_value,
                 })
             elif slot.is_confirmed():
                 confirmed_items.append({
                     **item,
                     "value": slot.value,
-                    "display_value": _progress_value(slot.value, slot.status),
+                    "display_value": display_value,
                 })
             else:
                 remaining_items.append(item)
@@ -325,6 +351,7 @@ def _build_turn_snapshot(
     *,
     question: str,
     result: ChatbotTurnResult,
+    attached_document_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     consultation = result.consultation
     rag_response = consultation.rag_response
@@ -334,8 +361,26 @@ def _build_turn_snapshot(
         if hasattr(answer, "model_dump")
         else dict(answer or {})
     )
+    attached_id_set = {
+        str(document_id).strip()
+        for document_id in (attached_document_ids or [])
+        if str(document_id).strip()
+    }
+    attached_documents = [
+        {
+            "document_id": document.document_id,
+            "original_filename": document.original_filename,
+            "document_type": document.document_type.value
+            if hasattr(document.document_type, "value")
+            else str(document.document_type),
+        }
+        for document in consultation.state.documents
+        if document.document_id in attached_id_set
+    ]
+
     snapshot = {
         "user_message": question,
+        "attached_documents": attached_documents,
         "answer": answer_data,
         "is_new_conversation": result.is_new_conversation,
         "applied_updates": [
@@ -373,10 +418,15 @@ def _persist_turn_snapshot(
     *,
     question: str,
     result: ChatbotTurnResult,
+    attached_document_ids: list[str] | None = None,
 ) -> ChatbotTurnResult:
     state = service.conversation_service.get_state(result.conversation_id)
     state.turn_history.append(
-        _build_turn_snapshot(question=question, result=result)
+        _build_turn_snapshot(
+            question=question,
+            result=result,
+            attached_document_ids=attached_document_ids,
+        )
     )
     stored = service.conversation_service.store.save(state)
 
@@ -490,7 +540,23 @@ async def handle_a_part_turn(
             raise APartAPIError(
                 status_code=422,
                 code="DOCUMENT_REQUIRED",
-                message="분석할 계약서 또는 등기부등본 PDF를 먼저 업로드해 주세요.",
+                message="분석할 임대차계약서 PDF를 먼저 업로드해 주세요.",
+                retryable=True,
+            )
+
+        is_first_turn = current_state is None or current_state.turn_count == 0
+        if (
+            is_first_turn
+            and not _is_owner_proxy_scenario(normalized_question)
+            and not _has_lease_contract(current_state)
+        ):
+            raise APartAPIError(
+                status_code=422,
+                code="UNSUPPORTED_DEMO_SCENARIO",
+                message=(
+                    "현재 A파트 데모는 집주인 가족·대리 계약 상담과 "
+                    "임대차계약서 PDF 검토 두 가지를 지원합니다."
+                ),
                 retryable=True,
             )
 
@@ -517,6 +583,7 @@ async def handle_a_part_turn(
             service,
             question=normalized_question,
             result=result,
+            attached_document_ids=request.attached_document_ids,
         )
         progress = _build_consultation_progress(result.consultation)
         next_question = (
@@ -611,12 +678,10 @@ async def upload_a_part_document(
     conversation_id: str,
     document_type: str = Form(...),
     file: UploadFile = File(...),
-    extract_text: bool = Query(default=True),
-    force_extraction: bool = Query(default=False),
     user=Depends(get_current_user),
     service: APartChatbotService = Depends(get_a_part_chatbot_service),
 ):
-    """계약서 또는 등기부등본 PDF를 저장하고 기본적으로 텍스트까지 추출한다."""
+    """계약서 또는 등기부등본 PDF를 분석 없이 첨부한다."""
 
     try:
         _assert_conversation_access(
@@ -656,20 +721,7 @@ async def upload_a_part_document(
             content_type=file.content_type,
             stream=file.file,
         )
-        extraction = None
-        if extract_text:
-            extraction = await _call(
-                service.document_service.extract_document,
-                conversation_id=conversation_id,
-                document_id=upload_result.document.document_id,
-                force=force_extraction,
-            )
-        return SuccessEnvelope(
-            data={
-                "upload": upload_result,
-                "extraction": extraction,
-            }
-        )
+        return SuccessEnvelope(data={"upload": upload_result})
     except Exception as error:
         if isinstance(error, APartAPIError):
             raise
@@ -721,65 +773,6 @@ async def delete_a_part_document(
             document_id=document_id,
         )
         return SuccessEnvelope(data=removed)
-    except Exception as error:
-        if isinstance(error, APartAPIError):
-            raise
-        raise translate_a_part_exception(error) from error
-
-
-@router.post(
-    "/conversations/{conversation_id}/documents/{document_id}/extract",
-    response_model=SuccessEnvelope,
-)
-async def extract_a_part_document(
-    conversation_id: str,
-    document_id: str,
-    force: bool = Query(default=False),
-    user=Depends(get_current_user),
-    service: APartChatbotService = Depends(get_a_part_chatbot_service),
-):
-    try:
-        _assert_conversation_access(
-            service,
-            conversation_id=conversation_id,
-            user_id=_user_id(user),
-        )
-        result = await _call(
-            service.document_service.extract_document,
-            conversation_id=conversation_id,
-            document_id=document_id,
-            force=force,
-        )
-        return SuccessEnvelope(data=result)
-    except Exception as error:
-        if isinstance(error, APartAPIError):
-            raise
-        raise translate_a_part_exception(error) from error
-
-
-@router.post(
-    "/conversations/{conversation_id}/documents/analyze",
-    response_model=SuccessEnvelope,
-)
-async def analyze_a_part_documents(
-    conversation_id: str,
-    request: AnalyzeDocumentsRequest,
-    user=Depends(get_current_user),
-    service: APartChatbotService = Depends(get_a_part_chatbot_service),
-):
-    try:
-        _assert_conversation_access(
-            service,
-            conversation_id=conversation_id,
-            user_id=_user_id(user),
-        )
-        result = await _call(
-            service.document_service.analyze_documents,
-            conversation_id=conversation_id,
-            document_ids=request.document_ids or None,
-            force=request.force,
-        )
-        return SuccessEnvelope(data=result)
     except Exception as error:
         if isinstance(error, APartAPIError):
             raise

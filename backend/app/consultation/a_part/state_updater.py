@@ -139,6 +139,20 @@ def extract_active_question_update(
         return None
     compact = re.sub(r"[^0-9a-z가-힣]", "", normalized.lower())
 
+    if (
+        slot_key == "lease_report_status"
+        and "신고대상" in compact
+        and any(marker in compact for marker in ("아니", "아님", "아닌"))
+    ):
+        return ExtractedSlotUpdate(
+            issue_id=issue_id,
+            slot_key=slot_key,
+            status=SlotStatus.NOT_APPLICABLE,
+            value=None,
+            evidence_text=normalized,
+            confidence=1.0,
+        )
+
     asks_for_value = any(
         marker in slot.question
         for marker in ("누구", "언제", "얼마", "무엇", "어디", "어떤", "어떻게")

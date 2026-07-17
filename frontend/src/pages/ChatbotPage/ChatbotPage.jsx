@@ -1,10 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { FiAlertCircle, FiCheckCircle, FiPaperclip } from 'react-icons/fi';
 import { RiShieldCheckLine } from 'react-icons/ri';
 
 import {
-  analyzeADocuments,
   createAConversation,
   deleteADocument,
   getAConversation,
@@ -16,6 +16,11 @@ import {
   sendATurn,
   uploadADocument,
 } from '../../api/chat/A/aApi.js';
+import {
+  createConversation as createStoredConversation,
+  loadConversation as loadStoredConversation,
+  saveConversationMessage,
+} from '../../api/chat/conversationsApi.js';
 import { ApiError } from '../../api/common/apiClient.js';
 import ChatComposer from '../../components/chat/ChatComposer/ChatComposer.jsx';
 import AssistantThinking from '../../components/chat/AssistantThinking/AssistantThinking.jsx';
@@ -29,6 +34,13 @@ import styles from './ChatbotPage.module.css';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
+const CONSULTATION_PARTS = Object.freeze({
+  'before-contract': 'a',
+  'during-contract': 'b',
+  'after-contract': 'c',
+  'jeonse-fraud': 'd',
+});
+
 const STARTER_GUIDES = Object.freeze({
   'before-contract': {
     eyebrow: '계약 전 상담',
@@ -37,8 +49,7 @@ const STARTER_GUIDES = Object.freeze({
       '현재 상황을 한 문장으로 알려 주세요. 필요한 확인 항목을 하나씩 묻고, 마지막에 확인 결과와 다음 행동을 정리해 드립니다.',
     examples: [
       '집주인 가족이 대신 계약하러 왔어요.',
-      '공동명의인데 소유자 한 명만 계약하러 왔어요.',
-      '계약금을 다른 사람 계좌로 보내라고 해요.',
+      '임대차계약서 이상 없는지 확인해줘',
     ],
   },
   'during-contract': {
@@ -49,7 +60,6 @@ const STARTER_GUIDES = Object.freeze({
     examples: [
       '계약서 금액과 설명받은 금액이 달라요.',
       '특약에 불리한 내용이 있는지 확인하고 싶어요.',
-      '계약금을 지금 바로 보내도 되는지 궁금해요.',
     ],
   },
   'after-contract': {
@@ -60,7 +70,6 @@ const STARTER_GUIDES = Object.freeze({
     examples: [
       '계약 후 가장 먼저 해야 할 일이 무엇인가요?',
       '전입신고와 확정일자는 언제 해야 하나요?',
-      '계약 후 집주인이 바뀌었다고 연락이 왔어요.',
     ],
   },
   'jeonse-fraud': {
@@ -71,10 +80,17 @@ const STARTER_GUIDES = Object.freeze({
     examples: [
       '계약 직전에 계좌를 바꿔 달라고 해요.',
       '등기부에 근저당이 많은데 계약해도 되나요?',
-      '보증보험 가입이 어렵다고 들었어요.',
     ],
   },
 });
+
+
+function getUserMessageText(content) {
+  if (content && typeof content === 'object') {
+    return String(content.text || '').trim();
+  }
+  return String(content || '').trim();
+}
 
 function createPendingFile(file) {
   const loweredName = file.name.toLowerCase();
@@ -199,12 +215,15 @@ function buildAThinkingItems(messages) {
     return required;
   }
 
-  return inferInitialAReviewItems(lastUserMessage?.content);
+  return inferInitialAReviewItems(getUserMessageText(lastUserMessage?.content));
 }
 
 function ChatbotPage({ consultationType }) {
   const messagesEndRef = useRef(null);
+  const entryResetKeyRef = useRef('');
+  const entryResetPendingRef = useRef(false);
   const localMessageSequenceRef = useRef(0);
+  const location = useLocation();
   const config = CHATBOT_CATEGORIES[consultationType];
   const starterGuide = STARTER_GUIDES[consultationType] || STARTER_GUIDES['before-contract'];
   const AssistantAnswer = CHATBOT_ANSWER_COMPONENTS[consultationType];
@@ -213,22 +232,24 @@ function ChatbotPage({ consultationType }) {
     activeAConversationId,
     newConversationVersion,
     activateAConversation,
+    startNewAConversation,
     notifyAConversationSaved,
+    notifyConversationSaved,
   } = useChatConversation();
   const [input, setInput] = useState('');
   const [messagesByType, setMessagesByType] = useState(createEmptyConversations);
   const [conversationIds, setConversationIds] = useState({});
   const [documents, setDocuments] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [pendingDocumentIds, setPendingDocumentIds] = useState([]);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [attachDocumentAnalysisNextTurn, setAttachDocumentAnalysisNextTurn] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const messages = messagesByType[consultationType] ?? [];
-  const isBusy = isLoading || isUploading || isAnalyzing;
+  const isBusy = isLoading || isUploading;
   const currentConversationId = conversationIds[consultationType] || null;
   const aThinkingItems = isAPart ? buildAThinkingItems(messages) : [];
   const latestAssistantIndex = messages.reduce(
@@ -242,8 +263,55 @@ function ChatbotPage({ consultationType }) {
     ? latestAssistantAnswer?.consultationProgress || null
     : null;
 
+
   useEffect(() => {
     if (!isAPart) {
+      return;
+    }
+
+    const entryKey = `${consultationType}:${location.key}`;
+    if (entryResetKeyRef.current === entryKey) {
+      return;
+    }
+
+    const requestedConversationId = String(location.state?.conversationId || '').trim();
+    const requestedPart = String(location.state?.conversationPart || '').trim();
+
+    entryResetKeyRef.current = entryKey;
+    setMessagesByType((current) => ({ ...current, [consultationType]: [] }));
+    setConversationIds((current) => ({ ...current, [consultationType]: null }));
+    setDocuments([]);
+    setPendingDocumentIds([]);
+    setAttachDocumentAnalysisNextTurn(false);
+    setError('');
+    setNotice('');
+
+    if (requestedConversationId && (!requestedPart || requestedPart === 'a')) {
+      entryResetPendingRef.current = false;
+      activateAConversation(requestedConversationId);
+      return;
+    }
+
+    entryResetPendingRef.current = true;
+    startNewAConversation();
+  }, [
+    activateAConversation,
+    consultationType,
+    isAPart,
+    location.key,
+    location.state,
+    startNewAConversation,
+  ]);
+
+  useEffect(() => {
+    if (!isAPart) {
+      return undefined;
+    }
+
+    if (entryResetPendingRef.current) {
+      if (!activeAConversationId) {
+        entryResetPendingRef.current = false;
+      }
       return undefined;
     }
 
@@ -254,6 +322,7 @@ function ChatbotPage({ consultationType }) {
         setMessagesByType((current) => ({ ...current, [consultationType]: [] }));
         setConversationIds((current) => ({ ...current, [consultationType]: null }));
         setDocuments([]);
+        setPendingDocumentIds([]);
         setAttachDocumentAnalysisNextTurn(false);
         setError('');
         setNotice('');
@@ -278,6 +347,7 @@ function ChatbotPage({ consultationType }) {
           [consultationType]: String(state.conversation_id),
         }));
         setDocuments(normalizeADocumentList(state.documents || []));
+        setPendingDocumentIds([]);
         setAttachDocumentAnalysisNextTurn(false);
         setError('');
       } catch (requestError) {
@@ -298,6 +368,55 @@ function ChatbotPage({ consultationType }) {
     isAPart,
     newConversationVersion,
   ]);
+
+  useEffect(() => {
+    if (isAPart) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const requestedConversationId = String(location.state?.conversationId || '').trim();
+
+    const restoreStoredConversation = async () => {
+      if (!requestedConversationId) {
+        setMessagesByType((current) => ({ ...current, [consultationType]: [] }));
+        setConversationIds((current) => ({ ...current, [consultationType]: null }));
+        setError('');
+        setNotice('');
+        return;
+      }
+
+      try {
+        const storedMessages = await loadStoredConversation(requestedConversationId);
+        if (cancelled) {
+          return;
+        }
+        setMessagesByType((current) => ({
+          ...current,
+          [consultationType]: storedMessages.map((message) => ({
+            id: `stored-${message.id}`,
+            role: message.role,
+            content: message.content,
+          })),
+        }));
+        setConversationIds((current) => ({
+          ...current,
+          [consultationType]: requestedConversationId,
+        }));
+        setError('');
+        setNotice('');
+      } catch (requestError) {
+        if (!cancelled) {
+          setError(getErrorMessage(requestError, '저장된 대화를 불러오지 못했습니다.'));
+        }
+      }
+    };
+
+    restoreStoredConversation();
+    return () => {
+      cancelled = true;
+    };
+  }, [consultationType, isAPart, location.key, location.state]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -332,6 +451,21 @@ function ChatbotPage({ consultationType }) {
     return created.conversation_id;
   };
 
+  const ensureStoredConversation = async (title) => {
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+
+    const part = CONSULTATION_PARTS[consultationType];
+    const created = await createStoredConversation({
+      part,
+      title: String(title || '').trim().slice(0, 80) || `새 ${config.title}`,
+    });
+    saveConversationId(created.conversation_id);
+    await notifyConversationSaved();
+    return created.conversation_id;
+  };
+
   const refreshDocuments = async (conversationId) => {
     const response = await listADocuments(conversationId);
     const nextDocuments = normalizeADocumentList(response);
@@ -346,13 +480,27 @@ function ChatbotPage({ consultationType }) {
       return;
     }
 
+    const attachedDocuments = isAPart
+      ? documents.filter((document) => pendingDocumentIds.includes(document.document_id))
+      : [];
+
     localMessageSequenceRef.current += 1;
     const messageKey = `local-${localMessageSequenceRef.current}`;
-    appendMessages({ id: `${messageKey}-user`, role: 'user', content: question });
+    appendMessages({
+      id: `${messageKey}-user`,
+      role: 'user',
+      content: attachedDocuments.length
+        ? { text: question, attachments: attachedDocuments }
+        : question,
+    });
     setInput('');
     setError('');
     setNotice('');
     setIsLoading(true);
+    if (attachedDocuments.length > 0) {
+      setPendingDocumentIds([]);
+      setAttachDocumentAnalysisNextTurn(false);
+    }
 
     try {
       if (isAPart) {
@@ -360,16 +508,13 @@ function ChatbotPage({ consultationType }) {
           question,
           conversationId: currentConversationId,
           documentIds: documents.map((document) => document.document_id),
-          analyzeDocuments: documents.length > 0 && attachDocumentAnalysisNextTurn,
+          attachedDocumentIds: attachedDocuments.map((document) => document.document_id),
+          analyzeDocuments: attachedDocuments.length > 0 && attachDocumentAnalysisNextTurn,
           forceDocumentAnalysis: false,
         });
 
         saveConversationId(result.conversation_id);
-        notifyAConversationSaved(result.conversation_id);
-        if (attachDocumentAnalysisNextTurn) {
-          setAttachDocumentAnalysisNextTurn(false);
-        }
-
+        await notifyAConversationSaved(result.conversation_id);
         if (result.consultation?.state?.documents) {
           setDocuments(normalizeADocumentList(result.consultation.state.documents));
         }
@@ -380,13 +525,41 @@ function ChatbotPage({ consultationType }) {
           content: mapATurnToAnswer(result),
         });
       } else {
+        const part = CONSULTATION_PARTS[consultationType];
+        const storedConversationId = await ensureStoredConversation(question);
+        await saveConversationMessage({
+          conversationId: storedConversationId,
+          part,
+          role: 'user',
+          content: question,
+        });
+
         appendMessages({
           id: `${messageKey}-assistant`,
           role: 'assistant',
           content: config.reply,
         });
+
+        await saveConversationMessage({
+          conversationId: storedConversationId,
+          part,
+          role: 'assistant',
+          content: config.reply,
+        });
+        await notifyConversationSaved();
       }
     } catch (requestError) {
+      setMessagesByType((current) => ({
+        ...current,
+        [consultationType]: (current[consultationType] ?? []).filter(
+          (message) => message.id !== `${messageKey}-user`,
+        ),
+      }));
+      setInput(question);
+      if (attachedDocuments.length > 0) {
+        setPendingDocumentIds(attachedDocuments.map((document) => document.document_id));
+        setAttachDocumentAnalysisNextTurn(true);
+      }
       setError(getErrorMessage(requestError, '상담 답변을 불러오지 못했습니다.'));
     } finally {
       setIsLoading(false);
@@ -451,22 +624,20 @@ function ChatbotPage({ consultationType }) {
     setNotice('');
 
     let conversationId = currentConversationId;
-    const uploadedDocuments = [];
 
     try {
       conversationId = await ensureAConversation();
+      const uploadedDocumentIds = [];
 
       for (const item of pendingFiles) {
         const uploadResult = await uploadADocument({
           conversationId,
           file: item.file,
           documentType: item.documentType,
-          extractText: true,
-          forceExtraction: false,
         });
         const uploaded = getUploadedADocument(uploadResult);
         if (uploaded) {
-          uploadedDocuments.push(uploaded);
+          uploadedDocumentIds.push(uploaded.document_id);
           setDocuments((current) => [
             ...current.filter((document) => document.document_id !== uploaded.document_id),
             uploaded,
@@ -476,21 +647,14 @@ function ChatbotPage({ consultationType }) {
 
       setIsUploadDialogOpen(false);
       setPendingFiles([]);
-      setIsAnalyzing(true);
 
-      await analyzeADocuments({
-        conversationId,
-        documentIds: [],
-        force: false,
-      });
-
-      const refreshed = await refreshDocuments(conversationId);
-      setAttachDocumentAnalysisNextTurn(true);
-      setNotice(
-        `${refreshed.length || uploadedDocuments.length}개 문서의 업로드와 분석이 완료됐습니다. 이제 문서에 대해 질문해 주세요.`,
-      );
+      await refreshDocuments(conversationId);
+      setPendingDocumentIds((current) => [
+        ...new Set([...current, ...uploadedDocumentIds]),
+      ]);
+      setAttachDocumentAnalysisNextTurn(uploadedDocumentIds.length > 0);
     } catch (requestError) {
-      setError(getErrorMessage(requestError, '문서를 업로드하거나 분석하지 못했습니다.'));
+      setError(getErrorMessage(requestError, '문서를 업로드하지 못했습니다.'));
 
       if (conversationId) {
         try {
@@ -502,32 +666,6 @@ function ChatbotPage({ consultationType }) {
 
     } finally {
       setIsUploading(false);
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleAnalyzeDocuments = async () => {
-    if (!currentConversationId || !documents.length || isBusy) {
-      return;
-    }
-
-    setIsAnalyzing(true);
-    setError('');
-    setNotice('');
-
-    try {
-      await analyzeADocuments({
-        conversationId: currentConversationId,
-        documentIds: documents.map((document) => document.document_id),
-        force: true,
-      });
-      await refreshDocuments(currentConversationId);
-      setAttachDocumentAnalysisNextTurn(true);
-      setNotice('첨부 문서를 다시 분석했습니다. 다음 질문 한 번에 최신 분석 결과를 연결합니다.');
-    } catch (requestError) {
-      setError(getErrorMessage(requestError, '문서를 다시 분석하지 못했습니다.'));
-    } finally {
-      setIsAnalyzing(false);
     }
   };
 
@@ -546,6 +684,7 @@ function ChatbotPage({ consultationType }) {
         documentId,
       });
       const refreshed = await refreshDocuments(currentConversationId);
+      setPendingDocumentIds((current) => current.filter((id) => id !== documentId));
       if (!refreshed.length) {
         setAttachDocumentAnalysisNextTurn(false);
       }
@@ -566,18 +705,29 @@ function ChatbotPage({ consultationType }) {
       <section className={styles.messages} aria-live="polite">
         {messages.length === 0 && !isLoading && (
           <section className={styles.emptyState}>
-            <span className={styles.emptyStateIcon} aria-hidden="true">
-              <RiShieldCheckLine />
-            </span>
-            <p className={styles.emptyStateEyebrow}>{starterGuide.eyebrow}</p>
-            <h1>{starterGuide.title}</h1>
-            <p className={styles.emptyStateDescription}>{starterGuide.description}</p>
+            <div className={styles.emptyStateIntro}>
+              <span className={styles.emptyStateIcon} aria-hidden="true">
+                <RiShieldCheckLine />
+              </span>
+              <div className={styles.emptyStateCopy}>
+                <p className={styles.emptyStateEyebrow}>{starterGuide.eyebrow}</p>
+                <h1>{starterGuide.title}</h1>
+                <p className={styles.emptyStateDescription}>{starterGuide.description}</p>
+              </div>
+            </div>
             <div className={styles.exampleQuestions} aria-label="예시 질문">
               {starterGuide.examples.map((example) => (
                 <button
                   type="button"
                   key={example}
-                  onClick={() => submitQuestion(example)}
+                  onClick={() => {
+                    if (isAPart && example === '임대차계약서 이상 없는지 확인해줘') {
+                      setInput(example);
+                      setNotice('임대차계약서 PDF를 먼저 첨부해 주세요.');
+                      return;
+                    }
+                    submitQuestion(example);
+                  }}
                   disabled={isBusy}
                 >
                   {example}
@@ -612,7 +762,7 @@ function ChatbotPage({ consultationType }) {
             ? {
                 ...message.content,
                 displayMode: 'completed-question',
-                completedAnswer: completedAnswerMessage?.content || '',
+                completedAnswer: getUserMessageText(completedAnswerMessage?.content),
                 completedResult,
               }
             : message.content;
@@ -657,9 +807,10 @@ function ChatbotPage({ consultationType }) {
       <section className={styles.composerDock}>
         {isAPart && (
           <DocumentAttachmentList
-            documents={documents}
+            documents={documents.filter((document) =>
+              pendingDocumentIds.includes(document.document_id),
+            )}
             onDelete={handleDeleteDocument}
-            onAnalyze={handleAnalyzeDocuments}
             isBusy={isBusy}
           />
         )}
@@ -668,14 +819,8 @@ function ChatbotPage({ consultationType }) {
           onChange={(event) => setInput(event.target.value)}
           onSubmit={handleSubmit}
           onFilesSelected={handleFilesSelected}
-          placeholder={
-            isAnalyzing
-              ? '문서를 분석하고 있습니다.'
-              : isUploading
-                ? '문서를 업로드하고 있습니다.'
-                : config.prompt
-          }
-          isLoading={isBusy}
+          placeholder={config.prompt}
+          isLoading={isLoading}
           fileButtonDisabled={isBusy}
         />
       </section>
