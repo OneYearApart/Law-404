@@ -385,3 +385,55 @@
     transition: none;
   }
 }
+
+.cDocBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  margin-bottom: var(--space-10, 10px);
+}
+.cDocEnterButton,
+.cDocImageButton,
+.cDocExitButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6, 6px);
+  padding: var(--space-8, 8px) var(--space-14, 14px);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-medium, 8px);
+  border: var(--border-width, 1px) solid var(--color-border-strong, #dbe4ff);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.cDocEnterButton {
+  color: var(--color-white, #fff);
+  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+}
+.cDocEnterButton:hover {
+  filter: brightness(1.05);
+}
+.cDocImageButton {
+  color: var(--color-primary, #2563eb);
+  background: var(--color-sky-blue, #eef4ff);
+}
+.cDocExitButton {
+  color: var(--color-text-secondary, #64748b);
+  background: transparent;
+}
+.cDocBadge {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-deep-blue, #1d4ed8);
+  background: var(--color-sky-blue, #eef4ff);
+  padding: var(--space-4, 4px) var(--space-10, 10px);
+  border-radius: 999px;
+}
+.cDocEnterButton:disabled,
+.cDocImageButton:disabled,
+.cDocExitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
