@@ -58,6 +58,18 @@ GENERAL_TOPIC_LABELS: dict[str, str] = {
 
 SPECIAL_CASE_CATEGORIES: tuple[str, ...] = ("임대인 사망/파산", "신탁사기", "다가구주택", "공인중개사 허위고지")
 
+# supervisor가 판별하는 위험신호 6종. prompts/supervisor.md에 산문으로만 있던 목록을
+# 키로 고정한 것 — SituationState.risk_signals의 어휘이자 supervisor tool의 enum이라,
+# 여기서 한 번만 정의해야 프롬프트·스키마·라우팅이 같은 값을 두고 판단한다.
+RISK_SIGNALS: tuple[str, ...] = (
+    "경공매개시",        # 경매/공매 개시 통지를 받음
+    "보증금미반환",      # 보증금을 돌려받지 못하고 있음
+    "임대인연락두절",    # 임대인과 연락이 안 됨
+    "임대인사망파산",    # 임대인 사망/파산 소식
+    "소유권변동",        # 경매낙찰·명의이전 등 소유권 변동을 알게 됨
+    "다수피해",          # 같은 집주인에게 다른 세입자도 피해
+)
+
 # supervisor가 분류하는 특수상황 4종 → search_by_topic이 조회할 topic_tag 키 매핑(작업단위 49).
 # 키는 links_d.py TOPIC_TAG_KEYWORDS와 정확히 일치해야 한다(§4대로 4종 전부 판례/HUG 태그 보유).
 SPECIAL_CASE_TOPIC_TAGS: dict[str, str] = {
@@ -89,11 +101,35 @@ VICTIM_SLOT_LABELS = {
 }
 
 
+class SituationState(BaseModel):
+    """supervisor가 매 턴 갱신하는 '사용자가 지금 어떤 상황인가'의 단일 진실원천.
+
+    도메인의 축(인지여부·계약단계·위험신호·topic·특수상황)을 1급 필드로 둔다. 예전에는
+    이 축들이 카테고리 enum 하나(route_target/*_matched)로 압축돼 있어, 축이 상충하는
+    발화에서 정보가 손실되고 부가기능이 "어느 노드가 실행됐나"에 묶였다.
+    특히 recognized와 topic이 별개 필드라, 한 축이 다른 축을 덮어쓸 자리가 구조적으로 없다.
+
+    축은 실제로 라우팅이나 부가기능을 gate하는 것만 넣는다 — 소비처 없는 축은 넣지 않는다.
+    (그게 stage가 write-only dead code가 된 이유다.)
+
+    interview_active(victim_check 인터뷰 진행 중인지)는 여기 두지 않는다. victim_flow_closed·
+    awaiting_relief_confirmation·슬롯 진행 여부에서 파생되는 값이라 저장하면 진실원천이 둘이
+    된다. 그 파생 로직은 supervisor._in_progress_route가 이미 갖고 있다.
+    """
+    recognized: Optional[bool] = None       # 피해자로 인정받은 상태인지 — topic과 독립적으로 판별
+    stage: Optional[Stage] = None            # 계약 단계(전/중/후)
+    risk_signals: list[str] = Field(default_factory=list)   # RISK_SIGNALS 부분집합
+    topic: Optional[str] = None               # GENERAL_TOPIC_LABELS 키 | None
+    special_case: Optional[str] = None         # SPECIAL_CASE_CATEGORIES 중 하나 | None
+
+
 class DPartGraphState(TypedDict, total=False):
     """LangGraph 1회 실행 동안만 유효한 전체 상태. 턴 종료 시 폐기되며,
     다음 턴으로 넘겨야 하는 부분집합만 DPartSessionState로 골라 영속화합니다.
     """
     user_input: str                                # 이번 턴 사용자 발화 원문 — 매 턴 새로 옴, carryover 아님
+    situation: Optional[SituationState]               # supervisor가 매 턴 갱신하는 상황모델 — 축별 1급 상태.
+                                                         # 라우팅·부가기능이 참조할 단일 진실원천. carryover 대상
     active_query: Optional[str]                       # 확인 게이트 대기 중 스택된 "실질적 질문" 원문.
                                                          # 게이트를 소유한 노드(현재는 stage_router)가 생애주기를
                                                          # 관리하며, 그 외 노드는 get_active_query()로만 읽는다
@@ -144,6 +180,7 @@ class DPartSessionState(BaseModel):
     stage: Optional[Stage] = None
     active_query: Optional[str] = None
     persona: Optional[str] = None
+    situation: Optional[SituationState] = None
     victim_slots: VictimRequirementSlots = Field(default_factory=VictimRequirementSlots)
     victim_judgment: Optional[VictimJudgment] = None
     victim_fallback: bool = False
