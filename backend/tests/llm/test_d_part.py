@@ -9,6 +9,7 @@ import httpx
 import pytest
 from openai import APIError, BadRequestError, RateLimitError
 
+from app.graph.parts.d_part.schemas import SlotStatus, VictimSlotExtraction
 from app.llm import d_part
 
 
@@ -31,43 +32,73 @@ async def _no_sleep(_seconds):
     return None
 
 
+def _parsed_response(model):
+    """chat.completions.parse가 돌려주는 응답 흉내 — .message.parsed에 pydantic 인스턴스가 온다."""
+    return SimpleNamespace(
+        choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(parsed=model, refusal=None))]
+    )
+
+
 @pytest.mark.asyncio
 async def test_call_victim_check_includes_existing_slots_in_prompt(monkeypatch):
     captured = {}
 
-    async def _fake_call_llm(prompt: str) -> str:
-        captured["prompt"] = prompt
-        payload = {
-            "moved_in_and_fixed_date": "filled",
-            "deposit_under_limit": "unclear",
-            "multiple_victims": "unclear",
-            "no_intent_to_return": "unclear",
-            "multiple_victims_reason": None,
-        }
-        return json.dumps(payload, ensure_ascii=False)
+    async def _fake_parse(**kwargs):
+        captured.update(kwargs)
+        return _parsed_response(
+            VictimSlotExtraction(
+                moved_in_and_fixed_date=SlotStatus.FILLED,
+                deposit_under_limit=SlotStatus.UNCLEAR,
+                multiple_victims=SlotStatus.UNCLEAR,
+                no_intent_to_return=SlotStatus.UNCLEAR,
+            )
+        )
 
-    monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
+    monkeypatch.setattr(d_part._client.chat.completions, "parse", _fake_parse)
     existing = {"moved_in_and_fixed_date": "unclear"}
 
     result = await d_part.call_victim_check("전입신고 했어요", existing_slots=existing)
 
     assert result["moved_in_and_fixed_date"] == "filled"
-    assert "existing_slots" in captured["prompt"]
-    assert "moved_in_and_fixed_date" in captured["prompt"]
+    prompt = captured["messages"][0]["content"]
+    assert "existing_slots" in prompt
+    assert "moved_in_and_fixed_date" in prompt
+    # 스키마를 API에 강제한다 — 응답 형태를 텍스트로 파싱하던 경로를 대체한 지점
+    assert captured["response_format"] is VictimSlotExtraction
 
 
 @pytest.mark.asyncio
-async def test_call_structured_strips_markdown_code_fence(monkeypatch):
-    """GPT-4o가 실제로 ```json ... ``` 코드펜스로 감싸서 응답하는 경우가 있음(라이브 확인, 2026-07-11)."""
+async def test_call_victim_check_raises_when_parse_returns_nothing(monkeypatch):
+    """거절이나 length 소진이면 .parsed가 None으로 온다. 예전 경로는 json.loads가 터졌지만
+    이제는 무엇이 실패했는지 드러나는 예외로 끊는다."""
 
-    async def _fake_call_llm(prompt: str) -> str:
-        return '```json\n{"moved_in_and_fixed_date": "filled"}\n```'
+    async def _fake_parse(**kwargs):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(finish_reason="length", message=SimpleNamespace(parsed=None, refusal=None))]
+        )
 
-    monkeypatch.setattr(d_part, "_call_llm", _fake_call_llm)
+    monkeypatch.setattr(d_part._client.chat.completions, "parse", _fake_parse)
+    monkeypatch.setattr(d_part.asyncio, "sleep", _no_sleep)
 
-    result = await d_part.call_victim_check("전입신고 했어요", existing_slots={})
+    with pytest.raises(d_part.ToolCallMissing):
+        await d_part.call_victim_check("전입신고 했어요", existing_slots={})
 
-    assert result == {"moved_in_and_fixed_date": "filled"}
+
+@pytest.mark.asyncio
+async def test_query_expansion_strips_markdown_code_fence(monkeypatch):
+    """모델이 실제로 코드펜스로 감싸서 응답하는 경우가 있음(라이브 확인, 2026-07-11).
+
+    구조화 추출은 strict json_schema로 옮겨가 이 방어가 필요 없어졌지만, 확장 질의는 형태 없는
+    산문이라 스키마를 씌울 수 없어 여전히 이 경로를 탄다. 방어가 살아있는 한 테스트도 남는다."""
+
+    async def _fake_create(**kwargs):
+        return _fake_stream(["```\n", "주택임대차보호법 대항력 우선변제권", "\n```"])
+
+    monkeypatch.setattr(d_part._client.chat.completions, "create", _fake_create)
+
+    result = await d_part.call_query_expansion("이사 나가도 보증금 받을 수 있나요")
+
+    assert result == "주택임대차보호법 대항력 우선변제권"
 
 
 def _tool_call_response(arguments: dict):

@@ -17,11 +17,12 @@ generate_response가 레포에서 유일한 진짜 토큰 스트리밍 경로라
 하고, 골든셋으로 확보한 지표(라우팅 78건·판정 8시나리오)를 걸 만한 이득이 아니다.
 나중에 A·B와 정렬할 일이 생기면 다시 꺼낼 것.
 
-_call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환하고, 각 노드가 필요로 하는
-구조화된 값(enum/슬롯 등)은 이 파일에서 그 텍스트를 JSON으로 파싱해 반환한다
-(_call_structured). supervisor 분류처럼 카테고리를 스키마로 강제해야 하는 경우는
-OpenAI tool calling을 쓰는 _call_tool을 대신 쓴다. 실제 enum/pydantic 모델로의
-변환은 호출하는 노드 쪽 책임이다.
+구조화된 값을 받는 경로는 둘이다. 슬롯 추출처럼 형태가 정해진 값은 strict json_schema를 쓰는
+_call_parsed로, supervisor 분류처럼 카테고리를 enum으로 강제해야 하는 값은 tool calling을 쓰는
+_call_tool로 받는다. 둘 다 형태를 API가 보장하므로 응답을 텍스트로 파싱하지 않는다.
+
+_call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환한다 — 이제 형태가 없는 산문을 받는
+call_query_expansion 전용이다. 실제 enum/pydantic 모델로의 변환은 호출하는 노드 쪽 책임이다.
 """
 import asyncio
 import json
@@ -30,12 +31,14 @@ from typing import AsyncGenerator
 
 from langsmith.wrappers import wrap_openai
 from openai import APIError, APIStatusError, AsyncOpenAI, LengthFinishReasonError, RateLimitError
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.graph.parts.d_part.schemas import (
     GENERAL_TOPIC_LABELS,
     RISK_SIGNALS,
     SPECIAL_CASE_CATEGORIES,
+    VictimSlotExtraction,
 )
 
 MODEL = "gpt-4o"
@@ -81,6 +84,8 @@ def _is_retryable(exc: Exception) -> bool:
     if isinstance(exc, APIStatusError):
         return exc.status_code >= 500
     return True  # 연결/타임아웃 등 전송 계층 실패와 ToolCallMissing은 재시도 대상
+
+
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
 
 # supervisor는 카테고리 하나가 아니라 상황의 축을 각각 판별한다(SituationState). 예전엔 축들이
@@ -171,9 +176,14 @@ async def _call_llm(prompt: str) -> str:
 
 
 def _strip_code_fence(text: str) -> str:
-    """GPT-4o가 JSON을 ```json ... ``` 코드펜스로 감싸서 반환하는 경우가 있어 벗겨낸다
-    (실제 라이브 호출에서 확인된 동작 — monkeypatch 테스트는 순수 JSON 문자열만 흉내내
-    이 문제를 못 잡았음, 2026-07-11)."""
+    """모델이 응답을 ```...``` 코드펜스로 감싸서 반환하는 경우가 있어 벗겨낸다
+    (실제 라이브 호출에서 확인된 동작 — monkeypatch 테스트는 순수 문자열만 흉내내
+    이 문제를 못 잡았음, 2026-07-11).
+
+    이제 call_query_expansion 전용이다. 구조화 추출(call_victim_check)은 strict json_schema로
+    옮겨가 형태를 API가 보장하므로 이 방어가 필요 없어졌다. 확장 질의는 한 줄 산문이라
+    스키마를 씌울 이유가 없어 여기 남는다.
+    """
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text.removeprefix("```")
@@ -181,10 +191,46 @@ def _strip_code_fence(text: str) -> str:
     return text
 
 
-async def _call_structured(prompt_name: str, **kwargs) -> dict:
+async def _call_parsed(prompt_name: str, schema: type[BaseModel], **kwargs) -> dict:
+    """스키마가 곧 계약인 구조화 추출.
+
+    예전 _call_structured는 산문 JSON을 받아 코드펜스를 벗기고 json.loads로 파싱했다.
+    모델이 형식을 어기면 그대로 터졌고, 키를 빼먹으면 호출부가 KeyError를 냈다. strict
+    json_schema로 옮기면 그 분기 자체가 사라진다 — 형태를 API가 보장한다.
+
+    스트리밍을 쓰지 않는다. 이 경로는 어차피 전체를 모아 파싱했고(_call_llm이 join),
+    사용자에게 첫 토큰이 노출되지 않는 내부 호출이라 스트리밍이 아무 값도 주지 않았다.
+    진짜 토큰 스트리밍이 필요한 건 generate_response 하나뿐이다.
+
+    반환을 모델이 아니라 dict로 두는 건 호출부 계약을 유지하기 위해서다 — 노드와 테스트가
+    call_victim_check의 dict 반환에 맞춰져 있다.
+
+    ⚠️ 이 경로를 타면 "PydanticSerializationUnexpectedValue ... field_name='parsed'" 경고가
+    한 줄 뜬다. 우리 코드가 아니라 wrap_openai가 ParsedChatCompletion을 직렬화하면서 내는
+    것이고(순수 AsyncOpenAI로는 0건, 래핑하면 1건 — 2026-07-19 격리 확인),
+    LANGSMITH_TRACING과 무관하게 뜬다. 파싱된 값 자체는 정상이라 동작에 영향이 없다.
+    """
     prompt = _render_prompt(prompt_name, **kwargs)
-    raw = await _call_llm(prompt)
-    return json.loads(_strip_code_fence(raw))
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = await _client.chat.completions.parse(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=STRUCTURED_TEMPERATURE,
+                response_format=schema,
+            )
+            choice = response.choices[0]
+            if choice.message.parsed is None:
+                raise ToolCallMissing(
+                    f"{schema.__name__}: finish_reason={choice.finish_reason}, "
+                    f"refusal={choice.message.refusal!r}"
+                )
+            return choice.message.parsed.model_dump(mode="json")
+        except (ToolCallMissing, APIError, LengthFinishReasonError) as exc:
+            if attempt == MAX_RETRIES - 1 or not _is_retryable(exc):
+                raise
+            await asyncio.sleep(2**attempt)
+    raise RuntimeError(f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다")
 
 
 async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs) -> dict:
@@ -220,8 +266,9 @@ async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs)
 
 
 async def call_victim_check(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
-    return await _call_structured(
+    return await _call_parsed(
         "victim_check",
+        VictimSlotExtraction,
         user_input=user_input,
         existing_slots=existing_slots,
         pending_question=pending_question or "(없음 — 사용자가 먼저 상황을 서술한 턴)",

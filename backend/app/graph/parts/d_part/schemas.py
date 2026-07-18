@@ -101,6 +101,32 @@ class VictimRequirementSlots(BaseModel):
     has_relief_measure: Optional[bool] = None                      # 구제수단보유여부 — true면 판단 결과를 "제외"로 덮어씀. 자유서술 추론 금지, 명시 확인질문 필수
 
 
+class VictimSlotExtraction(BaseModel):
+    """call_victim_check가 LLM에게서 받는 "이번 턴 발화에서 새로 확인된 것".
+
+    위 VictimRequirementSlots(턴을 넘어 누적되는 상태)와 일부러 분리한다. 두 가지 이유다.
+
+    1. **has_relief_measure가 여기 있으면 안 된다.** OpenAI strict schema는 모든 property를
+       required로 만들기 때문에(SDK가 자동 주입), 누적 모델을 그대로 응답 스키마로 쓰면 모델이
+       매 턴 이 값을 채우게 된다. 그런데 이 필드가 true면 판정이 "지원대상 제외"로 덮이므로
+       (victim_check._EXCLUSION_MESSAGE), 자유서술 추론으로 채워지는 순간 실제 피해자가 부당
+       제외된다. 이 값은 _RELIEF_QUESTION에 대한 사용자의 명시적 예/아니오로만 채워져야 한다.
+    2. **4개 슬롯의 nullability가 반대다.** 누적 모델의 None은 "아직 안 물어봄"이라는 초기값이지만
+       추출 응답에는 그런 값이 없다 — 프롬프트가 "판정 못한 슬롯은 unclear로 표기"라 지시하고
+       _extract_slots가 4개 키를 무조건 인덱싱한다. non-Optional이어야 그 계약이 타입에 드러난다.
+
+    auction_completed만 Optional로 둔다. "언급 없음(null)"과 "완료 안 됨(false)"이 의미상 다르다고
+    프롬프트가 명시하기 때문이다. strict에서는 anyOf[boolean, null] + required로 나가고
+    (SDK가 default:null을 떼어준다) 모델은 키를 항상 내되 값으로 null을 넣는다.
+    """
+    moved_in_and_fixed_date: SlotStatus
+    deposit_under_limit: SlotStatus
+    multiple_victims: SlotStatus
+    no_intent_to_return: SlotStatus
+    multiple_victims_reason: Optional[str] = None
+    auction_completed: Optional[bool] = None
+
+
 # 요건 슬롯의 사람이 읽는 이름. LLM 컨텍스트에 필드명(moved_in_and_fixed_date 등)을 그대로
 # 넘기면 모델이 그 영문 키를 답변에 그대로 옮겨 적는다 — 사용자에게 내부 변수명이 노출된다.
 VICTIM_SLOT_LABELS = {
