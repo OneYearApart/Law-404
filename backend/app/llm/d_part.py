@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 from typing import AsyncGenerator
 
+from langsmith.wrappers import wrap_openai
 from openai import APIError, AsyncOpenAI, RateLimitError
 
 from app.core.config import settings
@@ -33,8 +34,18 @@ MODEL = "gpt-4o"
 # 더 싼 모델을 쓴다. 단위 21′에서 로컬모델(EXAONE)로 스왑 검토 예정.
 CONFIRMATION_MODEL = "gpt-4o-mini"
 MAX_RETRIES = 3
+# 분류·구조화 추출 경로의 샘플링 온도. 지정하지 않으면 OpenAI 기본값 1.0이 걸려 같은 발화가
+# 실행마다 다른 축으로 분류된다 — 라우팅 골든셋 42건을 같은 코드로 4회 돌렸을 때 경로 정확도가
+# 92.9~97.6%로 흔들렸고(2026-07-19 실측), 이 산포가 개선 1건의 효과(2.4%p)와 같은 크기라
+# 무엇을 고쳐도 효과를 노이즈와 구분할 수 없었다. enum으로 제약된 분류에 샘플링을 걸 이유가
+# 없으므로 0으로 고정한다. 답변 산문 생성(generate_response)에는 적용하지 않는다.
+STRUCTURED_TEMPERATURE = 0.0
 
-_client = AsyncOpenAI(api_key=settings.openai_api_key)
+# LangGraph 노드 span은 LANGSMITH_TRACING=true만으로 자동 캡처되지만, d파트는 LangChain
+# 래퍼가 아니라 raw SDK를 쓰므로 그 노드 '안'의 LLM 호출(프롬프트·토큰·모델·지연)은 안 잡힌다.
+# 클라이언트가 이 한 곳뿐이라 여기서 감싸면 9개 호출 지점이 전부 커버된다.
+# LANGSMITH_TRACING이 꺼져 있으면 wrap_openai는 순수 패스스루라 키 없는 팀원 환경엔 영향이 없다.
+_client = wrap_openai(AsyncOpenAI(api_key=settings.openai_api_key))
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
 
 # supervisor는 카테고리 하나가 아니라 상황의 축을 각각 판별한다(SituationState). 예전엔 축들이
@@ -111,6 +122,7 @@ async def _call_llm(prompt: str) -> str:
             stream = await _client.chat.completions.create(
                 model=MODEL,
                 messages=[{"role": "user", "content": prompt}],
+                temperature=STRUCTURED_TEMPERATURE,
                 stream=True,
             )
             return "".join([event.choices[0].delta.content or "" async for event in stream])
@@ -148,6 +160,7 @@ async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs)
             response = await _client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
+                temperature=STRUCTURED_TEMPERATURE,
                 tools=[tool],
                 tool_choice={"type": "function", "function": {"name": tool_name}},
             )
