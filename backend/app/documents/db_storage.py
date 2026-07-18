@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 
@@ -57,38 +56,6 @@ class DocumentDatabaseRepository:
     def connect(self):
         psycopg2, _, _ = _psycopg2_modules()
         return psycopg2.connect(self.database_url)
-
-    def ensure_schema(self, schema_path: Path) -> None:
-        sql = schema_path.read_text(encoding="utf-8")
-        with self.connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql)
-
-    def reset_validation_conversations(
-        self,
-        conversation_ids: Iterable[str],
-    ) -> None:
-        ids = list(conversation_ids)
-        if not ids:
-            return
-        with self.connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "DELETE FROM a_part_conversation_states WHERE conversation_id = ANY(%s)",
-                    (ids,),
-                )
-                cursor.execute(
-                    "DELETE FROM a_part_document_comparisons WHERE conversation_id = ANY(%s)",
-                    (ids,),
-                )
-                cursor.execute(
-                    "DELETE FROM a_part_document_analyses WHERE conversation_id = ANY(%s)",
-                    (ids,),
-                )
-                cursor.execute(
-                    "DELETE FROM a_part_documents WHERE conversation_id = ANY(%s)",
-                    (ids,),
-                )
 
     def upsert_document(
         self,
@@ -360,38 +327,3 @@ class DocumentDatabaseRepository:
                         _json(_json_value(result)),
                     ),
                 )
-
-    def upsert_state(self, *, conversation_id: str, state: Any) -> None:
-        with self.connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO a_part_conversation_states (
-                        conversation_id,
-                        state
-                    ) VALUES (%s, %s)
-                    ON CONFLICT (conversation_id) DO UPDATE SET
-                        state = EXCLUDED.state,
-                        updated_at = NOW()
-                    """,
-                    (
-                        conversation_id,
-                        _json(_json_value(state)),
-                    ),
-                )
-
-    def counts(self) -> dict[str, int]:
-        tables = (
-            "a_part_documents",
-            "a_part_document_extractions",
-            "a_part_document_analyses",
-            "a_part_document_comparisons",
-            "a_part_conversation_states",
-        )
-        result: dict[str, int] = {}
-        with self.connect() as conn:
-            with conn.cursor() as cursor:
-                for table in tables:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    result[table] = int(cursor.fetchone()[0])
-        return result

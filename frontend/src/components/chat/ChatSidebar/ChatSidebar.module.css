@@ -38,79 +38,112 @@
   font-size: var(--font-size-body);
 }
 
-.userId {
-  margin-top: var(--space-4);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-caption);
-}
-
-/* 인증 기능 연결 전에는 로그아웃 버튼을 표시하지 않는다. */
 .logoutButton {
+  min-height: 3.6rem;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-6);
   margin-top: var(--space-16);
-  padding: var(--space-8) var(--space-12);
+  padding: 0 var(--space-14);
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  background: transparent;
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-small);
 }
 
 .logoutButton:hover {
   color: var(--color-primary);
   background: var(--color-surface-subtle);
+  border-color: rgb(1 64 191 / 24%);
+}
+
+.logoutButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .recentSection {
-  padding: var(--space-24) var(--space-16);
+  padding: var(--space-20) var(--space-14) var(--space-28);
 }
 
-.sectionTitle {
-  display: flex;
+.newConversationButton {
+  width: 100%;
+  min-height: 4.6rem;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-8);
-  padding: 0 var(--space-8);
-  color: var(--color-text-secondary);
+  color: var(--color-primary);
   font-size: var(--font-size-body-small);
   font-weight: var(--font-weight-semibold);
+  background: var(--color-surface-subtle);
+  border: var(--border-width) solid rgb(1 64 191 / 16%);
+  border-radius: var(--radius-medium);
 }
 
-.sectionTitle svg {
-  width: 1.6rem;
-  height: 1.6rem;
+.newConversationButton:hover {
+  border-color: var(--color-primary);
+}
+
+.historySection {
+  margin-top: 2rem;
+}
+
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.65rem 0.9rem;
+  border-bottom: var(--border-width) solid #e6eaf0;
+}
+
+.historyHeader strong {
+  color: #344054;
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.historyHeader span {
+  min-width: 2.3rem;
+  height: 2.3rem;
+  display: grid;
+  place-items: center;
+  color: #667085;
+  font-size: 1.15rem;
+  font-weight: 750;
+  background: #edf1f6;
+  border-radius: 999px;
 }
 
 .historyList {
   display: grid;
-  gap: var(--space-4);
-  margin-top: var(--space-12);
+  gap: 0.35rem;
+  padding-top: 0.65rem;
 }
 
 .historyList button {
   width: 100%;
-  min-height: 4.4rem;
+  min-height: 5.4rem;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-10);
   overflow: hidden;
-  padding: 0 var(--space-12);
+  padding: 0.9rem 0.85rem;
   color: var(--color-text-primary);
-  font-size: var(--font-size-body-small);
   text-align: left;
-  white-space: nowrap;
-  border-radius: var(--radius-medium);
+  border-radius: 0.9rem;
 }
 
-.historyList button svg {
-  width: 1.6rem;
-  height: 1.6rem;
+.historyList button > svg {
+  width: 1.55rem;
+  height: 1.55rem;
   flex-shrink: 0;
+  margin-top: 0.15rem;
   color: var(--color-text-secondary);
-}
-
-.historyList button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .historyList button:hover {
@@ -118,9 +151,72 @@
   background: var(--color-surface-subtle);
 }
 
+.historyText {
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.historyText strong,
+.historyText small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyText strong {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.historyText small {
+  color: var(--color-text-secondary);
+  font-size: 1.1rem;
+}
+
+.historyList .activeHistory {
+  color: var(--color-primary);
+  background: #edf4ff;
+}
+
+.historyList .activeHistory > svg {
+  color: var(--color-primary);
+}
+
+.emptyHistory,
+.loadingHistory {
+  margin-top: 0.65rem;
+  padding: 1.4rem 0.8rem;
+  color: #98a2b3;
+  font-size: 1.2rem;
+  line-height: 1.55;
+}
+
+.loadingHistory {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--color-text-secondary);
+}
+
+.loadingHistory svg {
+  animation: history-spin 0.9s linear infinite;
+}
+
+@keyframes history-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 900px) {
   .sidebar {
-    width: 20rem;
+    width: 22rem;
+  }
+
+  .recentSection {
+    padding-right: 1rem;
+    padding-left: 1rem;
   }
 }
 
@@ -128,12 +224,4 @@
   .sidebar {
     display: none;
   }
-}
-
-
-.emptyHistory {
-  margin-top: var(--space-12);
-  padding: var(--space-12) var(--space-8);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-caption);
 }

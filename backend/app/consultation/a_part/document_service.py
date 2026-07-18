@@ -6,10 +6,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from app.consultation.a_part.models import ConversationState
-from app.consultation.a_part.service import (
-    APartConversationService,
-    DEFAULT_CONVERSATION_SERVICE,
-)
+from app.consultation.a_part.service import APartConversationService
 from app.documents.analysis import (
     ANALYSIS_VERSION,
     ConversationDocumentAnalysisResponse,
@@ -65,7 +62,7 @@ class APartDocumentUploadService:
             repository=upload_service.repository
         )
         self.conversation_service = (
-            conversation_service or DEFAULT_CONVERSATION_SERVICE
+            conversation_service or APartConversationService()
         )
         self.database_repository = database_repository
 
@@ -104,14 +101,6 @@ class APartDocumentUploadService:
             content_type=document.content_type,
             data=data,
             sha256=document.sha256,
-        )
-
-    def _persist_state(self, state: ConversationState) -> None:
-        if self.database_repository is None:
-            return
-        self.database_repository.upsert_state(
-            conversation_id=state.conversation_id,
-            state=state,
         )
 
     def _attach(
@@ -159,7 +148,6 @@ class APartDocumentUploadService:
             document=document,
         )
         self._persist_document(document=document, state=state)
-        self._persist_state(state)
 
         warnings: list[str] = []
         if document.is_duplicate:
@@ -197,7 +185,6 @@ class APartDocumentUploadService:
             document=document,
         )
         self._persist_document(document=document, state=state)
-        self._persist_state(state)
 
         warnings: list[str] = []
         if document.is_duplicate:
@@ -243,7 +230,6 @@ class APartDocumentUploadService:
         )
         if self.database_repository is not None:
             self.database_repository.upsert_extraction(extraction)
-            self._persist_state(updated_state)
         return DocumentExtractionResponse(
             document=updated_document,
             extraction=extraction,
@@ -257,6 +243,7 @@ class APartDocumentUploadService:
         conversation_id: str,
         document_ids: list[str] | None = None,
         force: bool = False,
+        apply_state_mapping: bool = True,
     ) -> ConversationDocumentAnalysisResponse:
         state = self.conversation_service.get_state(conversation_id)
         connected_ids = {item.document_id for item in state.documents}
@@ -267,6 +254,18 @@ class APartDocumentUploadService:
                 "현재 상담에 연결되지 않은 document_id입니다: "
                 + ", ".join(missing)
             )
+
+        # 업로드 단계에서는 파일만 저장한다. 사용자가 문서 검토 질문을
+        # 전송해 실제 분석을 요청한 시점에 텍스트 추출과 필드 분석을 함께 시작한다.
+        if apply_state_mapping:
+            selected_ids = sorted(requested_ids or connected_ids)
+            for document_id in selected_ids:
+                self.extract_document(
+                    conversation_id=conversation_id,
+                    document_id=document_id,
+                    force=False,
+                )
+            state = self.conversation_service.get_state(conversation_id)
 
         response = self.analysis_service.analyze_conversation_documents(
             conversation_id=conversation_id,
@@ -285,6 +284,9 @@ class APartDocumentUploadService:
                     source_document_id,
                 )
                 state.update_document(updated_document)
+
+        if not apply_state_mapping:
+            return response.model_copy(update={"state": state})
 
         comparison = response.comparison
         updates = build_document_slot_updates(
@@ -330,7 +332,6 @@ class APartDocumentUploadService:
                     analysis_version=ANALYSIS_VERSION,
                     result=response.comparison,
                 )
-            self._persist_state(stored_state)
         return response.model_copy(
             update={
                 "state_mapping": mapping,
@@ -405,31 +406,4 @@ class APartDocumentUploadService:
                 conversation_id=conversation_id,
                 document_id=document_id,
             )
-            self._persist_state(stored_state)
         return removed
-
-
-_DEFAULT_A_PART_DOCUMENT_UPLOAD_SERVICE: APartDocumentUploadService | None = None
-
-
-def get_default_a_part_document_upload_service() -> APartDocumentUploadService:
-    global _DEFAULT_A_PART_DOCUMENT_UPLOAD_SERVICE
-    if _DEFAULT_A_PART_DOCUMENT_UPLOAD_SERVICE is None:
-        _DEFAULT_A_PART_DOCUMENT_UPLOAD_SERVICE = APartDocumentUploadService()
-    return _DEFAULT_A_PART_DOCUMENT_UPLOAD_SERVICE
-
-
-def upload_document_bytes(**kwargs) -> DocumentUploadResult:
-    return get_default_a_part_document_upload_service().upload_bytes(**kwargs)
-
-
-def upload_document_stream(**kwargs) -> DocumentUploadResult:
-    return get_default_a_part_document_upload_service().upload_stream(**kwargs)
-
-
-def extract_document_text(**kwargs) -> DocumentExtractionResponse:
-    return get_default_a_part_document_upload_service().extract_document(**kwargs)
-
-
-def analyze_conversation_documents(**kwargs) -> ConversationDocumentAnalysisResponse:
-    return get_default_a_part_document_upload_service().analyze_documents(**kwargs)

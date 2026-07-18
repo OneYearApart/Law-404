@@ -1,4 +1,6 @@
 .messageRow {
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: var(--space-12);
@@ -12,27 +14,98 @@
   justify-content: flex-end;
 }
 
+.messageEnter {
+  animation: message-enter 180ms ease-out both;
+}
+
 .avatar {
-  width: 3.6rem;
-  height: 3.6rem;
+  width: 11.2rem;
+  height: 13rem;
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.avatar img {
+  width: 13.2rem;
+  height: 15.2rem;
+  object-fit: contain;
+  object-position: center top;
+}
+
+
+.userMessageGroup {
+  max-width: min(72rem, 78%);
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.userAttachments {
+  max-width: 100%;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.userAttachment {
+  max-width: min(48rem, 100%);
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-white);
+  border: var(--border-width) solid #d7e2f2;
+  border-radius: 1rem;
+  box-shadow: 0 0.5rem 1.5rem rgb(15 23 42 / 5%);
+}
+
+.userAttachmentIcon {
+  width: 3rem;
+  height: 3rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: var(--color-white);
-  font-size: var(--font-size-body-small);
-  font-weight: var(--font-weight-bold);
-  background: var(--color-primary);
-  border-radius: var(--radius-medium);
+  color: var(--color-primary);
+  font-size: 1.5rem;
+  background: #edf3ff;
+  border-radius: 0.75rem;
 }
 
-.avatar svg {
-  width: 2rem;
-  height: 2rem;
+.userAttachmentCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.userAttachmentCopy strong {
+  overflow: hidden;
+  color: #25324b;
+  font-size: 1.2rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userAttachmentCopy small {
+  color: #7a8494;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .userBubble {
-  max-width: min(72rem, 78%);
+  max-width: 100%;
   display: flex;
   align-items: flex-start;
   gap: var(--space-8);
@@ -51,8 +124,59 @@
   margin-top: 0.4rem;
 }
 
+.assistantRow > :last-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.completedAssistantRow {
+  align-items: center;
+}
+
+.completedAssistantRow > :last-child {
+  width: auto;
+  max-width: min(50rem, calc(100% - 12.4rem));
+  flex: 0 1 auto;
+}
+
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messageEnter {
+    animation: none;
+  }
+}
+
 @media (max-width: 640px) {
-  .userBubble {
+  .avatar {
+    width: 8.8rem;
+    height: 10.2rem;
+  }
+
+  .avatar img {
+    width: 10.6rem;
+    height: 12.2rem;
+  }
+
+  .userMessageGroup {
     max-width: 86%;
+  }
+
+  .userBubble {
+    max-width: 100%;
+  }
+
+  .completedAssistantRow > :last-child {
+    max-width: calc(100% - 9.8rem);
   }
 }

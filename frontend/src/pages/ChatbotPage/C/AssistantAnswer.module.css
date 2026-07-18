@@ -36,3 +36,379 @@
   font-size: var(--font-size-body);
   line-height: var(--line-height-relaxed);
 }
+/* ════════════════════════════════════════════════════════════════════════
+   C파트 상담 답변 스타일
+   프로젝트 디자인 토큰을 사용합니다. 아래 두 그룹으로 나뉩니다:
+     - var(--token)            : AssistantAnswer.module.css(원본)에서 확인된 토큰
+     - var(--token, fallback)  : 이름을 추정한 토큰. 실제 토큰이 있으면 자동 사용,
+                                  없으면 fallback 값으로 동작(깨지지 않음).
+                                  실제 토큰명을 알려주시면 fallback만 지우면 됩니다.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.answer,
+.consultation {
+  width: 100%;
+  max-width: min(72rem, 78%);
+}
+
+/* ── 문자열 fallback (기존 카드 형태 그대로) ── */
+.answer {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-20);
+  color: var(--color-text-primary);
+  background: var(--color-sky-blue);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-large);
+}
+.icon {
+  width: 3rem;
+  height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-white);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  background: var(--color-primary);
+  border-radius: 50%;
+}
+.label {
+  display: block;
+  margin-bottom: var(--space-6);
+  color: var(--color-deep-blue);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+.answer p {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+}
+
+/* ── 분류 중 (생각 중) ── */
+.classifying {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6, 6px);
+  padding: var(--space-12) var(--space-16);
+  background: var(--color-sky-blue);
+  border-radius: var(--radius-large);
+}
+.pulseDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.35;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.pulseDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.pulseDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.classifyingText {
+  margin-left: var(--space-6, 6px);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary, #64748b);
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* ── 상담 결과 헤더 ── */
+.answerEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-deep-blue);
+  margin-bottom: var(--space-14, 14px);
+}
+.eyebrowDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+/* ── 섹션 그리드 ── */
+.sectionGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.sectionCard {
+  background: var(--color-white);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-large);
+  padding: var(--space-16) var(--space-18, 18px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.sectionCard.pending {
+  background: var(--color-sky-blue);
+  border-style: dashed;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 9px);
+  margin-bottom: var(--space-10, 10px);
+}
+.sectionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-medium, 8px);
+  background: var(--color-sky-blue);
+  color: var(--color-primary);
+  font-size: var(--font-size-body-small);
+  flex-shrink: 0;
+}
+.sectionLabel {
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+.writingTag {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary, #94a3b8);
+  background: var(--color-sky-blue);
+  padding: 2px var(--space-8, 8px);
+  border-radius: 999px;
+}
+
+.sectionBody {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+/* ── 근거 칩 ── */
+.citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6, 6px);
+  margin-top: var(--space-12);
+}
+.citationChip {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-deep-blue);
+  background: var(--color-sky-blue);
+  border: var(--border-width) solid var(--color-border-strong);
+  padding: 3px var(--space-10, 10px);
+  border-radius: var(--radius-medium, 8px);
+}
+
+/* ── 스켈레톤 (작성 중) ── */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8, 8px);
+}
+.skeleton span {
+  height: 11px;
+  border-radius: var(--radius-medium, 6px);
+  background: linear-gradient(
+    90deg,
+    var(--color-border-strong) 25%,
+    var(--color-sky-blue) 37%,
+    var(--color-border-strong) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.skeleton span:nth-child(1) {
+  width: 92%;
+}
+.skeleton span:nth-child(2) {
+  width: 100%;
+}
+.skeleton span:nth-child(3) {
+  width: 68%;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* ── FAQ 아코디언 ── */
+.faqBlock {
+  margin-top: var(--space-16);
+  background: var(--color-sky-blue);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-large);
+  padding: var(--space-14, 14px) var(--space-16);
+}
+.faqHeading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6, 7px);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary, #475569);
+  margin-bottom: var(--space-8);
+}
+.faqList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.faqItem + .faqItem {
+  border-top: var(--border-width) solid var(--color-border-strong);
+}
+.faqQuestion {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  background: none;
+  border: none;
+  padding: var(--space-12) var(--space-4, 4px);
+  text-align: left;
+  font-size: var(--font-size-body-small);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.faqQuestion:hover {
+  color: var(--color-primary);
+}
+.faqChevron {
+  flex-shrink: 0;
+  color: var(--color-text-secondary, #94a3b8);
+  transition: transform 0.2s ease;
+}
+.faqChevronOpen {
+  transform: rotate(180deg);
+  color: var(--color-primary);
+}
+
+/* ── 메타 바 ── */
+.metaBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  margin-top: var(--space-14, 14px);
+  padding-top: var(--space-12);
+  border-top: var(--border-width) solid var(--color-border-strong);
+}
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4, 5px);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+}
+.metaItemMuted {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary, #94a3b8);
+  margin-left: auto;
+}
+
+/* ── 면책 ── */
+.disclaimer {
+  margin: var(--space-12) 0 0;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary, #9aa5b4);
+}
+
+/* ── 단문 카드 (정의 / 범위 밖) ── */
+.simpleCard {
+  width: 100%;
+  max-width: min(72rem, 78%);
+  border-radius: var(--radius-large);
+  padding: var(--space-16) var(--space-18, 18px);
+  border: var(--border-width) solid var(--color-border-strong);
+  background: var(--color-white);
+}
+.simpleCard.definition {
+  background: var(--color-sky-blue);
+}
+.simpleCard.offTopic {
+  background: var(--color-warning-bg, #fff8f1);
+  border-color: var(--color-warning-border, #fde4cf);
+}
+.simpleHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  margin-bottom: var(--space-8);
+}
+.simpleIcon {
+  display: inline-flex;
+  font-size: var(--font-size-body-small);
+}
+.definition .simpleIcon {
+  color: var(--color-primary);
+}
+.offTopic .simpleIcon {
+  color: var(--color-warning, #ea8a3c);
+}
+.simpleEyebrow {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+.definition .simpleEyebrow {
+  color: var(--color-deep-blue);
+}
+.offTopic .simpleEyebrow {
+  color: var(--color-warning, #ea8a3c);
+}
+.simpleBody {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+/* ── 반응형 ── */
+@media (max-width: 640px) {
+  .answer,
+  .consultation,
+  .simpleCard {
+    max-width: 100%;
+  }
+  .sectionCard {
+    padding: var(--space-14, 14px) var(--space-15, 15px);
+  }
+}
+
+/* ── 접근성: 모션 줄이기 ── */
+@media (prefers-reduced-motion: reduce) {
+  .pulseDot,
+  .skeleton span {
+    animation: none;
+  }
+}

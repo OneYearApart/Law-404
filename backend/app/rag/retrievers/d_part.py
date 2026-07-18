@@ -38,6 +38,12 @@ _MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
 _OPEN_QA_QUOTA = {"법령원문": 2, "판례": 2, "HUG사례집": 2, "HUG규정": 1}
 _MAX_DISTANCE = 0.65
 
+# 용어사전은 HUG규정 안에 Q&A·부록표와 섞여 있어 metadata.항목유형으로만 가려낼 수 있다
+# (hug_docs_d.py가 "붙임 2. 용어사전" 구간을 이 태그로 적재).
+_GLOSSARY_SOURCE_TYPE = "HUG규정"
+_GLOSSARY_ITEM_TYPE = "용어사전"
+_glossary_cache: Optional[list[dict]] = None
+
 
 class DPartRetriever(BaseRetriever):
     def __init__(self):
@@ -98,11 +104,11 @@ class DPartRetriever(BaseRetriever):
 
     async def search_by_topic(self, topic_key: str, query_text: str) -> dict:
         """일반 시나리오 항목(전/중/후 13개 항목) 키 기준으로 조문 + 판례/HUG사례집/
-        생활법령/정부자료를 조회한다. 판례/HUG/생활법령/정부자료는 topic_tags로 후보를 거른 뒤
+        생활법령/정부자료/HUG규정을 조회한다. 판례/HUG/생활법령/정부자료는 topic_tags로 후보를 거른 뒤
         query_text 유사도로 재랭킹해 상위 top_k만 취한다(태그만으로 필터하면 수십~수백 건이
-        통째로 컨텍스트에 들어가 토큰이 폭증하므로). 생활법령/정부자료(상황적용·해설 층)는 guides로
-        함께 반환해 판례/HUG가 0건인 항목(예: 전-④계약서_특약사항)도 근거자료가 검색되게 한다
-        (작업단위 40/41 + 코드트랙 재랭킹). query_text는 한 번만 임베딩해 재사용한다."""
+        통째로 컨텍스트에 들어가 토큰이 폭증하므로). 생활법령/정부자료/HUG규정(상황적용·해설 층)은 guides로
+        함께 반환해 판례/HUG사례집이 0건인 항목(예: 전-④계약서_특약사항)도 근거자료가 검색되게 한다
+        (작업단위 40/41 + 코드트랙 재랭킹, HUG규정 편입은 작업단위 48). query_text는 한 번만 임베딩해 재사용한다."""
         query_vector = await embed(query_text)
         statute_chunks = await self.search(
             query_text, top_k=_STATUTE_TOP_K, source_type="법령원문", query_vector=query_vector
@@ -110,7 +116,8 @@ class DPartRetriever(BaseRetriever):
         case_law = await self._fetch_by_topic_tag(topic_key, "판례", query_vector)
         cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집", query_vector)
         guides = (await self._fetch_by_topic_tag(topic_key, "생활법령", query_vector)
-                  + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector))
+                  + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector)
+                  + await self._fetch_by_topic_tag(topic_key, "HUG규정", query_vector))   # 작업단위 48
         return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
 
     async def _fetch_by_topic_tag(
@@ -142,16 +149,57 @@ class DPartRetriever(BaseRetriever):
         rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
 
-    async def search_by_requirement(self, slot_result: dict) -> dict:
+    async def search_by_requirement(self, slot_result: dict, situation_query: str | None = None) -> dict:
         """요건 슬롯 중 하나라도 평가(충족/불충족/불명확)가 내려졌으면 전세사기피해자법
-        제3조(요건 항① + 제외사유 항②) 청크를 조회하고, 링크된 판례/사례집을 함께 붙여 반환한다."""
+        제3조(요건 항① + 제외사유 항②) 청크를 조회하고, 링크된 판례/사례집을 함께 붙여 반환한다.
+        situation_query(사용자 발화)가 있으면 상황적용 grounding용 생활법령을 벡터 검색해 guides로 붙인다(작업단위 51)."""
         slots = slot_result.model_dump() if hasattr(slot_result, "model_dump") else slot_result
         article_nos = JEONSE_LAW_ARTICLE3_HANGS if any(v is not None for v in slots.values()) else []
 
         statute_chunks = await self._fetch_statute_articles(article_nos)
         case_law = await self._link_related(statute_chunks, source="판례")
         cases = await self._link_related(statute_chunks, source="HUG사례집")
-        return {"statute": statute_chunks, "case_law": case_law, "cases": cases}
+        # 상황적용 grounding: 요건 슬롯은 조문 키라 topic_tag가 없으므로 발화로 생활법령을 벡터 검색(작업단위 51)
+        guides = (await self.search(situation_query, top_k=2, source_type="생활법령")
+                  if situation_query else [])
+        return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
+
+    async def load_glossary(self) -> list[dict]:
+        """HUG 종합안내 "붙임 2. 용어사전"에서 적재된 용어 풀이 전량(현재 112건).
+
+        벡터 검색이 아니라 전량 조회다 — 용어사전은 정적 데이터라 매 턴 DB를 칠 이유가 없어
+        프로세스당 1회만 읽고 캐시한다. 인제스천으로 사전이 바뀌면 재기동이 필요하다.
+
+        content 형식은 hug_docs_d._load_glossary_chunks가 조립한 "{용어}: {설명}\\n예: {예문}" —
+        첫 ':'로 표제어와 설명을 가른다. 표제어를 화면에서 제목으로 쓰므로 설명에 다시 남겨두면
+        "갑구 / 갑구: 집문서…"로 중복된다. 자르기만 할 뿐 문구는 DB 원문 그대로다.
+        형식이 어긋난 행(설명 없이 표제어만)은 풀이로서 쓸모가 없으므로 버린다.
+        """
+        global _glossary_cache
+        if _glossary_cache is not None:
+            return _glossary_cache
+
+        sql = text(f"""
+            SELECT content
+            FROM {self.table_name}
+            WHERE source_type = '{_GLOSSARY_SOURCE_TYPE}'
+              AND metadata->>'항목유형' = '{_GLOSSARY_ITEM_TYPE}'
+        """)
+
+        def _query():
+            with get_engine().connect() as conn:
+                return conn.execute(sql).mappings().all()
+
+        rows = await run_in_threadpool(_query)
+        glossary = []
+        for row in rows:
+            term, separator, description = (row["content"] or "").partition(":")
+            if not separator or not term.strip() or not description.strip():
+                continue
+            glossary.append({"term": term.strip(), "description": description.strip()})
+
+        _glossary_cache = glossary
+        return _glossary_cache
 
     async def _fetch_statute_articles(self, article_nos: list[str]) -> list[Chunk]:
         if not article_nos:

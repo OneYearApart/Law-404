@@ -16,7 +16,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.conversations.errors import ConversationNotFoundError
-from app.conversations.models import Conversation as ConversationSchema, Message as MessageSchema
+from app.conversations.models import (
+    Conversation as ConversationSchema,
+    ConversationSummary,
+    Message as MessageSchema,
+)
 from app.conversations.orm import Conversation, Message
 from app.core.db import SessionLocal
 
@@ -50,10 +54,15 @@ def _require_owned(db: Session, conversation_id: int, user_id: int) -> Conversat
 
 
 @_threadpooled
-def create_conversation(user_id: int, part: str) -> ConversationSchema:
+def create_conversation(
+    user_id: int,
+    part: str,
+    title: str | None = None,
+) -> ConversationSchema:
     db = SessionLocal()
     try:
-        conversation = Conversation(user_id=user_id, part=part)
+        normalized_title = str(title or "").strip()[:200] or None
+        conversation = Conversation(user_id=user_id, part=part, title=normalized_title)
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
@@ -68,7 +77,11 @@ def save_message(user_id: int | None, part: str, role: str, content: str, conver
         return  # 비로그인 사용자는 저장하지 않음
     db = SessionLocal()
     try:
-        _require_owned(db, conversation_id, user_id)  # 타인 대화방에 메시지 이어쓰기 차단
+        conversation = _require_owned(
+            db, conversation_id, user_id
+        )  # 타인 대화방에 메시지 이어쓰기 차단
+        if part and conversation.part != part:
+            raise ConversationNotFoundError(conversation_id)
         db.add(Message(conversation_id=conversation_id, role=role, content=content))
         db.query(Conversation).filter(
             Conversation.id == conversation_id, Conversation.user_id == user_id
@@ -78,17 +91,56 @@ def save_message(user_id: int | None, part: str, role: str, content: str, conver
         db.close()
 
 
+_UNTITLED = "새 상담"
+_TITLE_MAX_LEN = 40
+
+
+def _fallback_title(first_user_message: str | None) -> str:
+    """요약(title)이 붙기 전 임시 제목. 첫 질문을 쓰고, 그것도 없으면 기본 문구."""
+    snippet = " ".join((first_user_message or "").split())
+    if not snippet:
+        return _UNTITLED
+    return snippet if len(snippet) <= _TITLE_MAX_LEN else f"{snippet[:_TITLE_MAX_LEN]}…"
+
+
 @_threadpooled
-def list_conversations(user_id: int) -> list[ConversationSchema]:
+def list_conversations(user_id: int) -> list[ConversationSummary]:
+    """사이드바용 전 파트 대화 목록(최신순). part를 함께 실어 클라이언트가 파트별로 고른다.
+
+    제목은 요약이 붙기 전이면 첫 사용자 발화로 대신한다. 대화마다 메시지를 따로 조회하면
+    N+1이므로, 대화별 첫 user 메시지를 상관 서브쿼리로 한 번에 가져온다.
+    """
     db = SessionLocal()
     try:
+        first_user_message = (
+            db.query(Message.content)
+            .filter(Message.conversation_id == Conversation.id, Message.role == "user")
+            .order_by(Message.id)
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
         rows = (
-            db.query(Conversation)
+            db.query(
+                Conversation.id,
+                Conversation.part,
+                Conversation.title,
+                Conversation.updated_at,
+                first_user_message.label("first_user_message"),
+            )
             .filter(Conversation.user_id == user_id)
             .order_by(Conversation.updated_at.desc())
             .all()
         )
-        return [ConversationSchema.model_validate(row, from_attributes=True) for row in rows]
+        return [
+            ConversationSummary(
+                id=row.id,
+                part=row.part,
+                title=row.title or _fallback_title(row.first_user_message),
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        ]
     finally:
         db.close()
 

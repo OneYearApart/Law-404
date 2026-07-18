@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Protocol
 
@@ -116,6 +117,161 @@ def _allowed_slot_payload(state: ConversationState) -> list[dict[str, object]]:
             )
 
     return payload
+
+
+def extract_active_question_update(
+    *,
+    user_text: str,
+    state: ConversationState,
+) -> ExtractedSlotUpdate | None:
+    """직전에 한 개씩 물은 질문에 대한 짧고 명확한 답을 우선 반영한다."""
+
+    question_key = state.active_question_key
+    if not question_key or ":" not in question_key:
+        return None
+    issue_id, slot_key = question_key.split(":", 1)
+    slot = state.issue_slots.get(issue_id, {}).get(slot_key)
+    if slot is None:
+        return None
+
+    normalized = " ".join(str(user_text or "").split()).strip()
+    if not normalized:
+        return None
+    compact = re.sub(r"[^0-9a-z가-힣]", "", normalized.lower())
+
+    if (
+        slot_key == "lease_report_status"
+        and "신고대상" in compact
+        and any(marker in compact for marker in ("아니", "아님", "아닌"))
+    ):
+        return ExtractedSlotUpdate(
+            issue_id=issue_id,
+            slot_key=slot_key,
+            status=SlotStatus.NOT_APPLICABLE,
+            value=None,
+            evidence_text=normalized,
+            confidence=1.0,
+        )
+
+    asks_for_value = any(
+        marker in slot.question
+        for marker in ("누구", "언제", "얼마", "무엇", "어디", "어떤", "어떻게")
+    )
+    boolean_question = not asks_for_value and (
+        slot.key.endswith((
+            "_confirmed",
+            "_checked",
+            "_completed",
+            "_received",
+            "_kept",
+            "_planned",
+            "_available",
+            "_effective",
+            "_agreed",
+            "_exists",
+        ))
+        or slot.question.endswith(("나요?", "있나요?", "했나요?"))
+    )
+
+    explicit_unknown_markers = (
+        "잘모르",
+        "모르겠",
+        "기억안",
+        "불확실",
+        "해당없",
+    )
+    if any(marker in compact for marker in explicit_unknown_markers):
+        return ExtractedSlotUpdate(
+            issue_id=issue_id,
+            slot_key=slot_key,
+            status=SlotStatus.UNCERTAIN,
+            value=None,
+            evidence_text=normalized,
+            confidence=1.0,
+        )
+
+    if boolean_question:
+        negative_markers = (
+            "아니",
+            "없",
+            "못받",
+            "안받",
+            "못했",
+            "안했",
+            "확인못",
+            "확인하지못",
+            "아직안",
+            "아직못",
+        )
+        if any(marker in compact for marker in negative_markers):
+            return ExtractedSlotUpdate(
+                issue_id=issue_id,
+                slot_key=slot_key,
+                status=SlotStatus.CONFIRMED,
+                value=False,
+                evidence_text=normalized,
+                confidence=1.0,
+            )
+
+        positive_markers = (
+            "네",
+            "예",
+            "맞",
+            "확인했",
+            "받았",
+            "했어요",
+            "있어요",
+            "완료",
+            "직접통화",
+        )
+        if any(marker in compact for marker in positive_markers):
+            return ExtractedSlotUpdate(
+                issue_id=issue_id,
+                slot_key=slot_key,
+                status=SlotStatus.CONFIRMED,
+                value=True,
+                evidence_text=normalized,
+                confidence=1.0,
+            )
+
+    # 이름·금액처럼 값 자체를 묻는 질문에서 "아직 확인하지 못했습니다"라고
+    # 답한 경우에도 해당 질문에는 응답한 것으로 기록한다.
+    value_unknown_markers = (
+        "아직확인하지못",
+        "아직확인못",
+        "확인하지못",
+        "미확인",
+    )
+    if not boolean_question and any(
+        marker in compact for marker in value_unknown_markers
+    ):
+        return ExtractedSlotUpdate(
+            issue_id=issue_id,
+            slot_key=slot_key,
+            status=SlotStatus.UNCERTAIN,
+            value=None,
+            evidence_text=normalized,
+            confidence=1.0,
+        )
+
+    # 값 자체를 묻는 질문에는 "네, 확인했어요" 같은 대답을 값으로 저장하지 않는다.
+    vague_affirmatives = {
+        "네", "예", "네확인했어요", "예확인했어요", "확인했어요", "맞아요"
+    }
+    if not boolean_question and compact in vague_affirmatives:
+        return None
+
+    # 짧은 단답은 현재 질문의 값으로 사용할 수 있다. 긴 문장은 LLM 추출기로 넘긴다.
+    if len(normalized) <= 40 and not boolean_question:
+        return ExtractedSlotUpdate(
+            issue_id=issue_id,
+            slot_key=slot_key,
+            status=SlotStatus.CONFIRMED,
+            value=normalized,
+            evidence_text=normalized,
+            confidence=1.0,
+        )
+    return None
 
 
 class OpenAISlotUpdateExtractor:
@@ -314,8 +470,14 @@ def apply_slot_updates(
                 slot.value = update.value
                 slot.conflicting_values = []
         elif update.status == SlotStatus.NOT_APPLICABLE:
-            slot.status = SlotStatus.NOT_APPLICABLE
-            slot.value = update.value
+            # 대리 계약의 핵심 7개 질문은 모두 실제 판단에 필요한 항목이다.
+            # extractor가 "해당 없음"으로 잘못 분류해도 완료 사실로 처리하지 않는다.
+            if update.issue_id == "q01_owner_proxy":
+                slot.status = SlotStatus.UNCERTAIN
+                slot.value = None
+            else:
+                slot.status = SlotStatus.NOT_APPLICABLE
+                slot.value = update.value
             slot.conflicting_values = []
         else:
             # 기존 확정값 뒤에 모호한 답이 들어오면 확정 사실을 조용히 지우지 않고

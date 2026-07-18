@@ -5,9 +5,12 @@ b파트 담당자만 이 파일을 수정합니다.
 """
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.api.events import StreamEvent, EventType
+from app.calendar_connections.models import DEFAULT_CALENDAR_PROVIDER
+from app.calendar_connections.repository import get_calendar_connection
 from app.conversations.repository import (
     get_session_state,
     load_conversation,
@@ -19,6 +22,7 @@ from app.graph.parts.b_part.memory import (
     build_persistable_session_state,
     seed_memory_from_persisted_data,
 )
+from app.core.db import get_db
 
 router = APIRouter(prefix="/chat/b", tags=["b_part"])
 
@@ -39,9 +43,44 @@ def _parse_db_conversation_id(request: dict) -> int | None:
     return conversation_id
 
 
+def _is_live_smithery_calendar_request(request: dict) -> bool:
+    """실제 Smithery Calendar 등록 요청인지 확인합니다."""
+    if not isinstance(request.get("pending_action"), dict):
+        return False
+
+    mode = str(request.get("calendar_mode", "dry_run")).strip().lower()
+    provider = str(
+        request.get("calendar_provider", DEFAULT_CALENDAR_PROVIDER)
+    ).strip().lower()
+    return (
+        mode == "live"
+        and provider in {"smithery_googlecalendar", "smithery_google_calendar"}
+    )
+
+
 @router.post("/")
-async def chat_b(request: dict, user=Depends(get_current_user)):
+async def chat_b(
+    request: dict,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     conversation_id = _parse_db_conversation_id(request)
+    graph_request = dict(request)
+
+    if _is_live_smithery_calendar_request(graph_request):
+        provider = str(
+            graph_request.get("calendar_provider", DEFAULT_CALENDAR_PROVIDER)
+        ).strip().lower()
+        connection = get_calendar_connection(
+            db,
+            user_id=user.id,
+            provider=provider,
+        )
+        if connection is None or connection.status != "connected":
+            graph_request["calendar_connection_required"] = True
+        else:
+            graph_request["calendar_connection_id"] = connection.connection_id
+
     persisted_state = None
     persisted_messages = []
     if conversation_id is not None:
@@ -62,12 +101,12 @@ async def chat_b(request: dict, user=Depends(get_current_user)):
                 user.id,
                 "b",
                 "user",
-                str(request.get("message", request.get("user_input", ""))),
+                str(graph_request.get("message", graph_request.get("user_input", ""))),
                 conversation_id,
             )
 
         # 판단 단계(전/중/후, 위험신호 감지 등)는 내부적으로 동기 실행
-        final_state = await b_graph.ainvoke(request)
+        final_state = await b_graph.ainvoke(graph_request)
 
         meta_data = {
             "pending_action": final_state.get("pending_action"),

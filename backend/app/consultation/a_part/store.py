@@ -117,172 +117,189 @@ class MemoryConversationStore:
 DEFAULT_CONVERSATION_STORE = MemoryConversationStore()
 
 
-class PostgresConversationStore:
-    """A파트 상담 상태를 PostgreSQL JSONB 테이블에 저장한다."""
 
-    def __init__(self, database_url: str) -> None:
-        normalized = str(database_url or "").strip()
-        if not normalized:
-            raise ValueError("database_url은 빈 문자열일 수 없습니다.")
-        self.database_url = normalized
-        self._schema_checked = False
-        self._schema_lock = RLock()
 
-    @staticmethod
-    def _psycopg2():
-        try:
-            import psycopg2
-            from psycopg2.extras import Json
-        except ImportError as error:
-            raise ConversationStoreError(
-                "PostgreSQL 상담 상태 저장에는 psycopg2-binary가 필요합니다."
-            ) from error
-        return psycopg2, Json
+class SharedConversationStore:
+    """팀 공통 conversations/messages 테이블에 A파트 상태를 저장한다.
 
-    def _connect(self):
-        psycopg2, _ = self._psycopg2()
-        return psycopg2.connect(self.database_url)
+    A파트의 세부 상태는 conversations.state JSONB에 저장하고,
+    실제 사용자·assistant 메시지는 공통 messages 테이블에 저장한다.
+    conversation_id는 공통 conversations.id를 문자열로 노출한다.
+    """
 
-    def _ensure_schema(self) -> None:
-        if self._schema_checked:
-            return
-        with self._schema_lock:
-            if self._schema_checked:
-                return
-            try:
-                with self._connect() as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            """
-                            CREATE TABLE IF NOT EXISTS a_part_conversation_states (
-                                conversation_id TEXT PRIMARY KEY,
-                                state JSONB NOT NULL,
-                                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                            )
-                            """
-                        )
-                self._schema_checked = True
-            except Exception as error:
-                raise ConversationStoreError(
-                    "A파트 상담 상태 테이블을 준비하지 못했습니다."
-                ) from error
+    def __init__(self, *, part: str = "a") -> None:
+        self.part = part
 
     @staticmethod
-    def _normalize_id(conversation_id: str) -> str:
+    def _normalize_id(conversation_id: str) -> int:
         normalized = str(conversation_id or "").strip()
         if not normalized:
             raise ValueError("conversation_id는 빈 문자열일 수 없습니다.")
-        return normalized
+        if not normalized.isdigit():
+            raise ConversationNotFoundError(normalized)
+        return int(normalized)
+
+    @staticmethod
+    def _load_models():
+        from app.conversations.orm import Conversation, Message
+        from app.core.db import SessionLocal
+
+        return Conversation, Message, SessionLocal
+
+    @staticmethod
+    def _serialize(state: ConversationState) -> dict:
+        return state.model_dump(mode="json")
 
     def create(self, state: ConversationState) -> ConversationState:
-        self._ensure_schema()
-        stored = state.model_copy(deep=True)
-        stored.touch()
-        _, Json = self._psycopg2()
+        if state.owner_user_id is None:
+            raise ConversationStoreError(
+                "공통 대화를 만들려면 owner_user_id가 필요합니다."
+            )
+
+        Conversation, Message, SessionLocal = self._load_models()
+        db = SessionLocal()
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        INSERT INTO a_part_conversation_states (
-                            conversation_id, state, updated_at
-                        ) VALUES (%s, %s, NOW())
-                        """,
-                        (
-                            stored.conversation_id,
-                            Json(stored.model_dump(mode="json")),
-                        ),
+            stored = state.model_copy(deep=True)
+            conversation = Conversation(
+                user_id=stored.owner_user_id,
+                part=self.part,
+                title=None,
+                state=None,
+            )
+            db.add(conversation)
+            db.flush()
+
+            stored.conversation_id = str(conversation.id)
+            for document in stored.documents:
+                document.conversation_id = stored.conversation_id
+
+            for message in stored.messages:
+                db.add(
+                    Message(
+                        conversation_id=conversation.id,
+                        role=message.role.value,
+                        content=message.content,
                     )
+                )
+            stored.persisted_message_count = len(stored.messages)
+            stored.touch()
+            conversation.state = self._serialize(stored)
+            db.commit()
+            return stored.model_copy(deep=True)
         except Exception as error:
-            if getattr(error, "pgcode", None) == "23505":
-                raise ConversationAlreadyExistsError(
-                    f"이미 존재하는 conversation_id입니다: {stored.conversation_id}"
-                ) from error
-            raise ConversationStoreError("상담 상태를 생성하지 못했습니다.") from error
-        return stored.model_copy(deep=True)
+            db.rollback()
+            raise ConversationStoreError(
+                "공통 conversations 테이블에 A파트 상담을 생성하지 못했습니다."
+            ) from error
+        finally:
+            db.close()
 
     def get(self, conversation_id: str) -> ConversationState:
-        self._ensure_schema()
-        normalized = self._normalize_id(conversation_id)
+        conversation_pk = self._normalize_id(conversation_id)
+        Conversation, _, SessionLocal = self._load_models()
+        db = SessionLocal()
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT state FROM a_part_conversation_states WHERE conversation_id = %s",
-                        (normalized,),
-                    )
-                    row = cursor.fetchone()
-        except Exception as error:
-            raise ConversationStoreError("상담 상태를 조회하지 못했습니다.") from error
-        if row is None:
-            raise ConversationNotFoundError(normalized)
-        return ConversationState.model_validate(row[0]).model_copy(deep=True)
+            row = (
+                db.query(Conversation)
+                .filter(
+                    Conversation.id == conversation_pk,
+                    Conversation.part == self.part,
+                )
+                .first()
+            )
+            if row is None or not row.state:
+                raise ConversationNotFoundError(str(conversation_id))
+            state = ConversationState.model_validate(row.state)
+            state.conversation_id = str(row.id)
+            state.owner_user_id = int(row.user_id)
+            return state.model_copy(deep=True)
+        finally:
+            db.close()
 
     def save(self, state: ConversationState) -> ConversationState:
-        self._ensure_schema()
-        stored = state.model_copy(deep=True)
-        stored.touch()
-        _, Json = self._psycopg2()
+        conversation_pk = self._normalize_id(state.conversation_id)
+        Conversation, Message, SessionLocal = self._load_models()
+        db = SessionLocal()
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        UPDATE a_part_conversation_states
-                        SET state = %s, updated_at = NOW()
-                        WHERE conversation_id = %s
-                        """,
-                        (
-                            Json(stored.model_dump(mode="json")),
-                            stored.conversation_id,
-                        ),
+            row = (
+                db.query(Conversation)
+                .filter(
+                    Conversation.id == conversation_pk,
+                    Conversation.part == self.part,
+                )
+                .first()
+            )
+            if row is None:
+                raise ConversationNotFoundError(state.conversation_id)
+            if state.owner_user_id is not None and row.user_id != state.owner_user_id:
+                raise ConversationStoreError("상담 소유자가 일치하지 않습니다.")
+
+            stored = state.model_copy(deep=True)
+            persisted = min(
+                stored.persisted_message_count,
+                len(stored.messages),
+            )
+            for message in stored.messages[persisted:]:
+                db.add(
+                    Message(
+                        conversation_id=conversation_pk,
+                        role=message.role.value,
+                        content=message.content,
                     )
-                    updated = cursor.rowcount
+                )
+            stored.persisted_message_count = len(stored.messages)
+            stored.owner_user_id = int(row.user_id)
+            stored.touch()
+            row.state = self._serialize(stored)
+
+            from sqlalchemy import func
+
+            row.updated_at = func.now()
+            db.commit()
+            return stored.model_copy(deep=True)
+        except ConversationNotFoundError:
+            raise
         except Exception as error:
-            raise ConversationStoreError("상담 상태를 저장하지 못했습니다.") from error
-        if not updated:
-            raise ConversationNotFoundError(stored.conversation_id)
-        return stored.model_copy(deep=True)
+            db.rollback()
+            raise ConversationStoreError(
+                "공통 conversations 테이블에 A파트 상담 상태를 저장하지 못했습니다."
+            ) from error
+        finally:
+            db.close()
 
     def upsert(self, state: ConversationState) -> ConversationState:
-        self._ensure_schema()
-        stored = state.model_copy(deep=True)
-        stored.touch()
-        _, Json = self._psycopg2()
-        try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        INSERT INTO a_part_conversation_states (
-                            conversation_id, state, updated_at
-                        ) VALUES (%s, %s, NOW())
-                        ON CONFLICT (conversation_id) DO UPDATE SET
-                            state = EXCLUDED.state,
-                            updated_at = NOW()
-                        """,
-                        (
-                            stored.conversation_id,
-                            Json(stored.model_dump(mode="json")),
-                        ),
-                    )
-        except Exception as error:
-            raise ConversationStoreError("상담 상태를 저장하지 못했습니다.") from error
-        return stored.model_copy(deep=True)
+        if self.exists(state.conversation_id):
+            return self.save(state)
+        return self.create(state)
 
     def delete(self, conversation_id: str) -> bool:
-        self._ensure_schema()
-        normalized = self._normalize_id(conversation_id)
+        conversation_pk = self._normalize_id(conversation_id)
+        Conversation, Message, SessionLocal = self._load_models()
+        db = SessionLocal()
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "DELETE FROM a_part_conversation_states WHERE conversation_id = %s",
-                        (normalized,),
-                    )
-                    return bool(cursor.rowcount)
+            row = (
+                db.query(Conversation)
+                .filter(
+                    Conversation.id == conversation_pk,
+                    Conversation.part == self.part,
+                )
+                .first()
+            )
+            if row is None:
+                return False
+            db.query(Message).filter(
+                Message.conversation_id == conversation_pk
+            ).delete(synchronize_session=False)
+            db.delete(row)
+            db.commit()
+            return True
         except Exception as error:
-            raise ConversationStoreError("상담 상태를 삭제하지 못했습니다.") from error
+            db.rollback()
+            raise ConversationStoreError(
+                "공통 conversation을 삭제하지 못했습니다."
+            ) from error
+        finally:
+            db.close()
 
     def reset(self, conversation_id: str) -> ConversationState:
         state = self.get(conversation_id)
@@ -291,47 +308,77 @@ class PostgresConversationStore:
         return state
 
     def clear(self) -> int:
-        self._ensure_schema()
-        try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute("DELETE FROM a_part_conversation_states")
-                    return int(cursor.rowcount)
-        except Exception as error:
-            raise ConversationStoreError("상담 상태를 초기화하지 못했습니다.") from error
+        ids = self.list_ids()
+        for conversation_id in ids:
+            self.delete(conversation_id)
+        return len(ids)
 
     def exists(self, conversation_id: str) -> bool:
-        self._ensure_schema()
-        normalized = self._normalize_id(conversation_id)
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT 1 FROM a_part_conversation_states WHERE conversation_id = %s",
-                        (normalized,),
-                    )
-                    return cursor.fetchone() is not None
-        except Exception as error:
-            raise ConversationStoreError("상담 상태 존재 여부를 확인하지 못했습니다.") from error
+            self.get(conversation_id)
+            return True
+        except ConversationNotFoundError:
+            return False
 
     def count(self) -> int:
-        self._ensure_schema()
+        Conversation, _, SessionLocal = self._load_models()
+        db = SessionLocal()
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT COUNT(*) FROM a_part_conversation_states")
-                    return int(cursor.fetchone()[0])
-        except Exception as error:
-            raise ConversationStoreError("상담 상태 수를 확인하지 못했습니다.") from error
+            return int(
+                db.query(Conversation)
+                .filter(Conversation.part == self.part)
+                .count()
+            )
+        finally:
+            db.close()
 
     def list_ids(self) -> tuple[str, ...]:
-        self._ensure_schema()
+        Conversation, _, SessionLocal = self._load_models()
+        db = SessionLocal()
         try:
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT conversation_id FROM a_part_conversation_states ORDER BY updated_at DESC"
-                    )
-                    return tuple(str(row[0]) for row in cursor.fetchall())
-        except Exception as error:
-            raise ConversationStoreError("상담 상태 목록을 조회하지 못했습니다.") from error
+            rows = (
+                db.query(Conversation.id)
+                .filter(Conversation.part == self.part)
+                .order_by(Conversation.updated_at.desc())
+                .all()
+            )
+            return tuple(str(row[0]) for row in rows)
+        finally:
+            db.close()
+
+    def list_for_owner(self, owner_user_id: int) -> list[dict]:
+        """특정 사용자의 A파트 상담 목록을 최신순으로 반환한다."""
+
+        Conversation, _, SessionLocal = self._load_models()
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(Conversation)
+                .filter(
+                    Conversation.part == self.part,
+                    Conversation.user_id == owner_user_id,
+                )
+                .order_by(Conversation.updated_at.desc())
+                .all()
+            )
+            summaries: list[dict] = []
+            for row in rows:
+                if not row.state:
+                    continue
+                try:
+                    state = ConversationState.model_validate(row.state)
+                except Exception:
+                    continue
+                summaries.append(
+                    {
+                        "conversation_id": str(row.id),
+                        "title": row.title or state.initial_query or "새 계약 전 상담",
+                        "risk_level": state.last_risk_level,
+                        "turn_count": state.turn_count,
+                        "created_at": state.created_at.isoformat() if state.created_at else None,
+                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                    }
+                )
+            return summaries
+        finally:
+            db.close()
