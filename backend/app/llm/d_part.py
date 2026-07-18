@@ -3,10 +3,19 @@ D파트 프롬프트 조립 + GPT-4o 호출.
 d파트 담당자만 이 파일을 수정합니다.
 프롬프트 내용/조립 방식은 graph/parts/d_part/prompts/*.md 를 참고합니다.
 
-app/llm/base.py::call_llm_stream_raw는 아직 미구현 스텁이고 팀 공용 파일이라
-건드리지 않기로 확정(2026-07-11) — 대신 이 파일에서 자체 OpenAI 클라이언트로
-직접 GPT-4o를 호출한다. base.py를 쓰는 다른 파트 컨벤션과는 다른 방식이니
-통합 시 팀에 공유할 것.
+app/llm/base.py::call_llm_stream_raw는 아직 미구현 스텁이라 이 파일에서 자체 OpenAI
+클라이언트로 직접 호출한다.
+
+⚠️ 예전 주석은 이를 두고 "base.py를 쓰는 다른 파트 컨벤션과는 다른 방식"이라고 적었는데
+사실이 아니다(2026-07-19 전수 확인) — base.py를 쓰는 파트는 하나도 없고, A파트는
+responses.parse, B파트는 responses.create, C파트는 LangChain ChatOpenAI로 각자 다르다.
+즉 팀 컨벤션이라 부를 것이 없다. 그래서 프레임워크를 맞추는 마이그레이션(ChatOpenAI 전환)은
+근거가 없다고 보고 하지 않는다.
+
+OpenAI Responses API 전환은 A·B와 API 표면이 정렬된다는 실익이 있으나 보류했다 —
+generate_response가 레포에서 유일한 진짜 토큰 스트리밍 경로라 SSE 이벤트 형태까지 재검증해야
+하고, 골든셋으로 확보한 지표(라우팅 78건·판정 8시나리오)를 걸 만한 이득이 아니다.
+나중에 A·B와 정렬할 일이 생기면 다시 꺼낼 것.
 
 _call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환하고, 각 노드가 필요로 하는
 구조화된 값(enum/슬롯 등)은 이 파일에서 그 텍스트를 JSON으로 파싱해 반환한다
@@ -20,7 +29,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from langsmith.wrappers import wrap_openai
-from openai import APIError, AsyncOpenAI, RateLimitError
+from openai import APIError, APIStatusError, AsyncOpenAI, LengthFinishReasonError, RateLimitError
 
 from app.core.config import settings
 from app.graph.parts.d_part.schemas import (
@@ -46,6 +55,32 @@ STRUCTURED_TEMPERATURE = 0.0
 # 클라이언트가 이 한 곳뿐이라 여기서 감싸면 9개 호출 지점이 전부 커버된다.
 # LANGSMITH_TRACING이 꺼져 있으면 wrap_openai는 순수 패스스루라 키 없는 팀원 환경엔 영향이 없다.
 _client = wrap_openai(AsyncOpenAI(api_key=settings.openai_api_key))
+
+
+class ToolCallMissing(RuntimeError):
+    """tool_choice로 강제했는데도 모델이 tool call을 내지 않았다.
+
+    finish_reason이 length(토큰 소진)이거나 거절(refusal)이면 실제로 일어난다. 예전엔
+    tool_calls[0]을 곧바로 인덱싱해 TypeError/IndexError가 났는데, 그건 아래 재시도 루프가
+    잡는 예외가 아니라서 재시도 없이 노드까지 그대로 올라갔다(2026-07-19).
+
+    strict schema를 켜도 이 문제는 남는다 — strict는 tool call이 '나왔을 때' 인자가 스키마를
+    지키는지만 보장하지, tool call이 나오는지는 보장하지 않는다.
+    """
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """재시도가 의미 있는 실패인지. 4xx는 같은 요청을 다시 보내도 같은 답이 온다.
+
+    특히 400(BadRequestError)은 스키마가 잘못됐다는 뜻인데 APIError 하위라, 걸러내지 않으면
+    2s→4s 백오프로 3번 재시도한 뒤에야 터진다. 골든셋 78건을 돌리면 스키마 실수 하나가
+    '느린 실패'로 위장돼 평가를 몇 분간 조용히 갈아먹는다. 429(RateLimit)만 예외로 재시도한다.
+    """
+    if isinstance(exc, RateLimitError):
+        return True
+    if isinstance(exc, APIStatusError):
+        return exc.status_code >= 500
+    return True  # 연결/타임아웃 등 전송 계층 실패와 ToolCallMissing은 재시도 대상
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
 
 # supervisor는 카테고리 하나가 아니라 상황의 축을 각각 판별한다(SituationState). 예전엔 축들이
@@ -126,10 +161,13 @@ async def _call_llm(prompt: str) -> str:
                 stream=True,
             )
             return "".join([event.choices[0].delta.content or "" async for event in stream])
-        except (RateLimitError, APIError):
-            if attempt == MAX_RETRIES - 1:
+        except APIError as exc:
+            if attempt == MAX_RETRIES - 1 or not _is_retryable(exc):
                 raise
             await asyncio.sleep(2**attempt)
+    # MAX_RETRIES=0이면 루프가 한 번도 안 돌아 암묵적으로 None이 반환된다. 그러면 호출부가
+    # 한참 떨어진 곳에서 터지므로(옛 _call_structured는 json.loads(None)) 여기서 끊는다.
+    raise RuntimeError(f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다")
 
 
 def _strip_code_fence(text: str) -> str:
@@ -164,12 +202,21 @@ async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs)
                 tools=[tool],
                 tool_choice={"type": "function", "function": {"name": tool_name}},
             )
-            call = response.choices[0].message.tool_calls[0]
-            return json.loads(call.function.arguments)
-        except (RateLimitError, APIError):
-            if attempt == MAX_RETRIES - 1:
+            choice = response.choices[0]
+            calls = choice.message.tool_calls
+            if not calls:
+                # tool_choice로 강제했어도 length 소진·거절이면 tool call 없이 돌아온다.
+                # 재시도 대상에 넣는 건 length가 재호출로 회복될 수 있어서다 — refusal은
+                # 재시도해도 안 되지만 3회 낭비가 라우팅을 통째로 죽이는 것보다 싸다.
+                raise ToolCallMissing(
+                    f"{tool_name}: finish_reason={choice.finish_reason}, refusal={choice.message.refusal!r}"
+                )
+            return json.loads(calls[0].function.arguments)
+        except (ToolCallMissing, APIError, LengthFinishReasonError) as exc:
+            if attempt == MAX_RETRIES - 1 or not _is_retryable(exc):
                 raise
             await asyncio.sleep(2**attempt)
+    raise RuntimeError(f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다")
 
 
 async def call_victim_check(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:

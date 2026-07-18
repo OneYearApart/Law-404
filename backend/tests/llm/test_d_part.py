@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from openai import APIError, RateLimitError
+from openai import APIError, BadRequestError, RateLimitError
 
 from app.llm import d_part
 
@@ -163,3 +163,56 @@ async def test_call_llm_raises_after_max_retries(monkeypatch):
 
     with pytest.raises(RateLimitError):
         await d_part._call_llm("prompt")
+
+
+def _bad_request_error() -> BadRequestError:
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    response = httpx.Response(status_code=400, request=request)
+    return BadRequestError("invalid schema", response=response, body=None)
+
+
+@pytest.mark.asyncio
+async def test_call_tool_raises_when_model_returns_no_tool_call(monkeypatch):
+    """tool_choice로 강제했어도 length 소진·거절이면 tool call 없이 돌아온다.
+    예전엔 tool_calls[0]을 곧바로 인덱싱해 TypeError/IndexError가 났는데, 그건 재시도 루프가
+    잡는 예외가 아니라 재시도 없이 노드까지 올라갔다."""
+    calls = {"count": 0}
+
+    async def _fake_create(**kwargs):
+        calls["count"] += 1
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(tool_calls=None, refusal=None),
+                )
+            ]
+        )
+
+    monkeypatch.setattr(d_part._client.chat.completions, "create", _fake_create)
+    monkeypatch.setattr(d_part.asyncio, "sleep", _no_sleep)
+
+    with pytest.raises(d_part.ToolCallMissing):
+        await d_part.call_supervisor("발화")
+
+    # 재시도 대상이다 — length는 재호출로 회복될 수 있다
+    assert calls["count"] == d_part.MAX_RETRIES
+
+
+@pytest.mark.asyncio
+async def test_call_tool_does_not_retry_bad_request(monkeypatch):
+    """400은 스키마가 잘못됐다는 뜻이라 재시도해도 같은 답이 온다. 걸러내지 않으면
+    스키마 실수가 백오프 3회에 가려져 '느린 실패'로 위장된다."""
+    calls = {"count": 0}
+
+    async def _fake_create(**kwargs):
+        calls["count"] += 1
+        raise _bad_request_error()
+
+    monkeypatch.setattr(d_part._client.chat.completions, "create", _fake_create)
+    monkeypatch.setattr(d_part.asyncio, "sleep", _no_sleep)
+
+    with pytest.raises(BadRequestError):
+        await d_part.call_supervisor("발화")
+
+    assert calls["count"] == 1
