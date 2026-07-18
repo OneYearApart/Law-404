@@ -123,18 +123,25 @@ _SUPERVISOR_TOOL = {
 }
 
 
+# strict를 켜면 enum 밖의 값이 API 디코더 레벨에서 막힌다. 이 경로는 gpt-4o-mini가 돌리는데,
+# 작은 모델일수록 enum을 벗어날 확률이 높고 answer가 세 값 밖으로 나가면 parse_confirmation이
+# None(=재질문)으로 떨어뜨린다 — 구제수단 게이트에서 그건 부당 제외로 이어질 수 있는 방향이다.
+# strict는 모든 property를 required로 요구하므로 reason도 필수가 되는데, reason은 아무도 읽지 않아
+# 영향이 없다.
 _CONFIRMATION_TOOL = {
     "type": "function",
     "function": {
         "name": "confirm",
         "description": "확인 질문에 대한 사용자 응답을 yes/no/unclear로 판별한다.",
+        "strict": True,
         "parameters": {
             "type": "object",
+            "additionalProperties": False,
             "properties": {
                 "answer": {"type": "string", "enum": ["yes", "no", "unclear"]},
                 "reason": {"type": "string", "description": "판단 근거 한 줄"},
             },
-            "required": ["answer"],
+            "required": ["answer", "reason"],
         },
     },
 }
@@ -234,9 +241,15 @@ async def _call_parsed(prompt_name: str, schema: type[BaseModel], **kwargs) -> d
 
 
 async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs) -> dict:
-    """_call_structured와 달리 응답을 텍스트로 받아 JSON 파싱하지 않고, OpenAI tool
-    calling으로 스키마(enum)를 강제해 모델이 정의된 카테고리 밖의 값을 반환할 수
-    없게 한다. 스트리밍 대상이 아니라 stream=False로 호출한다."""
+    """응답을 텍스트로 파싱하지 않고 OpenAI tool calling으로 스키마(enum)를 강제해, 모델이
+    정의된 카테고리 밖의 값을 반환할 수 없게 한다. 스트리밍 대상이 아니라 stream=False로 호출한다.
+
+    ⚠️ `parallel_tool_calls=False`를 넣지 말 것. strict function calling 문서가 이를 요구한다고
+    되어 있어 넣어봤는데, 넣지 않아도 strict가 정상 동작하고(400 없음) 넣으면 supervisor 분류가
+    흔들렸다 — 라우팅 골든셋 78건이 100%×2에서 97.4~98.7%로 떨어졌고 hrd-003("이미 보증보험으로
+    돌려받았는데 처벌할 수 있나요")이 3/3 실패했다. 빼면 100%×2로 돌아온다(2026-07-19, 5회 실측).
+    tool_choice로 이미 단일 함수를 강제하므로 병렬 호출이 애초에 불가능해 넣을 이유도 없다.
+    """
     prompt = _render_prompt(prompt_name, **kwargs)
     tool_name = tool["function"]["name"]
     for attempt in range(MAX_RETRIES):
