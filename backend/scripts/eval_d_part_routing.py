@@ -192,6 +192,15 @@ def _score(results: list[dict]) -> dict:
     confusion = Counter(
         (r["expected"]["route"], r["predicted"]["route"]) for r in scored if r["expected"]["route"] != r["predicted"]["route"]
     )
+
+    # id 접두어별 경로 정확도. gen-(교과서적 발화)과 col-(구어 발화)을 갈라 봐야 어휘 간극이
+    # 실제로 얼마나 새는지 보인다 — 전체 평균에 섞으면 교과서 케이스가 구어 실패를 덮는다.
+    by_group: dict[str, dict[str, int]] = {}
+    for r in scored:
+        group = r["id"].split("-")[0]
+        bucket = by_group.setdefault(group, {"n": 0, "hits": 0})
+        bucket["n"] += 1
+        bucket["hits"] += r["expected"]["route"] == r["predicted"]["route"]
     latencies = sorted(r["latency_s"] for r in scored)
 
     return {
@@ -217,6 +226,10 @@ def _score(results: list[dict]) -> dict:
             "p95": latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))],
         },
         "route_confusion": {f"{exp} → {pred}": n for (exp, pred), n in confusion.most_common()},
+        "route_accuracy_by_group": {
+            group: {"n": b["n"], "accuracy": round(b["hits"] / b["n"], 4)}
+            for group, b in sorted(by_group.items())
+        },
     }
 
 
@@ -254,10 +267,17 @@ async def run(cases: list[dict]) -> None:
     print(f"  경로 정확도            {metrics['route_accuracy']:.1%}   ← 주지표")
     print(f"  recognized 정확도      {metrics['recognized_accuracy']:.1%}")
     print(f"  topic 정확일치         {metrics['topic_exact_match']:.1%}")
-    print(f"  special_case 정확일치  {metrics['special_case_exact_match_recognized_only']:.1%}  (인지형 {metrics['special_case_n_scored']}건만)")
+    # --only로 인지형 케이스가 하나도 안 걸리면 채점 대상이 없어 None이 된다
+    special = metrics["special_case_exact_match_recognized_only"]
+    special_text = f"{special:.1%}" if special is not None else "해당 없음"
+    print(f"  special_case 정확일치  {special_text}  (인지형 {metrics['special_case_n_scored']}건만)")
     rs = metrics["risk_signals_micro"]
     print(f"  risk_signals micro-F1  {rs['f1']:.3f}  (P {rs['precision']:.3f} / R {rs['recall']:.3f}, TP{rs['tp']} FP{rs['fp']} FN{rs['fn']})")
     print(f"  지연 p50/p95           {metrics['latency_s']['p50']:.2f}s / {metrics['latency_s']['p95']:.2f}s")
+
+    print("\n  그룹별 경로 정확도:")
+    for group, b in metrics["route_accuracy_by_group"].items():
+        print(f"    {group:5} n={b['n']:<3} {b['accuracy']:.1%}")
 
     if metrics["route_confusion"]:
         print("\n  경로 오분류:")
