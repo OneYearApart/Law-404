@@ -81,6 +81,14 @@ SITUATION_TOPIC_TO_SPECIAL_CASE: dict[str, str] = {
     topic: case for case, topic in SPECIAL_CASE_TOPIC_TAGS.items() if topic in GENERAL_TOPIC_LABELS
 }
 
+# 같은 겹침을 반대로도 읽어야 한다 — 미인지형 발화에서 모델이 topic 대신 special_case만 채우는
+# 경우가 있는데(골든셋 gen-005 실측), route()는 special_case를 recognized 블록 안에서만 읽으므로
+# 그대로 두면 상황을 정확히 판별하고도 open_qa로 떨어진다. 위 딕셔너리를 뒤집어 쓴다(같은 사실을
+# 두 곳에 적으면 어긋난다). 임대인 사망/파산은 위에서 이미 걸러져 여기에도 없다.
+SPECIAL_CASE_TO_SITUATION_TOPIC: dict[str, str] = {
+    case: topic for topic, case in SITUATION_TOPIC_TO_SPECIAL_CASE.items()
+}
+
 
 class VictimRequirementSlots(BaseModel):
     moved_in_and_fixed_date: Optional[SlotStatus] = None      # ① 전입신고+확정일자

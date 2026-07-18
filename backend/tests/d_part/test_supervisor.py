@@ -223,6 +223,28 @@ def test_unrecognized_user_topic_does_not_infer_special_case():
     assert route(result) == "general_scenario"
 
 
+@pytest.mark.parametrize(
+    "special_case, expected_topic",
+    [
+        ("다가구주택", "전-③다가구_선순위보증금"),
+        ("신탁사기", "전-⑤신탁사기"),
+        ("공인중개사 허위고지", "전-⑥공인중개사_허위고지"),
+        ("임대인 사망/파산", None),   # 검색 태그가 topic 키가 아니라 대응되는 13개 항목이 없다
+    ],
+)
+def test_unrecognized_user_special_case_infers_overlapping_topic(special_case, expected_topic):
+    """겹침 매핑은 양방향이어야 한다. route()는 special_case를 recognized 블록 안에서만 읽으므로,
+    미인지형인데 모델이 topic 대신 special_case만 채우면 상황을 정확히 판별하고도 open_qa로
+    떨어진다 — "이 집이 신탁사 소유라고 하던데요"에서 실측(골든셋 gen-005). 그러면 topic_tag
+    정조준 검색 대신 광역 검색을 받아 근거의 질까지 떨어진다."""
+    result = situation_from_supervisor_result(
+        {"recognized": False, "risk_signals": [], "special_case": special_case}
+    )
+
+    assert result.topic == expected_topic
+    assert route(result) == ("general_scenario" if expected_topic else "open_qa")
+
+
 def test_model_supplied_special_case_wins_over_inference():
     """모델이 이미 판단했으면 그 값을 존중한다 — 추론은 빈 자리를 메우는 용도다."""
     result = situation_from_supervisor_result(

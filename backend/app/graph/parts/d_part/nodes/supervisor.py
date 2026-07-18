@@ -22,6 +22,7 @@ special_cases는 후속 대화가 없는 1회성 안내라, victim_check 슬롯 
 from app.graph.parts.d_part.schemas import (
     DPartGraphState,
     SITUATION_TOPIC_TO_SPECIAL_CASE,
+    SPECIAL_CASE_TO_SITUATION_TOPIC,
     SituationState,
     VictimRequirementSlots,
 )
@@ -53,8 +54,9 @@ def interview_in_progress(state: DPartGraphState) -> bool:
     )
 
 
-def _infer_special_case_from_topic(situation: SituationState) -> None:
-    """인정받은 사용자의 topic이 특수상황 4종과 같은 상황을 가리키면 special_case를 채운다.
+def _normalize_overlap_axes(situation: SituationState) -> None:
+    """특수 4종과 13개 항목이 같은 상황을 가리키는 겹침 구간에서, 모델이 한쪽 축만 채웠으면
+    나머지 한쪽을 규칙으로 채운다.
 
     전-③/전-⑤/전-⑥은 특수상황 4종과 같은 상황의 "인정 전" 판본이라(13개 항목 설명이 그렇게
     명시한다), 어느 쪽이냐는 recognized가 정한다. 그런데 모델은 이 겹치는 발화에서 special_case를
@@ -64,9 +66,18 @@ def _infer_special_case_from_topic(situation: SituationState) -> None:
 
     그래서 모델에게 조르는 대신 규칙으로 정한다 — 겹침 관계는 도메인이 이미 고정해둔 사실이라
     매 턴 LLM에게 다시 물어볼 값이 아니다. 판정이 결정론적이 되고 테스트도 가능해진다.
+
+    역방향도 같은 이유로 필요하다. 미인지형인데 모델이 topic 대신 special_case만 채우면
+    route()가 그 값을 읽는 분기가 없어서(special_case는 recognized 블록 안에서만 읽힌다)
+    상황을 정확히 판별하고도 open_qa로 떨어진다 — "이 집이 신탁사 소유라고 하던데요"에서
+    실측(골든셋 gen-005). 그러면 전-⑤ topic_tag 정조준 검색 대신 광역 검색을 받게 되므로
+    라우팅 라벨만 틀리는 게 아니라 답변 근거의 질이 떨어진다.
     """
-    if situation.recognized and not situation.special_case:
-        situation.special_case = SITUATION_TOPIC_TO_SPECIAL_CASE.get(situation.topic)
+    if situation.recognized:
+        if not situation.special_case:
+            situation.special_case = SITUATION_TOPIC_TO_SPECIAL_CASE.get(situation.topic)
+    elif not situation.topic:
+        situation.topic = SPECIAL_CASE_TO_SITUATION_TOPIC.get(situation.special_case)
 
 
 def situation_from_supervisor_result(result: dict) -> SituationState:
@@ -74,7 +85,7 @@ def situation_from_supervisor_result(result: dict) -> SituationState:
 
     해당 없는 축은 키가 아예 빠져 오므로 .get()으로 읽는다. 어휘 검증은 SituationState가 한다.
     LLM 출력을 상황모델로 바꾸는 곳은 여기 하나여야 한다 — 호출부가 각자 SituationState를
-    조립하면 정규화(_infer_special_case_from_topic)를 빠뜨린 채로도 그럴듯하게 동작한다.
+    조립하면 정규화(_normalize_overlap_axes)를 빠뜨린 채로도 그럴듯하게 동작한다.
     """
     situation = SituationState(
         recognized=result.get("recognized"),
@@ -82,7 +93,7 @@ def situation_from_supervisor_result(result: dict) -> SituationState:
         topic=result.get("topic"),
         special_case=result.get("special_case"),
     )
-    _infer_special_case_from_topic(situation)
+    _normalize_overlap_axes(situation)
     return situation
 
 
