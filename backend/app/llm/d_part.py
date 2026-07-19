@@ -18,8 +18,9 @@ generate_response가 레포에서 유일한 진짜 토큰 스트리밍 경로라
 나중에 A·B와 정렬할 일이 생기면 다시 꺼낼 것.
 
 구조화된 값을 받는 경로는 둘이다. 슬롯 추출처럼 형태가 정해진 값은 strict json_schema를 쓰는
-_call_parsed로, supervisor 분류처럼 카테고리를 enum으로 강제해야 하는 값은 tool calling을 쓰는
-_call_tool로 받는다. 둘 다 형태를 API가 보장하므로 응답을 텍스트로 파싱하지 않는다.
+_call_parsed로, 카테고리 분류는 tool calling을 쓰는 _call_tool로 받는다. 둘 다 응답을 텍스트로
+파싱하지 않는다. 다만 strict 적용 범위는 도구마다 다르다 — 확인 게이트는 strict를 켰지만
+supervisor는 실측 결과 켜지 않았다(_SUPERVISOR_TOOL 주석 참고).
 
 _call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환한다 — 이제 형태가 없는 산문을 받는
 call_query_expansion 전용이다. 실제 enum/pydantic 모델로의 변환은 호출하는 노드 쪽 책임이다.
@@ -96,6 +97,18 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_p
 # topic/special_case는 "해당 없음"이 정상값이라 required에 넣지 않는다 — JSON Schema의
 # null 유니온은 비-strict tool calling에서 모델이 문자열 "null"을 흘리는 등 불안정해서,
 # 미포함을 None으로 읽는 쪽이 안전하다(호출부가 .get()으로 받는다).
+#
+# ⚠️ 이 도구에 strict를 켜지 마라. 실험했고 되돌렸다(2026-07-19).
+# strict는 모든 property를 required로 요구하므로 topic/special_case를 anyOf[enum, null]로 바꾸고
+# 프롬프트의 "인자를 넘기지 마세요"를 "null을 넘기세요"로 함께 고쳐야 한다. 그렇게 했더니
+# 라우팅 골든셋 78건이 100% → 96.2%로 떨어졌다(2회 실행 동일, 실패 케이스도 같아 노이즈가 아님).
+# 예상은 topic 과탐이었는데 실제로 무너진 건 risk_signals 재현율이었다 —
+# micro-F1 0.960(TP12 FP0 FN1) → 0.783(TP9 FP1 FN4). 모든 축을 강제로 채우게 하면 모델이
+# 위험신호 검출에 쓰던 주의를 다른 축 결정에 나눠 쓰는 것으로 보인다.
+#
+# 얻는 것과 비교하면 남는 장사가 아니다. strict가 막아주는 건 어휘 이탈인데, 그건 SituationState의
+# validator가 이미 잡고 있고(그 방어는 JSONB에서 복원되는 옛 세션 때문에 어차피 남겨야 한다)
+# 실제로 문제를 일으킨 적도 없다. 3.8%p를 주고 살 가치가 없다.
 _SUPERVISOR_TOOL = {
     "type": "function",
     "function": {
