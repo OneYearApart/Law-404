@@ -88,7 +88,8 @@ def test_carryover_judgment_without_fresh_assembly_is_not_emitted(monkeypatch):
 
 
 def test_slot_question_turn_has_no_meta(monkeypatch):
-    """요건 질문만 던지는 턴은 판정도 근거도 없으므로 META 자체가 나가지 않는다."""
+    """요건 질문만 던지는 턴은 판정도 근거도 없고(빈 사전이라 용어도 없어) META가 나가지 않는다.
+    등장 용어가 있으면 이제 슬롯 질문 턴에도 terms META가 붙는다(test_terms_attach_to_question_turns)."""
     _stub_route(monkeypatch, {})
 
     body = _post()
@@ -175,16 +176,16 @@ def test_terms_absent_when_no_glossary_word_appears(monkeypatch):
     assert '"terms"' not in body
 
 
-def test_terms_do_not_attach_to_question_turns(monkeypatch):
-    """요건을 되묻는 턴은 질문 한 줄이 전부인데 그 문구에도 '대항력' 같은 용어가 들어 있다
-    (구제수단 확인질문). 질문 밑에 용어 카드가 줄줄이 달리면 노이즈다."""
+def test_terms_attach_to_question_turns(monkeypatch):
+    """요건을 되묻는 슬롯 질문 턴에도 등장한 용어를 풀어 준다 — 그 문구의 '대항력' 같은 용어는
+    혼란스러운 사용자에게 오히려 그 시점에 풀이가 더 필요하다(answer_kind 게이트 제거)."""
     _stub_route(
         monkeypatch,
-        {},   # answer_kind 없음 = 응답 생성 노드를 거치지 않은 턴
+        {},   # answer_kind 없음 = 응답 생성 노드를 거치지 않은 슬롯 질문 턴
         glossary=[{"term": "답변", "description": "풀이 문구예요."}],
     )
 
-    assert '"terms"' not in _post()
+    assert '"terms"' in _post()
 
 
 def test_terms_are_not_saved_to_messages(monkeypatch):
