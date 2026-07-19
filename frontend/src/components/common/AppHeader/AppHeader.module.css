@@ -1,9 +1,12 @@
 .header {
-  position: relative;
-  z-index: 20;
+  position: sticky;
+  top: 0;
+  z-index: 100;
   min-height: 7.2rem;
-  background: var(--color-surface);
+  background: rgb(255 255 255 / 94%);
   border-bottom: var(--border-width) solid var(--color-border);
+  box-shadow: 0 0.6rem 2.4rem rgb(16 24 40 / 4%);
+  backdrop-filter: blur(1.2rem);
 }
 
 .inner {
@@ -22,7 +25,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-8);
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .navLink {
@@ -37,9 +40,11 @@
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   border-radius: var(--radius-medium);
+  border: 0.1rem solid transparent;
   transition:
     color var(--transition-fast),
-    background-color var(--transition-fast);
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .navLink svg {
@@ -51,17 +56,9 @@
 .active {
   color: var(--color-primary);
   background: var(--color-surface-subtle);
+  border-color: #d7e4f7;
 }
 
-.signupLink {
-  color: var(--color-white);
-  background: var(--color-primary);
-}
-
-.signupLink:hover {
-  color: var(--color-white);
-  background: var(--color-primary-hover);
-}
 
 
 @media (max-width: 760px) {
@@ -75,6 +72,9 @@
   .navigation {
     width: 100%;
     justify-content: flex-start;
-    padding-bottom: var(--space-4);
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: var(--space-4) 0;
   }
 }
+
