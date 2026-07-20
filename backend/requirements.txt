@@ -1,7 +1,9 @@
 fastapi
 uvicorn[standard]
 langchain
+langchain-openai
 langgraph
+langsmith
 openai
 pgvector
 psycopg2-binary

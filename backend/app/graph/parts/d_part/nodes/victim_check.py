@@ -65,6 +65,12 @@ def _merge_slots(existing: VictimRequirementSlots, extracted: VictimRequirementS
     """기존 슬롯 위에 이번 턴 추출값을 얹는다. 병합은 비즈니스 판단이라 코드가 결정한다.
 
     - filled는 되돌리지 않는다 — 이후 턴의 unclear/unfilled로 덮어쓰지 않음.
+    - unclear는 이미 확정된 슬롯을 덮지 않는다. 추출기의 unclear는 "이 슬롯이 불명확하다"가
+      아니라 "이번 발화에서 확인되지 않았다"는 기본값이다(프롬프트가 그렇게 지시한다). 그런데
+      unfilled는 "확인했고 충족하지 않는다"는 확정이고 _unresolved_required_slots가 해결된
+      것으로 취급하므로, 다음 턴 발화가 그 슬롯을 언급하지 않았다는 이유만으로 unclear가 덮으면
+      확정된 답이 지워져 같은 질문을 다시 묻는다(골든셋 vj-008에서 인터뷰가 종결에 도달하지
+      못하고 슬롯①을 반복 질문). unfilled → filled 같은 사용자의 정정은 그대로 허용된다.
     - auction_completed는 True로만 올라가고 내려오지 않는다. 매 턴 LLM이 재판정하므로
       False/None으로 덮어쓰면 슬롯①③ 면제가 뒤집혀 판정이 통째로 바뀐다.
     - has_relief_measure는 여기서 절대 안 건드린다(명시 확인질문 전용).
@@ -72,11 +78,15 @@ def _merge_slots(existing: VictimRequirementSlots, extracted: VictimRequirementS
     """
     merged = existing.model_copy()
     for name in _SLOT_ORDER:
-        if getattr(existing, name) == SlotStatus.FILLED:
+        existing_value = getattr(existing, name)
+        if existing_value == SlotStatus.FILLED:
             continue
         extracted_value = getattr(extracted, name)
-        if extracted_value is not None:
-            setattr(merged, name, extracted_value)
+        if extracted_value is None:
+            continue
+        if extracted_value == SlotStatus.UNCLEAR and existing_value is not None:
+            continue
+        setattr(merged, name, extracted_value)
 
     if extracted.auction_completed is True:
         merged.auction_completed = True

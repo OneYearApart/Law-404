@@ -81,6 +81,14 @@ SITUATION_TOPIC_TO_SPECIAL_CASE: dict[str, str] = {
     topic: case for case, topic in SPECIAL_CASE_TOPIC_TAGS.items() if topic in GENERAL_TOPIC_LABELS
 }
 
+# 같은 겹침을 반대로도 읽어야 한다 — 미인지형 발화에서 모델이 topic 대신 special_case만 채우는
+# 경우가 있는데(골든셋 gen-005 실측), route()는 special_case를 recognized 블록 안에서만 읽으므로
+# 그대로 두면 상황을 정확히 판별하고도 open_qa로 떨어진다. 위 딕셔너리를 뒤집어 쓴다(같은 사실을
+# 두 곳에 적으면 어긋난다). 임대인 사망/파산은 위에서 이미 걸러져 여기에도 없다.
+SPECIAL_CASE_TO_SITUATION_TOPIC: dict[str, str] = {
+    case: topic for topic, case in SITUATION_TOPIC_TO_SPECIAL_CASE.items()
+}
+
 
 class VictimRequirementSlots(BaseModel):
     moved_in_and_fixed_date: Optional[SlotStatus] = None      # ① 전입신고+확정일자
@@ -91,6 +99,32 @@ class VictimRequirementSlots(BaseModel):
     # 아래 두 필드는 ①~④ 요건과 별개의 통제 플래그 (참고: D파트_구현_종합문서.md §9.1)
     auction_completed: Optional[bool] = None                       # 경공매완료여부 — true면 ①③ 자유서술만으로 자동충족 처리
     has_relief_measure: Optional[bool] = None                      # 구제수단보유여부 — true면 판단 결과를 "제외"로 덮어씀. 자유서술 추론 금지, 명시 확인질문 필수
+
+
+class VictimSlotExtraction(BaseModel):
+    """call_victim_check가 LLM에게서 받는 "이번 턴 발화에서 새로 확인된 것".
+
+    위 VictimRequirementSlots(턴을 넘어 누적되는 상태)와 일부러 분리한다. 두 가지 이유다.
+
+    1. **has_relief_measure가 여기 있으면 안 된다.** OpenAI strict schema는 모든 property를
+       required로 만들기 때문에(SDK가 자동 주입), 누적 모델을 그대로 응답 스키마로 쓰면 모델이
+       매 턴 이 값을 채우게 된다. 그런데 이 필드가 true면 판정이 "지원대상 제외"로 덮이므로
+       (victim_check._EXCLUSION_MESSAGE), 자유서술 추론으로 채워지는 순간 실제 피해자가 부당
+       제외된다. 이 값은 _RELIEF_QUESTION에 대한 사용자의 명시적 예/아니오로만 채워져야 한다.
+    2. **4개 슬롯의 nullability가 반대다.** 누적 모델의 None은 "아직 안 물어봄"이라는 초기값이지만
+       추출 응답에는 그런 값이 없다 — 프롬프트가 "판정 못한 슬롯은 unclear로 표기"라 지시하고
+       _extract_slots가 4개 키를 무조건 인덱싱한다. non-Optional이어야 그 계약이 타입에 드러난다.
+
+    auction_completed만 Optional로 둔다. "언급 없음(null)"과 "완료 안 됨(false)"이 의미상 다르다고
+    프롬프트가 명시하기 때문이다. strict에서는 anyOf[boolean, null] + required로 나가고
+    (SDK가 default:null을 떼어준다) 모델은 키를 항상 내되 값으로 null을 넣는다.
+    """
+    moved_in_and_fixed_date: SlotStatus
+    deposit_under_limit: SlotStatus
+    multiple_victims: SlotStatus
+    no_intent_to_return: SlotStatus
+    multiple_victims_reason: Optional[str] = None
+    auction_completed: Optional[bool] = None
 
 
 # 요건 슬롯의 사람이 읽는 이름. LLM 컨텍스트에 필드명(moved_in_and_fixed_date 등)을 그대로

@@ -32,14 +32,14 @@ function AppHeader({ variant = 'public' }) {
 
   const authActions = showAuthActions ? (
     <>
-      <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
+      <motion.div whileTap={{ scale: 0.98 }}>
         <NavLink className={navClassName} to={ROUTES.LOGIN}>
           <FiLogIn aria-hidden="true" />
           <span>로그인</span>
         </NavLink>
       </motion.div>
-      <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
-        <NavLink className={`${styles.navLink} ${styles.signupLink}`} to={ROUTES.SIGNUP}>
+      <motion.div whileTap={{ scale: 0.98 }}>
+        <NavLink className={navClassName} to={ROUTES.SIGNUP}>
           <FiUserPlus aria-hidden="true" />
           <span>회원가입</span>
         </NavLink>
@@ -63,7 +63,7 @@ function AppHeader({ variant = 'public' }) {
               const Icon = CHAT_ICONS[route.key];
 
               return (
-                <motion.div key={route.key} whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
+                <motion.div key={route.key} whileTap={{ scale: 0.98 }}>
                   <NavLink className={navClassName} to={route.path}>
                     <Icon aria-hidden="true" />
                     <span>{route.label}</span>
@@ -71,6 +71,14 @@ function AppHeader({ variant = 'public' }) {
                 </motion.div>
               );
             })}
+
+          {!isChat && (
+            <motion.div whileTap={{ scale: 0.98 }}>
+              <a className={styles.navLink} href={`${ROUTES.LANDING}#service-intro`}>
+                서비스 안내
+              </a>
+            </motion.div>
+          )}
 
           {authActions}
         </nav>

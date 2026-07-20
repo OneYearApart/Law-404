@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 B_PART_DATA_DIR = BACKEND_DIR / "data" / "b_part"
 DEFAULT_STATUTE_PATH = B_PART_DATA_DIR / "statutes_contract_period.json"
-DEFAULT_PRECEDENT_PATH = B_PART_DATA_DIR / "precedents_selected_contract_period2.json"
+DEFAULT_PRECEDENT_PATH = B_PART_DATA_DIR / "precedents_selected_contract_period3.json"
 DEFAULT_CHUNK_OUTPUT = B_PART_DATA_DIR / "knowledge_base_chunked.jsonl"
 DEFAULT_SUMMARY_OUTPUT = B_PART_DATA_DIR / "knowledge_base_chunked_summary.json"
 
@@ -333,6 +333,8 @@ class StatuteChunker:
                     f"clause_{normalize_id_part(clause_label)}_"
                     f"part_{sub_index:02d}"
                 )
+                content_prefix = f"[{statute_title} / {category} / {clause_label}]"
+                chunk_content = f"{content_prefix}\n{sub_text}".strip()
                 metadata = {
                     "chunk_id": chunk_id,
                     "document_type": "statute",
@@ -352,7 +354,7 @@ class StatuteChunker:
                 chunks.append(
                     LegalChunk(
                         chunk_id=chunk_id,
-                        content=sub_text,
+                        content=chunk_content,
                         source_type="law",
                         category=category,
                         title=statute_title,
@@ -419,6 +421,8 @@ class PrecedentChunker:
                     f"{chunk_type}_"
                     f"part_{sub_index:02d}"
                 )
+                content_prefix = f"[{title} / {category} / {section_name}]"
+                chunk_content = f"{content_prefix}\n{sub_text}".strip()
                 chunk_metadata = {
                     **metadata,
                     "chunk_id": chunk_id,
@@ -437,7 +441,7 @@ class PrecedentChunker:
                 chunks.append(
                     LegalChunk(
                         chunk_id=chunk_id,
-                        content=sub_text,
+                        content=chunk_content,
                         source_type="precedent",
                         category=category,
                         title=title,

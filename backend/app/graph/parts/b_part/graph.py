@@ -48,6 +48,47 @@ from app.graph.parts.b_part.rules import (
 
 RETRIEVAL_MIN_TOP_SIMILARITY = 0.27
 RENEWAL_SLOT_CATEGORIES = {"계약갱신", "계약갱신요구권", "묵시적갱신"}
+PRECEDENT_MIN_SIMILARITY = 0.34
+
+CORE_LAW_ANCHORS = {
+    "계약갱신": [
+        ("주택임대차보호법", "4"),
+        ("주택임대차보호법", "6"),
+    ],
+    "계약갱신요구권": [
+        ("주택임대차보호법", "6의3"),
+    ],
+    "묵시적갱신": [
+        ("주택임대차보호법", "6"),
+        ("주택임대차보호법", "6의2"),
+    ],
+    "차임증감": [
+        ("주택임대차보호법", "7"),
+        ("민법", "628"),
+    ],
+    "전월세전환": [
+        ("주택임대차보호법", "7의2"),
+        ("주택임대차보호법 시행령", "9"),
+    ],
+    "임대인의무": [
+        ("민법", "623"),
+        ("민법", "624"),
+    ],
+    "수선의무": [
+        ("민법", "623"),
+        ("민법", "626"),
+        ("민법", "627"),
+    ],
+    "계약해지": [
+        ("민법", "627"),
+        ("민법", "635"),
+        ("민법", "640"),
+    ],
+    "손해배상": [
+        ("민법", "623"),
+        ("민법", "625"),
+    ],
+}
 
 B_PART_CATEGORIES = [
     "계약갱신",
@@ -327,6 +368,48 @@ def deduplicate_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         unique_results.append(result)
     return unique_results
+
+
+def normalize_article_token(value: Any) -> str:
+    """조문 번호 비교를 위해 '제6조의3', '6의3', '6 3' 같은 표현을 단순화합니다."""
+    text = str(value or "")
+    text = text.replace("제", "").replace("조", "").replace("의", "-")
+    text = re.sub(r"[^0-9-]", "", text)
+    return text.strip("-")
+
+
+def is_core_law_anchor(result: dict[str, Any], law_keyword: str, article: str) -> bool:
+    """검색 결과가 category별 핵심 조문 anchor와 일치하는지 확인합니다."""
+    metadata = result.get("metadata") or {}
+    law_name = str(metadata.get("law_name") or "")
+    title = str(result.get("title") or metadata.get("title") or "")
+    metadata_article = str(metadata.get("article") or "")
+    expected_article = normalize_article_token(article)
+
+    if law_keyword not in law_name and law_keyword not in title:
+        return False
+
+    if normalize_article_token(metadata_article) == expected_article:
+        return True
+
+    normalized_title = normalize_article_token(title)
+    return expected_article in normalized_title
+
+
+def filter_precedents_by_similarity(
+    results: list[dict[str, Any]],
+    min_similarity: float = PRECEDENT_MIN_SIMILARITY,
+) -> list[dict[str, Any]]:
+    """관련성이 약한 판례가 최종 근거에 섞이지 않도록 similarity 기준으로 제외합니다."""
+    filtered: list[dict[str, Any]] = []
+    for result in results:
+        try:
+            similarity = float(result.get("similarity") or 0)
+        except (TypeError, ValueError):
+            similarity = 0.0
+        if similarity >= min_similarity:
+            filtered.append(result)
+    return filtered
 
 
 def evaluate_retrieval_quality(retrieved: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1368,6 +1451,23 @@ class BPartMVPGraph:
             )
             law_results.extend(result.to_dict() for result in laws)
 
+            for law_keyword, article in CORE_LAW_ANCHORS.get(category, []):
+                anchor_query = f"{question}\n핵심 근거: {law_keyword} 제{article}조"
+                anchor_candidates = self.retriever.search_sync(
+                    query=anchor_query,
+                    top_k=8,
+                    category=category,
+                    source_type="law",
+                )
+                for candidate in anchor_candidates:
+                    candidate_dict = candidate.to_dict()
+                    if is_core_law_anchor(candidate_dict, law_keyword, article):
+                        candidate_dict.setdefault("metadata", {})[
+                            "retrieval_reason"
+                        ] = "core_law_anchor"
+                        law_results.append(candidate_dict)
+                        break
+
         for category in search_categories:
             precedents = self.retriever.search_sync(
                 query=question,
@@ -1378,7 +1478,9 @@ class BPartMVPGraph:
             precedent_results.extend(result.to_dict() for result in precedents)
 
         law_results = deduplicate_results(law_results)
-        precedent_results = deduplicate_results(precedent_results)
+        precedent_results = filter_precedents_by_similarity(
+            deduplicate_results(precedent_results)
+        )
 
         law_results.sort(key=lambda item: item.get("similarity", 0), reverse=True)
         precedent_results.sort(key=lambda item: item.get("similarity", 0), reverse=True)

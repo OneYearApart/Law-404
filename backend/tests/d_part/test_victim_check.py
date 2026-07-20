@@ -393,6 +393,62 @@ async def test_filled_slot_is_never_regressed_by_later_unclear(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_unfilled_slot_is_never_regressed_by_later_unclear(monkeypatch):
+    """unfilled도 filled처럼 확정 상태다 — _unresolved_required_slots가 해결된 것으로 취급한다.
+    추출기의 unclear는 "이 슬롯이 불명확"이 아니라 "이번 발화에서 확인되지 않았다"는 기본값이라
+    매 턴 돌아오는데, 그게 unfilled를 덮으면 확정된 답이 지워져 같은 질문을 다시 묻는다
+    (골든셋 vj-008에서 인터뷰가 종결에 도달하지 못하고 슬롯①을 반복 질문)."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",   # 이번 발화는 슬롯①을 언급하지 않았다
+                "deposit_under_limit": "filled",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unclear",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.UNFILLED)
+    state = {"user_input": "1억이요", "victim_slots": existing}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].moved_in_and_fixed_date == SlotStatus.UNFILLED
+    # 확정된 슬롯을 다시 묻지 않고 다음 미해결 슬롯으로 넘어간다
+    assert result["victim_pending_slot"] == "multiple_victims"
+
+
+@pytest.mark.asyncio
+async def test_unfilled_slot_still_accepts_user_correction(monkeypatch):
+    """되돌림 방지는 unclear에만 건다 — unfilled를 통째로 잠그면 사용자의 정정
+    ("아 사실 전입신고 했어요")까지 막힌다."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "filled",
+                "deposit_under_limit": "unclear",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unclear",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.UNFILLED)
+    state = {"user_input": "아 사실 작년에 전입신고 했어요", "victim_slots": existing}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].moved_in_and_fixed_date == SlotStatus.FILLED
+
+
+@pytest.mark.asyncio
 async def test_auction_completed_true_survives_later_turns(monkeypatch):
     """auction_completed는 슬롯①③을 면제하므로 뒤집히면 판정이 통째로 바뀐다.
     매 턴 LLM이 재판정하더라도 True는 내려오지 않아야 하고, 미언급(null)이 False로 덮어써도 안 된다."""
