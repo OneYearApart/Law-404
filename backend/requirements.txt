@@ -22,3 +22,5 @@ Pillow
 pytesseract
 pdfplumber
 httpx
+pytest
+pytest-asyncio

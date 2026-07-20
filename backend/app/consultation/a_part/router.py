@@ -74,8 +74,27 @@ def detect_primary_issue_id(query: str) -> str:
         return "q02_co_owner"
 
     if (
-        _contains_any(text, ["등기부등본 소유자", "등기부 소유자", "소유자와 계약서"])
-        and _contains_any(text, ["임대인 이름이 다", "이름이 다른", "임대인과 소유자", "소유자와 임대인"])
+        _contains_any(
+            text,
+            [
+                "등기부등본 소유자",
+                "등기부 소유자",
+                "등기부상 소유자",
+                "소유자와 계약서",
+                "소유자와 임대인",
+                "임대인과 소유자",
+            ],
+        )
+        and _contains_any(
+            text,
+            [
+                "이름이 다",
+                "이름이 달",
+                "서로 다",
+                "불일치",
+                "다른 사람",
+            ],
+        )
     ):
         return "q03_owner_lessor_mismatch"
 
@@ -86,8 +105,23 @@ def detect_primary_issue_id(query: str) -> str:
         return "q04_broker_account_payment"
 
     if (
-        _contains_any(text, ["중개대상물 확인설명서", "확인설명서", "중개대상물"])
-        and _contains_any(text, ["계약서랑 다", "계약서와 다", "내용이 다", "불일치"])
+        _contains_any(
+            text,
+            ["중개대상물 확인설명서", "확인설명서", "중개대상물"],
+        )
+        and _contains_any(
+            text,
+            [
+                "계약서랑 다",
+                "계약서와 다",
+                "계약서 내용이 다",
+                "내용이 다",
+                "내용이 달",
+                "불일치",
+                "차이가",
+                "틀리",
+            ],
+        )
     ):
         return "q06_broker_explanation_mismatch"
 
@@ -115,7 +149,14 @@ def detect_primary_issue_id(query: str) -> str:
         return "q16_lease_report"
     if _contains_any(text, ["전입세대확인서", "전입세대 확인서", "전입세대열람"]):
         return "q17_household_certificate"
-    if "주소" in text and "등기부등본" in text and _contains_any(text, ["다른", "다르면", "차이", "불일치"]):
+    if (
+        "주소" in text
+        and _contains_any(text, ["등기부등본", "등기부", "등기사항증명서"])
+        and _contains_any(
+            text,
+            ["다른", "다르면", "달라", "다르", "차이", "불일치", "안 맞"],
+        )
+    ):
         return "q18_address_mismatch"
     if "계약서" in text and "보증금" in text and _contains_any(text, ["이체 내역", "이체내역", "송금 내역", "금액이 다", "차액"]):
         return "q19_deposit_transfer_mismatch"

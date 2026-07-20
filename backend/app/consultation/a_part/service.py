@@ -98,7 +98,14 @@ class APartConversationService:
 
     def _get_slot_extractor(self) -> SlotUpdateExtractor:
         if self._slot_extractor is None:
-            self._slot_extractor = OpenAISlotUpdateExtractor()
+            try:
+                from app.graph.parts.a_part.chains import (
+                    LangChainSlotUpdateExtractor,
+                )
+
+                self._slot_extractor = LangChainSlotUpdateExtractor()
+            except Exception:
+                self._slot_extractor = OpenAISlotUpdateExtractor()
         return self._slot_extractor
 
     def _get_rag_answerer(self) -> RAGAnswerer:

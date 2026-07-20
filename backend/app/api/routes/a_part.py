@@ -48,15 +48,6 @@ _SUPPORTED_DOCUMENT_TYPES = {
     DocumentType.LEASE_CONTRACT,
     DocumentType.REGISTRY,
 }
-_OWNER_PROXY_SCENARIO_MARKERS = (
-    "대리",
-    "위임",
-    "대신 계약",
-    "집주인 가족",
-    "집주인 아들",
-    "집주인 딸",
-    "소유자 가족",
-)
 _DEFAULT_CONVERSATION_SERVICE = APartConversationService(
     store=SharedConversationStore(part="a")
 )
@@ -93,20 +84,6 @@ class ChatTurnAPIRequest(BaseModel):
     analyze_documents: bool = False
     force_document_analysis: bool = False
 
-
-
-def _is_owner_proxy_scenario(question: str) -> bool:
-    normalized = str(question or "").replace(" ", "")
-    return any(marker.replace(" ", "") in normalized for marker in _OWNER_PROXY_SCENARIO_MARKERS)
-
-
-def _has_lease_contract(state: ConversationState | None) -> bool:
-    if state is None:
-        return False
-    return any(
-        document.document_type == DocumentType.LEASE_CONTRACT
-        for document in state.documents
-    )
 
 def get_a_part_chatbot_service() -> APartChatbotService:
     """테스트에서 교체할 수 있는 서비스 의존성."""
@@ -540,23 +517,7 @@ async def handle_a_part_turn(
             raise APartAPIError(
                 status_code=422,
                 code="DOCUMENT_REQUIRED",
-                message="분석할 임대차계약서 PDF를 먼저 업로드해 주세요.",
-                retryable=True,
-            )
-
-        is_first_turn = current_state is None or current_state.turn_count == 0
-        if (
-            is_first_turn
-            and not _is_owner_proxy_scenario(normalized_question)
-            and not _has_lease_contract(current_state)
-        ):
-            raise APartAPIError(
-                status_code=422,
-                code="UNSUPPORTED_DEMO_SCENARIO",
-                message=(
-                    "현재 A파트 데모는 집주인 가족·대리 계약 상담과 "
-                    "임대차계약서 PDF 검토 두 가지를 지원합니다."
-                ),
+                message="분석할 임대차계약서 또는 등기부등본 PDF를 먼저 업로드해 주세요.",
                 retryable=True,
             )
 
@@ -599,10 +560,20 @@ async def handle_a_part_turn(
 
         turn_count = result.consultation.state.turn_count
         summary_interval = max(1, int(settings.summary_trigger_turns or 4))
-        if result.is_new_conversation or turn_count % summary_interval == 0:
+        try:
+            summary_conversation_id = int(result.conversation_id)
+        except (TypeError, ValueError):
+            summary_conversation_id = None
+        if (
+            summary_conversation_id is not None
+            and (
+                result.is_new_conversation
+                or turn_count % summary_interval == 0
+            )
+        ):
             background_tasks.add_task(
                 maybe_summarize_conversation,
-                int(result.conversation_id),
+                summary_conversation_id,
                 user_id,
                 1,
             )
