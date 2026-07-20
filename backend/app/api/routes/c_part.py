@@ -145,7 +145,7 @@ class AskResponse(BaseModel):
     - response_type="off_topic"    → 범위 밖 (message만)
     - response_type="consultation" → 정식 상담 (7개 섹션)
     """
-    response_type: str = Field(..., description="definition | off_topic | consultation")
+    response_type: str = Field(..., description="definition | off_topic | consultation | guide | document_intent ")
 
     # 【definition / off_topic】
     message: Optional[str] = Field(None)
@@ -360,6 +360,24 @@ async def ask(
                 elapsed_seconds=round(elapsed, 2),
                 conversation_id=conv_id,
             )
+        
+        if answer.get("is_guide"):
+            return AskResponse(
+                response_type="guide",
+                message=answer["message"],
+                confidence_score=answer.get("confidence_score", 0.85),
+                deposit_amount=result.get("deposit_amount"),
+                conversation_id=conv_id,
+            )
+        
+        if answer.get("is_document_intent"):
+            return AskResponse(
+                response_type="document_intent",
+                message=answer["message"],
+                suggest_document=True,
+                confidence_score=answer.get("confidence_score", 0.9),
+                conversation_id=conv_id,
+            )
 
         # ── 분기 B: off-topic ──
         if answer.get("is_off_topic"):
@@ -405,6 +423,7 @@ async def ask(
             deposit_amount=answer.get("deposit_amount"),
             elapsed_seconds=round(elapsed, 2),
             conversation_id=conv_id,
+            suggest_document=result.get("suggest_document", False)
         )
 
     except HTTPException:
@@ -525,7 +544,36 @@ async def _stream_ask(
                         })
                         yield sse_event("done", {"conversation_id": conv_id})
                         return
- 
+                    
+                    if answer and answer.get("is_guide"):
+                        yield sse_event("classified", {"response_type": "guide"})
+                        msg = answer.get("message", "")
+                        yield sse_event("message", {"text": msg})
+                        await conv_repo.save_message(
+                            user_id, PART, "assistant", msg, conv_id
+                        )
+                        yield sse_event("meta", {
+                            "confidence_score": answer.get("confidence_score", 0.85),
+                            "deposit_amount": node_out.get("deposit_amount"),
+                            "elapsed_seconds": round(time.time() - start, 2),
+                        })
+                        yield sse_event("done", {"conversation_id": conv_id})
+                        return
+                    
+                    # 【DOCUMENT】문서 작성 요청 → 안내 + 제안
+                    if answer and answer.get("is_document_intent"):
+                        yield sse_event(
+                            "classified", {"response_type": "document_intent"}
+                        )
+                        msg = answer.get("message", "")
+                        yield sse_event("message", {"text": msg})
+                        yield sse_event("suggest", {"type": "document"})
+                        await conv_repo.save_message(
+                            user_id, PART, "assistant", msg, conv_id
+                        )
+                        yield sse_event("done", {"conversation_id": conv_id})
+                        return
+                    
                     if answer and answer.get("is_off_topic"):
                         yield sse_event("classified", {"response_type": "off_topic"})
                         msg = answer.get("message", "")
@@ -545,6 +593,8 @@ async def _stream_ask(
                         classified_sent = True
                         # 섹션이 채워질 자리를 프론트가 미리 그리도록 순서 힌트 전달
                         yield sse_event("outline", {"sections": SECTION_ORDER})
+                    if node_out.get("suggest_document"):
+                            yield sse_event("suggest", {"type": "document"})
                     continue
  
                 # ── 섹션 노드들 ──

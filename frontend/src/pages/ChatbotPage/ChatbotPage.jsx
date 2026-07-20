@@ -299,9 +299,10 @@ function ChatbotPage({ consultationType }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isCDocumentMode, setIsCDocumentMode] = useState(false);
+  const [isCStreaming, setIsCStreaming] = useState(false);
   const cImageInputRef = useRef(null);
   const messages = messagesByType[consultationType] ?? [];
-  const isBusy = isLoading || isUploading;
+  const isBusy = isLoading || isUploading || isCStreaming;
   const currentConversationId = conversationIds[consultationType] || null;
   const aThinkingItems = isAPart ? buildAThinkingItems(messages) : [];
   const latestAssistantIndex = messages.reduce(
@@ -804,72 +805,78 @@ function ChatbotPage({ consultationType }) {
   const runCChatTurn = async ({ question }) => {
     const conversationId = await ensureCConversation();
     const assistantMessageId = createMessageId("assistant");
-
-    appendMessages({
-      id: assistantMessageId,
-      role: "assistant",
-      content: {
-        responseType: null,
-        outline: [],
-        sections: {},
-        faq: [],
-        message: "",
-        meta: null,
-        isStreaming: true,
-        error: null,
-      },
-    });
-
-    await streamCAsk(
-      { question, conversationId },
-      {
-        onClassified: (responseType) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            responseType,
-          })),
-        onOutline: (outline) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            outline,
-          })),
-        onSection: (section) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            sections: { ...(content.sections || {}), [section.key]: section },
-          })),
-        onFaq: (faq) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            faq,
-          })),
-        onMessage: (message) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            message,
-          })),
-        onMeta: (meta) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            meta,
-          })),
-        onError: (streamError) =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            isStreaming: false,
-            error: getErrorMessage(
-              streamError,
-              "답변 생성 중 오류가 발생했습니다.",
-            ),
-          })),
-        onDone: () =>
-          updateMessageContent(assistantMessageId, (content) => ({
-            ...content,
-            isStreaming: false,
-          })),
-      },
-    );
+ 
+    let bubbleCreated = false;
+ 
+    // 첫 응답이 도착하는 순간 말풍선을 만들고, "생각 중"을 내린다.
+    const ensureBubble = () => {
+      if (bubbleCreated) {
+        return;
+      }
+      bubbleCreated = true;
+      setIsLoading(false); // ← "생각 중" 숨김
+      appendMessages({
+        id: assistantMessageId,
+        role: "assistant",
+        content: {
+          responseType: null,
+          outline: [],
+          sections: {},
+          faq: [],
+          message: "",
+          meta: null,
+          isStreaming: true,
+          error: null,
+        },
+      });
+    };
+ 
+    // 말풍선 보장 + 내용 갱신을 한 번에
+    const patch = (updater) => {
+      ensureBubble();
+      updateMessageContent(assistantMessageId, updater);
+    };
+ 
+    setIsCStreaming(true);
+ 
+    try {
+      await streamCAsk(
+        { question, conversationId },
+        {
+          onClassified: (responseType) =>
+            patch((content) => ({ ...content, responseType })),
+          onOutline: (outline) =>
+            patch((content) => ({ ...content, outline })),
+          onSection: (section) =>
+            patch((content) => ({
+              ...content,
+              sections: { ...(content.sections || {}), [section.key]: section },
+            })),
+          onFaq: (faq) => patch((content) => ({ ...content, faq })),
+          onMessage: (message) =>
+            patch((content) => ({ ...content, message })),
+          onMeta: (meta) => patch((content) => ({ ...content, meta })),
+          onSuggest: (type) =>
+            patch((content) => ({ ...content, suggestDocument: type === 'document' })),
+          onDone: () => patch((content) => ({ ...content, isStreaming: false })),
+          onError: (streamError) =>
+            patch((content) => ({
+              ...content,
+              isStreaming: false,
+              error: getErrorMessage(
+                streamError,
+                "답변 생성 중 오류가 발생했습니다.",
+              ),
+            })),
+          onDone: () =>
+            patch((content) => ({ ...content, isStreaming: false })),
+        },
+      );
+    } finally {
+      setIsCStreaming(false);
+    }
   };
+
   // ── C파트 문서(내용증명) 모드 ──
   const mapCDocumentResult = (result) => ({
     kind: "document",
@@ -884,35 +891,36 @@ function ChatbotPage({ consultationType }) {
   });
 
   const runCDocumentTurn = async (question) => {
-    const conversationId = await ensureCConversation();
-    const assistantMessageId = createMessageId("assistant");
-
-    appendMessages({
-      id: assistantMessageId,
-      role: "assistant",
-      content: { kind: "document", isStreaming: true, status: null },
-    });
-
-    try {
-      const result = await sendCDocumentMessage({
-        userMessage: question,
-        conversationId,
-      });
-      updateMessageContent(assistantMessageId, mapCDocumentResult(result));
-    } catch (requestError) {
-      updateMessageContent(assistantMessageId, {
-        kind: "document",
-        isStreaming: false,
-        status: null,
-        error: getErrorMessage(
-          requestError,
-          "내용증명 생성 중 오류가 발생했습니다.",
-        ),
-      });
-    }
-  };
-
-  const handleCImageSelected = async (event) => {
+      const conversationId = await ensureCConversation();
+  
+      try {
+        const result = await sendCDocumentMessage({
+          userMessage: question,
+          conversationId,
+        });
+        appendMessages({
+          id: createMessageId("assistant"),
+          role: "assistant",
+          content: mapCDocumentResult(result),
+        });
+      } catch (requestError) {
+        appendMessages({
+          id: createMessageId("assistant"),
+          role: "assistant",
+          content: {
+            kind: "document",
+            isStreaming: false,
+            status: null,
+            error: getErrorMessage(
+              requestError,
+              "내용증명 생성 중 오류가 발생했습니다.",
+            ),
+          },
+        });
+      }
+    };
+ 
+const handleCImageSelected = async (event) => {
     const file = event.target.files?.[0];
     if (event.target) {
       event.target.value = "";
@@ -931,26 +939,27 @@ function ChatbotPage({ consultationType }) {
       content: `[계약서 이미지 업로드 — ${file.name}]`,
     });
 
-    const assistantMessageId = createMessageId("assistant");
-    appendMessages({
-      id: assistantMessageId,
-      role: "assistant",
-      content: { kind: "document", isStreaming: true, status: null },
-    });
-
     try {
       const conversationId = await ensureCConversation();
       const result = await sendCDocumentImage({ file, conversationId });
-      updateMessageContent(assistantMessageId, mapCDocumentResult(result));
+      appendMessages({
+        id: createMessageId("assistant"),
+        role: "assistant",
+        content: mapCDocumentResult(result),
+      });
     } catch (requestError) {
-      updateMessageContent(assistantMessageId, {
-        kind: "document",
-        isStreaming: false,
-        status: null,
-        error: getErrorMessage(
-          requestError,
-          "이미지 처리 중 오류가 발생했습니다. 더 선명한 사진으로 다시 시도하거나 텍스트로 입력해 주세요.",
-        ),
+      appendMessages({
+        id: createMessageId("assistant"),
+        role: "assistant",
+        content: {
+          kind: "document",
+          isStreaming: false,
+          status: null,
+          error: getErrorMessage(
+            requestError,
+            "이미지 처리 중 오류가 발생했습니다. 더 선명한 사진으로 다시 시도하거나 텍스트로 입력해 주세요.",
+          ),
+        },
       });
     } finally {
       setIsLoading(false);
@@ -964,6 +973,13 @@ function ChatbotPage({ consultationType }) {
     );
   };
 
+  // 상담 답변 안의 "내용증명 작성 시작하기" 버튼에서 호출됩니다.
+  const handleCQuickAction = (action) => {
+    if (action === 'start_document') {
+      enterCDocumentMode();
+    }
+  };
+ 
   const exitCDocumentMode = () => {
     setIsCDocumentMode(false);
     setNotice("");
@@ -1477,7 +1493,14 @@ function ChatbotPage({ consultationType }) {
               role={message.role}
               content={displayContent}
               AssistantAnswer={AssistantAnswer}
-              onQuickAnswer={isAPart ? handleQuickAnswer : undefined}
+              onQuickAnswer={
+                isAPart
+                  ? handleQuickAnswer
+                  : isCPart
+                    ? handleCQuickAction
+                    : undefined
+              }
+
               isInteractive={
                 isAPart && index === latestAssistantIndex && !isBusy
               }

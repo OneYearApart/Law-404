@@ -174,6 +174,9 @@ export async function streamCAsk(
       case 'meta':
         handlers.onMeta?.(data);
         break;
+      case 'suggest':
+        handlers.onSuggest?.(data.type);
+        break;
       case 'error':
         handlers.onError?.(new ApiError({ message: data.message || '오류가 발생했습니다.' }));
         break;

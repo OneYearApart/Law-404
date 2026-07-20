@@ -38,6 +38,7 @@ class CPartState(TypedDict):
     # 【Classifier가 채움】
     classifier_result: Optional[dict]
     deposit_amount: Optional[int]      # 보증금 액수 (비용 계산용)
+    suggest_document: Optional[bool]   # 내용증명 작성 제안 노출 여부
 
     # 【각 노드가 채우는 섹션】
     situation_section: Optional[dict]
@@ -74,10 +75,22 @@ async def node_topic_classifier(
         else:
             logger.info("[Classifier] 보증금 액수 없음 → 비용 계산 생략")
 
-        # 【2】카테고리3 범위인지 판단
-        result = await agent.classify_topic(question=state["question"])
+        # 【2】카테고리3 범위인지 판단 (대화 맥락 포함)
+        result = await agent.classify_topic(
+            question=state["question"],
+            chat_history=state.get("chat_history"),
+        )
 
         intent = result.get("intent", "consultation")
+
+        # 문서 작성을 제안할지 여부.
+        # 질문에 내용증명/문서 관련 표현이 있으면 상담·안내 답변 아래에
+        # "작성 도와드릴까요?" 버튼을 붙인다. (자동 전환은 하지 않는다)
+        question_text = state["question"]
+        suggest_document = any(
+            keyword in question_text
+            for keyword in ("내용증명", "통고서", "최고장", "서면", "문서")
+        )
 
         # 【DEFINITION】용어 정의 → 상담 그래프 안 거치고 여기서 끝
         if intent == "definition":
@@ -89,7 +102,53 @@ async def node_topic_classifier(
                 "answer": {
                     "is_definition": True,
                     "message": definition["content"],
+                    "suggest_document": suggest_document,
                     "confidence_score": 0.9,
+                    "generated_at": datetime.now().isoformat(),
+                },
+            }
+
+        # 【GUIDE】절차·서류·양식 안내 → RAG는 쓰되 GPT 1회로 끝
+        if intent == "guide":
+            logger.info("[Classifier] 절차·서류 질문 → 간결 안내")
+            guide = await agent.answer_guide(
+                question=state["question"],
+                search_results=state.get("search_results"),
+            )
+            return {
+                "classifier_result": result,
+                "deposit_amount": deposit,
+                "answer": {
+                    "is_guide": True,
+                    "message": guide["content"],
+                    "suggest_document": suggest_document,
+                    "confidence_score": 0.85,
+                    "generated_at": datetime.now().isoformat(),
+                },
+            }
+
+        # 【DOCUMENT】문서 작성 요청 → 8노드 상담을 돌리지 않고 문서 모드를 안내
+        # ⚠️ 여기서 곧바로 DocumentAgent를 부르지 않는 이유:
+        #    /ask 는 상담용 엔드포인트라 대화 상태(collected)를 다루지 않습니다.
+        #    실제 작성은 /document 엔드포인트가 담당하므로,
+        #    여기서는 "문서 모드로 들어오세요"라고 안내만 하고
+        #    프론트가 버튼으로 전환하게 합니다.
+        if intent == "document":
+            logger.info("[Classifier] 문서 작성 요청 → 문서 모드 안내")
+            return {
+                "classifier_result": result,
+                "deposit_amount": deposit,
+                "answer": {
+                    "is_document_intent": True,
+                    "message": (
+                        "내용증명 작성을 도와드릴 수 있어요.\n\n"
+                        "아래 버튼을 누르시면 작성 모드로 전환됩니다. "
+                        "임차인·임대인 정보와 보증금 액수 등 몇 가지만 확인하면 "
+                        "초안을 만들어 드려요.\n"
+                        "임대차계약서 사진을 올리시면 대부분 자동으로 채워집니다."
+                    ),
+                    "suggest_document": True,
+                    "confidence_score": result["confidence"],
                     "generated_at": datetime.now().isoformat(),
                 },
             }
@@ -118,17 +177,17 @@ async def node_topic_classifier(
                 },
             }
 
-        # 【정상】다음 단계로
+        # 【정상】다음 단계로 (상담 8노드)
         return {
             "classifier_result": result,
             "deposit_amount": deposit,
+            "suggest_document": suggest_document,
         }
 
     except Exception as e:
         logger.error(f"[Classifier] 실패: {e}")
         return {"error": f"[Classifier] 실패: {e}"}
-
-
+    
 # ════════════════════════════════════════════════════════════════════════════════
 # 【Node 1】상황 진단  — 순차 (모든 노드의 전제)
 # ════════════════════════════════════════════════════════════════════════════════

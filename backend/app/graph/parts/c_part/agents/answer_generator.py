@@ -239,7 +239,7 @@ class AnswerGeneratorAgent:
     # 【Node 0】Topic Classifier
     # ────────────────────────────────────────────────────────────────────────
 
-    async def classify_topic(self, question: str) -> dict:
+    async def classify_topic(self, question: str, chat_history=None) -> dict:
         """
         【분류】질문을 3가지로 분류 (Supervisor 역할)
 
@@ -251,13 +251,16 @@ class AnswerGeneratorAgent:
               "reason": str,
             }
         """
-        prompt = format_topic_classifier_prompt(question)
+        prompt = format_topic_classifier_prompt(question, chat_history=chat_history)
         response = await self.llm.ainvoke(prompt)
         content = response.content.strip().upper()
 
         # 【의도 파싱】4분류
         if "DEFINITION" in content:
             intent = "definition"
+            is_relevant = True
+        elif "GUIDE" in content:
+            intent = "guide"
             is_relevant = True
         elif "DOCUMENT" in content:
             intent = "document"
@@ -273,10 +276,12 @@ class AnswerGeneratorAgent:
             is_relevant = True
 
         matched = any(kw in content for kw in
-                      ["DEFINITION", "DOCUMENT", "CONSULTATION", "IRRELEVANT"])
+                      ["DEFINITION", "GUIDE", "DOCUMENT",
+                       "CONSULTATION", "IRRELEVANT"])
 
         reason_map = {
             "definition": "용어 정의 질문",
+            "guide": "절차·서류 안내 질문",
             "consultation": "카테고리3 상담",
             "document": "문서 작성 요청",
             "irrelevant": "카테고리3 범위 외",
@@ -304,6 +309,39 @@ class AnswerGeneratorAgent:
         return {
             "content": response.content,
             "type": "definition",
+        }
+    
+    async def answer_guide(
+        self,
+        question: str,
+        search_results: Optional[dict] = None,
+    ) -> dict:
+        """
+        【절차 안내】양식·서류·절차·비용 질문에 간결하게 답한다. LLM 1회.
+
+        answer_definition과 달리 RAG 검색 결과(조문)를 근거로 사용한다.
+        판례·반박·비용 섹션은 생성하지 않는다.
+        """
+        from app.llm.c_part.prompts import format_guide_prompt
+
+        logger.info("[Guide] 절차·서류 안내 생성")
+
+        statutes_text = ""
+        if search_results:
+            statutes = (
+                search_results.get("statutes")
+                if isinstance(search_results, dict)
+                else getattr(search_results, "statutes", None)
+            )
+            if statutes:
+                statutes_text = format_statutes_context(statutes)
+
+        prompt = format_guide_prompt(question, statutes=statutes_text)
+        response = await self.llm.ainvoke(prompt)
+
+        return {
+            "content": response.content,
+            "type": "guide",
         }
     # ────────────────────────────────────────────────────────────────────────
     # 【Node 1】상황 진단
