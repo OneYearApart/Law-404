@@ -751,8 +751,6 @@ function ChatbotPage({ consultationType }) {
       calendarId: "primary",
       topK: 5,
       onMeta: (meta) => {
-        onSuggest: (type) =>
-            patch((content) => ({ ...content, suggestDocument: type === 'document' })),
         updateMessageContent(assistantMessageId, (content) => ({
           ...(content && typeof content === "object"
             ? content
@@ -858,6 +856,9 @@ function ChatbotPage({ consultationType }) {
           onMessage: (message) =>
             patch((content) => ({ ...content, message })),
           onMeta: (meta) => patch((content) => ({ ...content, meta })),
+          onSuggest: (type) =>
+            patch((content) => ({ ...content, suggestDocument: type === 'document' })),
+          onDone: () => patch((content) => ({ ...content, isStreaming: false })),
           onError: (streamError) =>
             patch((content) => ({
               ...content,
@@ -919,7 +920,7 @@ function ChatbotPage({ consultationType }) {
       }
     };
  
-  const handleCImageSelected = async (event) => {
+const handleCImageSelected = async (event) => {
     const file = event.target.files?.[0];
     if (event.target) {
       event.target.value = "";
@@ -938,13 +939,6 @@ function ChatbotPage({ consultationType }) {
       content: `[계약서 이미지 업로드 — ${file.name}]`,
     });
 
-    const assistantMessageId = createMessageId("assistant");
-      appendMessages({
-        id: assistantMessageId,
-        role: "assistant",
-        content: { kind: "document", isStreaming: true, status: null },
-      });
- 
     try {
       const conversationId = await ensureCConversation();
       const result = await sendCDocumentImage({ file, conversationId });
@@ -954,14 +948,18 @@ function ChatbotPage({ consultationType }) {
         content: mapCDocumentResult(result),
       });
     } catch (requestError) {
-      updateMessageContent(assistantMessageId, {
-        kind: "document",
-        isStreaming: false,
-        status: null,
-        error: getErrorMessage(
-          requestError,
-          "이미지 처리 중 오류가 발생했습니다. 더 선명한 사진으로 다시 시도하거나 텍스트로 입력해 주세요.",
-        ),
+      appendMessages({
+        id: createMessageId("assistant"),
+        role: "assistant",
+        content: {
+          kind: "document",
+          isStreaming: false,
+          status: null,
+          error: getErrorMessage(
+            requestError,
+            "이미지 처리 중 오류가 발생했습니다. 더 선명한 사진으로 다시 시도하거나 텍스트로 입력해 주세요.",
+          ),
+        },
       });
     } finally {
       setIsLoading(false);
