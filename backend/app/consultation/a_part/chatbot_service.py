@@ -255,6 +255,7 @@ class ChatbotTurnResult(BaseModel):
     next_question: dict[str, Any] | None = None
     is_complete: bool = False
     warnings: list[str] = Field(default_factory=list)
+    orchestration: dict[str, Any] = Field(default_factory=dict)
 
 
 class APartChatbotService:
@@ -1019,7 +1020,7 @@ class APartChatbotService:
             return ChatbotProcessingStatus.NEEDS_FOLLOW_UP
         return ChatbotProcessingStatus.COMPLETED
 
-    def handle(self, request: ChatbotTurnRequest) -> ChatbotTurnResult:
+    def _handle_without_langgraph(self, request: ChatbotTurnRequest) -> ChatbotTurnResult:
         conversation_id, is_new = self._ensure_conversation(request)
         warnings: list[str] = []
         document_analysis: ConversationDocumentAnalysisResponse | None = None
@@ -1097,3 +1098,21 @@ class APartChatbotService:
             consultation=consultation,
             warnings=[*warnings, *consultation.warnings],
         )
+
+    def handle(self, request: ChatbotTurnRequest) -> ChatbotTurnResult:
+        """LangGraph로 한 턴을 실행하고 패키지 누락 시에만 기존 흐름을 사용한다."""
+
+        try:
+            from app.graph.parts.a_part.graph import run_a_part_graph
+        except ImportError:
+            result = self._handle_without_langgraph(request)
+            return result.model_copy(
+                update={
+                    "orchestration": {
+                        "framework": "legacy_fallback",
+                        "graph_version": None,
+                    }
+                }
+            )
+        return run_a_part_graph(self, request)
+
