@@ -13,7 +13,13 @@ from app.conversations.orm import Conversation, Message
 from app.conversations.repository import create_conversation
 from app.core.db import SessionLocal
 from app.graph.parts.d_part import graph as graph_module
-from app.graph.parts.d_part.schemas import SlotStatus, Stage, VictimRequirementSlots
+from app.graph.parts.d_part.schemas import (
+    GENERAL_TOPIC_LABELS,
+    RISK_SIGNALS,
+    SPECIAL_CASE_CATEGORIES,
+    SlotStatus,
+    VictimRequirementSlots,
+)
 from app.llm import d_part as llm_d_part
 
 pytestmark = pytest.mark.skipif(
@@ -56,8 +62,17 @@ async def test_call_victim_check_live():
 
 @pytest.mark.asyncio
 async def test_call_supervisor_live():
+    """축별 판별을 실제 모델이 스키마대로 채우는지 — mock은 이상적인 shape를 흉내낼 뿐이라
+    모델이 enum 밖의 값이나 "없음" 같은 문자열을 흘리는지는 실호출로만 잡힌다."""
     result = await llm_d_part.call_supervisor("보증금을 못 받고 있어요")
-    assert isinstance(result.get("category"), str)
+
+    assert isinstance(result["recognized"], bool)
+    assert set(result["risk_signals"]) <= set(RISK_SIGNALS)
+    # 해당 없는 축은 키를 아예 빼도록 지시했다 — 빈 문자열/"없음"이 오면 안 된다
+    for axis, allowed in (("topic", list(GENERAL_TOPIC_LABELS)),
+                          ("special_case", list(SPECIAL_CASE_CATEGORIES))):
+        if axis in result:
+            assert result[axis] in allowed
 
 
 # 확인응답 판별은 mock으로는 검증이 불가능하다 — 가짜 응답이 항상 이상적인 "네"로 오기 때문에
@@ -120,7 +135,6 @@ async def test_full_graph_live_end_to_end(user_id):
     initial_state = {
         "user_input": "아니요 없어요",
         "session_id": str(conversation.id),
-        "stage": Stage.DURING,
         "victim_slots": slots,
         "awaiting_relief_confirmation": True,
     }

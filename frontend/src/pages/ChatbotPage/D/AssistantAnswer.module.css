@@ -23,15 +23,251 @@
   font-weight: var(--font-weight-bold);
 }
 
+.judgmentGroup {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.judgmentCaption {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-white);
+}
+
 .status {
+  flex-shrink: 0;
   padding: var(--space-2) var(--space-8);
   color: var(--color-deep-blue);
   background: var(--color-white);
   border-radius: var(--radius-round);
 }
 
-.answer p {
+/* 요건 판정(높음/있음/추가확인) 배지. 판정이 확정된 턴에만 렌더되므로 상태 라벨과 달리
+   경고색을 써도 오해가 없다. A파트 위험도 배지와 같은 색 — 토큰에 없어 리터럴로 둔다. */
+.judgment {
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-10);
+  font-size: var(--font-size-caption);
+  color: #8a4b00;
+  background: #fff2d9;
+  border-radius: var(--radius-round);
+}
+
+.errorMessage {
   padding: var(--space-16) var(--space-20);
   font-size: var(--font-size-body);
   line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+  color: #b42318;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-16) var(--space-20);
+  font-size: var(--font-size-body-small);
+  color: var(--color-text-secondary);
+}
+
+/* 점 하나를 그리고 box-shadow로 오른쪽에 2개를 더 얹는다(요소 3개를 두지 않기 위함).
+   순서대로 옅어지게 해서 진행 방향을 만든다. */
+.loadingDots {
+  width: 0.6rem;
+  height: 0.6rem;
+  flex-shrink: 0;
+  margin-right: 1.8rem;
+  background: var(--color-primary);
+  border-radius: var(--radius-round);
+  box-shadow:
+    0.9rem 0 0 color-mix(in srgb, var(--color-primary) 55%, transparent),
+    1.8rem 0 0 color-mix(in srgb, var(--color-primary) 25%, transparent);
+  animation: d-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes d-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 움직임에 민감한 사용자에겐 애니메이션 대신 정지된 점만 보인다. */
+@media (prefers-reduced-motion: reduce) {
+  .loadingDots {
+    animation: none;
+  }
+}
+
+/* 해설 → 상황적용 → 대응 → 관련 법률 용어 풀이. 네 블록 모두 같은 프레임을 쓴다 —
+   출처(LLM 생성 / 코드 큐레이션 / DB 원문)는 달라도 사용자에겐 한 답변의 목차다. */
+.section {
+  padding: var(--space-16) var(--space-20);
+}
+
+.section + .section {
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.sectionTitle {
+  margin-bottom: var(--space-8);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-deep-blue);
+}
+
+.sectionBody {
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
+}
+
+.terms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.terms dt {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-bold);
+}
+
+.terms dd {
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+
+.disclaimer {
+  padding: var(--space-12) var(--space-20);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-subtle);
+}
+
+/* 근거 자료는 DB 원문 그대로다. 조문·판례 verbatim이라 길어서 본문에 인라인하지 않고
+   버튼으로 접어두고 모달로 펼친다. */
+.citations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-20);
+  background: var(--color-surface-subtle);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.citationsTitle {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}
+
+.citationButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.citationButtons button {
+  padding: var(--space-6) var(--space-12);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+  cursor: pointer;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-blue);
+  border-radius: var(--radius-round);
+  transition: background var(--transition-fast);
+}
+
+.citationButtons button:hover {
+  background: var(--color-surface-highlight);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-20);
+  background: rgb(23 27 38 / 56%);
+}
+
+.citationModal {
+  display: flex;
+  flex-direction: column;
+  width: min(64rem, 100%);
+  max-height: 80vh;
+  overflow: hidden;
+  background: var(--color-surface);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-20);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.modalHeader h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.modalHeader button {
+  flex-shrink: 0;
+  padding: var(--space-6) var(--space-12);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  background: var(--color-surface-subtle);
+  border: none;
+  border-radius: var(--radius-small);
+}
+
+.modalSourceType,
+.excerpt {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-8);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-round);
+}
+
+.modalSourceType {
+  color: var(--color-white);
+  background: var(--color-secondary);
+}
+
+.excerpt {
+  color: var(--color-text-secondary);
+  background: var(--color-border);
+}
+
+.citationContent {
+  padding: var(--space-16) var(--space-20);
+  overflow-y: auto;
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-relaxed);
+  white-space: pre-wrap;
 }

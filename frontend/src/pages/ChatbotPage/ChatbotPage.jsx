@@ -18,6 +18,20 @@ import {
 } from "../../api/chat/A/aApi.js";
 import { createBConversation, sendBChat } from "../../api/chat/B/bApi.js";
 import {
+  createCConversation,
+  streamCAsk,
+  sendCDocumentMessage,
+  sendCDocumentImage,
+} from "../../api/chat/C/cApi.js";
+import {
+  createDConversation,
+  createEmptyDAnswer,
+  getDConversation,
+  mapDConversationStateToMessages,
+  reduceDAnswer,
+  streamDChat,
+} from "../../api/chat/D/dApi.js";
+import {
   createConversation as createStoredConversation,
   loadConversation as loadStoredConversation,
   saveConversationMessage,
@@ -249,6 +263,8 @@ function ChatbotPage({ consultationType }) {
   const AssistantAnswer = CHATBOT_ANSWER_COMPONENTS[consultationType];
   const isAPart = consultationType === "before-contract";
   const isBPart = consultationType === "during-contract";
+  const isCPart = consultationType === "after-contract";
+  const isDPart = consultationType === "jeonse-fraud";
   const {
     activeAConversationId,
     newConversationVersion,
@@ -256,6 +272,7 @@ function ChatbotPage({ consultationType }) {
     startNewAConversation,
     notifyAConversationSaved,
     notifyConversationSaved,
+    refreshConversations,
   } = useChatConversation();
   const [input, setInput] = useState("");
   const [messagesByType, setMessagesByType] = useState(
@@ -281,6 +298,8 @@ function ChatbotPage({ consultationType }) {
     useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [isCDocumentMode, setIsCDocumentMode] = useState(false);
+  const cImageInputRef = useRef(null);
   const messages = messagesByType[consultationType] ?? [];
   const isBusy = isLoading || isUploading;
   const currentConversationId = conversationIds[consultationType] || null;
@@ -413,6 +432,9 @@ function ChatbotPage({ consultationType }) {
     newConversationVersion,
   ]);
 
+  // D파트 스트리밍은 메시지 개수가 아니라 마지막 답변의 길이가 늘어나므로 그것도 같이 따라간다.
+  const streamedLength = messages[messages.length - 1]?.content?.text?.length ?? 0;
+
   useEffect(() => {
     if (isAPart) {
       return undefined;
@@ -439,19 +461,28 @@ function ChatbotPage({ consultationType }) {
       }
 
       try {
-        const storedMessages = await loadStoredConversation(
-          requestedConversationId,
-        );
+        let restored;
+        if (isDPart) {
+          // D는 평문 messages가 아니라 전용 상태(turn_history)에서 구조화 답변을 그대로 복원한다
+          // — 라이브 턴과 동일한 카드(판정·인용·용어)를 살리기 위함(A파트와 같은 상태기반 방식).
+          const state = await getDConversation(requestedConversationId);
+          restored = mapDConversationStateToMessages(state);
+        } else {
+          const storedMessages = await loadStoredConversation(
+            requestedConversationId,
+          );
+          restored = storedMessages.map((message) => ({
+            id: `stored-${message.id}`,
+            role: message.role,
+            content: message.content,
+          }));
+        }
         if (cancelled) {
           return;
         }
         setMessagesByType((current) => ({
           ...current,
-          [consultationType]: storedMessages.map((message) => ({
-            id: `stored-${message.id}`,
-            role: message.role,
-            content: message.content,
-          })),
+          [consultationType]: restored,
         }));
         setConversationIds((current) => ({
           ...current,
@@ -472,14 +503,15 @@ function ChatbotPage({ consultationType }) {
     return () => {
       cancelled = true;
     };
-  }, [consultationType, isAPart, location.key, location.state]);
+  }, [consultationType, isAPart, isDPart, location.key, location.state]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
       block: "end",
     });
-  }, [messages.length, isLoading]);
+    // D파트 스트리밍은 메시지 개수가 아니라 마지막 답변의 길이가 늘어나므로 그것도 같이 따라간다.
+  }, [messages.length, isLoading, streamedLength]);
 
   useEffect(() => {
     calendarConnectionStatusRef.current = calendarConnectionStatus;
@@ -531,6 +563,7 @@ function ChatbotPage({ consultationType }) {
     return `${consultationType}-${role}-${messageIdRef.current}`;
   };
 
+  // D파트는 SSE라 답변이 토큰 단위로 들어온다. 이미 붙여둔 말풍선을 제자리에서 갱신한다.
   const updateMessageContent = (messageId, updater) => {
     setMessagesByType((current) => ({
       ...current,
@@ -573,6 +606,27 @@ function ChatbotPage({ consultationType }) {
     const conversationId = await createBConversation();
     saveConversationId(conversationId);
     return conversationId;
+  };
+
+  // D파트 엔드포인트는 대화방을 만들어주지 않으므로 첫 질문 전에 발급받아 둔다.
+  const ensureDConversation = async () => {
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+
+    const conversationId = await createDConversation();
+    saveConversationId(conversationId);
+    return conversationId;
+  };
+
+  const ensureCConversation = async () => {
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+ 
+    const created = await createCConversation();
+    saveConversationId(created.conversation_id);
+    return created.conversation_id;
   };
 
   const ensureStoredConversation = async (title) => {
@@ -746,6 +800,174 @@ function ChatbotPage({ consultationType }) {
     });
   };
 
+  const runCChatTurn = async ({ question }) => {
+    const conversationId = await ensureCConversation();
+    const assistantMessageId = createMessageId("assistant");
+ 
+    appendMessages({
+      id: assistantMessageId,
+      role: "assistant",
+      content: {
+        responseType: null,
+        outline: [],
+        sections: {},
+        faq: [],
+        message: "",
+        meta: null,
+        isStreaming: true,
+        error: null,
+      },
+    });
+ 
+    await streamCAsk(
+      { question, conversationId },
+      {
+        onClassified: (responseType) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            responseType,
+          })),
+        onOutline: (outline) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            outline,
+          })),
+        onSection: (section) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            sections: { ...(content.sections || {}), [section.key]: section },
+          })),
+        onFaq: (faq) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            faq,
+          })),
+        onMessage: (message) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            message,
+          })),
+        onMeta: (meta) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            meta,
+          })),
+        onError: (streamError) =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            isStreaming: false,
+            error: getErrorMessage(
+              streamError,
+              "답변 생성 중 오류가 발생했습니다.",
+            ),
+          })),
+        onDone: () =>
+          updateMessageContent(assistantMessageId, (content) => ({
+            ...content,
+            isStreaming: false,
+          })),
+      },
+    );
+  };
+  // ── C파트 문서(내용증명) 모드 ──
+  const mapCDocumentResult = (result) => ({
+    kind: "document",
+    status: result.status,
+    progress: result.progress ?? 0,
+    missingLabels: result.missing_labels ?? [],
+    nextQuestion: result.next_question ?? null,
+    document: result.document ?? null,
+    extractedFromImage: result.extracted_from_image ?? [],
+    isStreaming: false,
+    error: null,
+  });
+ 
+  const runCDocumentTurn = async (question) => {
+    const conversationId = await ensureCConversation();
+    const assistantMessageId = createMessageId("assistant");
+ 
+    appendMessages({
+      id: assistantMessageId,
+      role: "assistant",
+      content: { kind: "document", isStreaming: true, status: null },
+    });
+ 
+    try {
+      const result = await sendCDocumentMessage({
+        userMessage: question,
+        conversationId,
+      });
+      updateMessageContent(assistantMessageId, mapCDocumentResult(result));
+    } catch (requestError) {
+      updateMessageContent(assistantMessageId, {
+        kind: "document",
+        isStreaming: false,
+        status: null,
+        error: getErrorMessage(
+          requestError,
+          "내용증명 생성 중 오류가 발생했습니다.",
+        ),
+      });
+    }
+  };
+ 
+  const handleCImageSelected = async (event) => {
+    const file = event.target.files?.[0];
+    if (event.target) {
+      event.target.value = "";
+    }
+    if (!file || isBusy) {
+      return;
+    }
+ 
+    setError("");
+    setNotice("");
+    setIsLoading(true);
+ 
+    appendMessages({
+      id: createMessageId("user-image"),
+      role: "user",
+      content: `[계약서 이미지 업로드 — ${file.name}]`,
+    });
+ 
+    const assistantMessageId = createMessageId("assistant");
+    appendMessages({
+      id: assistantMessageId,
+      role: "assistant",
+      content: { kind: "document", isStreaming: true, status: null },
+    });
+ 
+    try {
+      const conversationId = await ensureCConversation();
+      const result = await sendCDocumentImage({ file, conversationId });
+      updateMessageContent(assistantMessageId, mapCDocumentResult(result));
+    } catch (requestError) {
+      updateMessageContent(assistantMessageId, {
+        kind: "document",
+        isStreaming: false,
+        status: null,
+        error: getErrorMessage(
+          requestError,
+          "이미지 처리 중 오류가 발생했습니다. 더 선명한 사진으로 다시 시도하거나 텍스트로 입력해 주세요.",
+        ),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+ 
+  const enterCDocumentMode = () => {
+    setIsCDocumentMode(true);
+    setNotice(
+      "내용증명 작성 모드로 전환했습니다. 임차인·임대인 정보와 보증금 액수를 알려 주시거나, 계약서 사진을 올려 주세요.",
+    );
+  };
+ 
+  const exitCDocumentMode = () => {
+    setIsCDocumentMode(false);
+    setNotice("");
+  };
+  
   const handleShowCalendarConnectGuide = async () => {
     if (isCalendarConnectionLoading) {
       return;
@@ -873,6 +1095,7 @@ function ChatbotPage({ consultationType }) {
 
     localMessageSequenceRef.current += 1;
     const messageKey = `local-${localMessageSequenceRef.current}`;
+    const assistantId = `${messageKey}-assistant`;
     appendMessages({
       id: `${messageKey}-user`,
       role: "user",
@@ -890,7 +1113,28 @@ function ChatbotPage({ consultationType }) {
     }
 
     try {
-      if (isAPart) {
+      if (isDPart) {
+        // 빈 답변 카드를 먼저 띄우고 스트림이 도착하는 대로 채운다.
+        appendMessages({
+          id: assistantId,
+          role: "assistant",
+          content: createEmptyDAnswer(),
+        });
+
+        const conversationId = await ensureDConversation();
+
+        await streamDChat({
+          conversationId,
+          userInput: question,
+          onEvent: (streamEvent) =>
+            updateMessageContent(assistantId, (answer) =>
+              reduceDAnswer(answer, streamEvent),
+            ),
+        });
+
+        // 첫 질문에 대화방이 생기고 제목도 이때부터 잡힌다 — 사이드바에 반영한다.
+        refreshConversations();
+      } else if (isAPart) {
         const result = await sendATurn({
           question,
           conversationId: currentConversationId,
@@ -920,12 +1164,18 @@ function ChatbotPage({ consultationType }) {
         const pendingAction = isCalendarApprovalMessage(question)
           ? getLatestBPendingAction()
           : null;
-
+ 
         await runBChatTurn({
           question,
           pendingAction,
           calendarMode: pendingAction ? "live" : "dry_run",
         });
+      } else if (isCPart) {
+        if (isCDocumentMode) {
+          await runCDocumentTurn(question);
+        } else {
+          await runCChatTurn({ question });
+        }
       } else {
         const part = CONSULTATION_PARTS[consultationType];
         const storedConversationId = await ensureStoredConversation(question);
@@ -951,22 +1201,36 @@ function ChatbotPage({ consultationType }) {
         await notifyConversationSaved();
       }
     } catch (requestError) {
-      setMessagesByType((current) => ({
-        ...current,
-        [consultationType]: (current[consultationType] ?? []).filter(
-          (message) => message.id !== `${messageKey}-user`,
-        ),
-      }));
-      setInput(question);
-      if (attachedDocuments.length > 0) {
-        setPendingDocumentIds(
-          attachedDocuments.map((document) => document.document_id),
-        );
-        setAttachDocumentAnalysisNextTurn(true);
-      }
-      setError(
-        getErrorMessage(requestError, "상담 답변을 불러오지 못했습니다."),
+      const message = getErrorMessage(
+        requestError,
+        "상담 답변을 불러오지 못했습니다.",
       );
+
+      if (isDPart) {
+        // D파트는 답변 카드를 이미 띄워둔 상태라, 지우지 않고 그 카드에 오류를 표시한다.
+        updateMessageContent(assistantId, (answer) => ({
+          ...answer,
+          status: "error",
+          errorMessage: message,
+        }));
+        setError(message);
+      } else {
+        // 나머지 파트는 답변 카드가 없으니, 보낸 사용자 메시지를 되돌리고 입력을 복구한다.
+        setMessagesByType((current) => ({
+          ...current,
+          [consultationType]: (current[consultationType] ?? []).filter(
+            (message) => message.id !== `${messageKey}-user`,
+          ),
+        }));
+        setInput(question);
+        if (attachedDocuments.length > 0) {
+          setPendingDocumentIds(
+            attachedDocuments.map((document) => document.document_id),
+          );
+          setAttachDocumentAnalysisNextTurn(true);
+        }
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1221,7 +1485,7 @@ function ChatbotPage({ consultationType }) {
           );
         })}
 
-        {isLoading && (
+        {isLoading && !isDPart && (
           <AssistantThinking
             progress={aThinkingProgress}
             fallbackItems={aThinkingItems}
@@ -1301,6 +1565,47 @@ function ChatbotPage({ consultationType }) {
               )}
             </section>
           )}
+           {isCPart && (
+          <div className={styles.cDocBar}>
+            {isCDocumentMode ? (
+              <>
+                <span className={styles.cDocBadge}>내용증명 작성 모드</span>
+                <button
+                  type="button"
+                  className={styles.cDocImageButton}
+                  onClick={() => cImageInputRef.current?.click()}
+                  disabled={isBusy}
+                >
+                  계약서 사진 올리기
+                </button>
+                <button
+                  type="button"
+                  className={styles.cDocExitButton}
+                  onClick={exitCDocumentMode}
+                  disabled={isBusy}
+                >
+                  상담으로 돌아가기
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={styles.cDocEnterButton}
+                onClick={enterCDocumentMode}
+                disabled={isBusy}
+              >
+                내용증명 만들기
+              </button>
+            )}
+            <input
+              ref={cImageInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              style={{ display: "none" }}
+              onChange={handleCImageSelected}
+            />
+          </div>
+        )}
         <ChatComposer
           value={input}
           onChange={(event) => setInput(event.target.value)}

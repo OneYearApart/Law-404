@@ -13,6 +13,7 @@ from sqlalchemy import text
 from app.core.config import get_engine
 from app.rag.embeddings.base import embed
 from app.rag.retrievers.base import BaseRetriever, Chunk, _vector_literal
+from app.rag.retrievers.d_part_glossary_supplement import SUPPLEMENTARY_GLOSSARY
 
 JEONSE_LAW_NAME = "전세사기피해자 지원 및 주거안정에 관한 특별법"
 
@@ -33,10 +34,22 @@ _MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
 
 # 단위 28: open_qa(트리 밖 자유질의) 전용 균형 검색. source_type별 쿼터로 한 종류(주로 판례)가
 # 컨텍스트를 독점해 조문이 없어도 원문→해설→상황적용을 지어내는 것을 막고, distance 임계값으로
-# 무관 문서를 배제한다. _MAX_DISTANCE는 현 코퍼스(1616청크, text-embedding-3-small) 실측 분포로
+# 무관 문서를 배제한다. _MAX_DISTANCE는 현 코퍼스(1648청크, text-embedding-3-small) 실측 분포로
 # 정함: 관련 문서 ~0.36~0.57, 무관 질의("날씨") 0.75+ → 0.65(어휘 갭 여유는 주되 무관은 배제).
-_OPEN_QA_QUOTA = {"법령원문": 2, "판례": 2, "HUG사례집": 2, "HUG규정": 1}
+#
+# 생활법령·정부자료는 쿼터에 없어서 open_qa가 구조적으로 못 가져오고 있었다. 쿼터를 정할 당시
+# 생활법령이 20청크뿐이었는데 이후 52로 늘었고(0d49a39) 쿼터에는 반영되지 않은 것 — 데이터가
+# 늘어도 검색 설정이 따라오지 않은 누락이다. 생활법령은 제도를 일반 시민 눈높이로 풀어쓴 층이라
+# "이게 뭔가요/어떻게 하나요" 류 자유질의에 가장 잘 맞는데, 같은 질문을 topic 경로(guides를 함께
+# 검색한다)로 흘렸을 때와 답변 품질 차이가 크게 났다(임차권등기명령 질의 실측).
+_OPEN_QA_QUOTA = {"법령원문": 2, "판례": 2, "HUG사례집": 2, "HUG규정": 1, "생활법령": 2, "정부자료": 1}
 _MAX_DISTANCE = 0.65
+
+# 용어사전은 HUG규정 안에 Q&A·부록표와 섞여 있어 metadata.항목유형으로만 가려낼 수 있다
+# (hug_docs_d.py가 "붙임 2. 용어사전" 구간을 이 태그로 적재).
+_GLOSSARY_SOURCE_TYPE = "HUG규정"
+_GLOSSARY_ITEM_TYPE = "용어사전"
+_glossary_cache: Optional[list[dict]] = None
 
 
 class DPartRetriever(BaseRetriever):
@@ -157,6 +170,53 @@ class DPartRetriever(BaseRetriever):
         guides = (await self.search(situation_query, top_k=2, source_type="생활법령")
                   if situation_query else [])
         return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
+
+    async def load_glossary(self) -> list[dict]:
+        """HUG 종합안내 "붙임 2. 용어사전"에서 적재된 용어 풀이 전량 + 코드 보충분.
+
+        DB는 인제스천 데이터(약 112건)라 원본 PDF 없이는 못 늘려서, 전세사기 상담에 자주
+        나오는 핵심어를 SUPPLEMENTARY_GLOSSARY로 병합한다(표제어 겹치면 DB 우선).
+
+        벡터 검색이 아니라 전량 조회다 — 용어사전은 정적 데이터라 매 턴 DB를 칠 이유가 없어
+        프로세스당 1회만 읽고 캐시한다. 인제스천이나 보충분이 바뀌면 재기동이 필요하다.
+
+        content 형식은 hug_docs_d._load_glossary_chunks가 조립한 "{용어}: {설명}\\n예: {예문}" —
+        첫 ':'로 표제어와 설명을 가른다. 표제어를 화면에서 제목으로 쓰므로 설명에 다시 남겨두면
+        "갑구 / 갑구: 집문서…"로 중복된다. 자르기만 할 뿐 문구는 DB 원문 그대로다.
+        형식이 어긋난 행(설명 없이 표제어만)은 풀이로서 쓸모가 없으므로 버린다.
+        """
+        global _glossary_cache
+        if _glossary_cache is not None:
+            return _glossary_cache
+
+        sql = text(f"""
+            SELECT content
+            FROM {self.table_name}
+            WHERE source_type = '{_GLOSSARY_SOURCE_TYPE}'
+              AND metadata->>'항목유형' = '{_GLOSSARY_ITEM_TYPE}'
+        """)
+
+        def _query():
+            with get_engine().connect() as conn:
+                return conn.execute(sql).mappings().all()
+
+        rows = await run_in_threadpool(_query)
+        glossary = []
+        for row in rows:
+            term, separator, description = (row["content"] or "").partition(":")
+            if not separator or not term.strip() or not description.strip():
+                continue
+            glossary.append({"term": term.strip(), "description": description.strip()})
+
+        # 인제스천으로는 못 늘리는 전세사기 핵심어를 코드 보충분으로 채운다.
+        # 표제어가 겹치면 DB 원문을 우선한다(보충분은 새 표제어만 더한다).
+        db_terms = {entry["term"] for entry in glossary}
+        glossary.extend(
+            entry for entry in SUPPLEMENTARY_GLOSSARY if entry["term"] not in db_terms
+        )
+
+        _glossary_cache = glossary
+        return _glossary_cache
 
     async def _fetch_statute_articles(self, article_nos: list[str]) -> list[Chunk]:
         if not article_nos:

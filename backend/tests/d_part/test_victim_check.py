@@ -11,7 +11,17 @@ from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimReq
 
 
 def _fake_call_victim_check(payload: dict):
-    async def _fake(user_input: str, existing_slots: dict) -> dict:
+    async def _fake(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
+        return payload
+
+    return _fake
+
+
+def _capturing_call_victim_check(payload: dict, seen: list):
+    """추출기에 실제로 넘어간 pending_question을 기록하는 fake."""
+
+    async def _fake(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
+        seen.append(pending_question)
         return payload
 
     return _fake
@@ -139,6 +149,79 @@ async def test_all_slots_filled_asks_relief_measure_explicitly(monkeypatch):
     assert result.get("victim_judgment") is None
 
 
+@pytest.mark.asyncio
+async def test_explicit_denial_marks_slot_unfilled_and_moves_on(monkeypatch):
+    """슬롯 질문에 "아니요"로 답하면 unfilled — 요건을 확인했고 미충족이라는 뜻이므로
+    미해결 취급하면 안 된다. unclear로 잘못 판정하면 같은 질문을 반복하다 fallback으로 빠진다."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",
+                "deposit_under_limit": "unclear",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unfilled",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(
+        moved_in_and_fixed_date=SlotStatus.FILLED,
+        deposit_under_limit=SlotStatus.FILLED,
+        multiple_victims=SlotStatus.FILLED,
+    )
+    state = {
+        "user_input": "아니요 없어요",
+        "victim_slots": existing,
+        "victim_pending_slot": "no_intent_to_return",
+    }
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].no_intent_to_return == SlotStatus.UNFILLED
+    # 미해결이 남지 않았으므로 재질문 없이 구제수단 확인 단계로 넘어가야 한다
+    assert result["awaiting_relief_confirmation"] is True
+    assert result.get("victim_fallback", False) is False
+    assert result["victim_pending_slot"] is None
+
+
+@pytest.mark.asyncio
+async def test_pending_slot_question_is_passed_to_extractor(monkeypatch):
+    """"아니요" 같은 발화는 직전 질문 없이는 무엇에 대한 답인지 알 수 없다 — 질문한 슬롯을
+    다음 턴 추출기까지 넘기는 배선이 끊기면 그 답변을 영영 해석할 수 없게 된다."""
+    seen: list = []
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _capturing_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",
+                "deposit_under_limit": "unclear",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unclear",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            },
+            seen,
+        ),
+    )
+    state = {"user_input": "보증금을 못 받고 있어요"}
+
+    # 1턴: 사용자가 먼저 서술 — 직전 질문이 없다
+    state = await check_victim_status(state)
+    assert seen[0] is None
+    asked = state["victim_pending_slot"]
+    assert asked == "moved_in_and_fixed_date"
+
+    # 2턴: 그 질문에 대한 답 — 직전 질문이 함께 넘어가야 한다
+    state.pop("final_answer", None)
+    state["user_input"] = "아니요"
+    await check_victim_status(state)
+    assert seen[1] == victim_check._SLOT_QUESTIONS[asked]
+
+
 def _all_filled_slots() -> VictimRequirementSlots:
     return VictimRequirementSlots(
         moved_in_and_fixed_date=SlotStatus.FILLED,
@@ -180,6 +263,25 @@ async def test_negative_relief_measure_computes_final_judgment(monkeypatch):
     assert result["victim_flow_closed"] is True
     # 이번 턴에 새로 확정된 판단이므로 응답 조립이 필요하다는 신호가 켜져야 한다
     assert result["needs_response_assembly"] is True
+
+
+@pytest.mark.asyncio
+async def test_unfilled_slot_does_not_yield_high_judgment(monkeypatch):
+    """요건 하나가 미충족(unfilled)으로 확인됐으면 '높음'이 아니라 '추가확인'이어야 한다 —
+    필수 슬롯이 전부 filled일 때만 높음(_compute_judgment)."""
+    monkeypatch.setattr(victim_check, "parse_confirmation", _fake_confirmation(False))
+    slots = _all_filled_slots()
+    slots.no_intent_to_return = SlotStatus.UNFILLED
+    state = {
+        "user_input": "아니요 없어요",
+        "victim_slots": slots,
+        "awaiting_relief_confirmation": True,
+    }
+
+    result = await check_victim_status(state)
+
+    assert result["victim_judgment"] == VictimJudgment.NEEDS_CONFIRMATION
+    assert result["victim_flow_closed"] is True
 
 
 @pytest.mark.asyncio
@@ -288,6 +390,62 @@ async def test_filled_slot_is_never_regressed_by_later_unclear(monkeypatch):
     assert result["victim_slots"].deposit_under_limit == SlotStatus.FILLED
     # 이번 턴에 새로 확인된 슬롯은 반영된다
     assert result["victim_slots"].no_intent_to_return == SlotStatus.FILLED
+
+
+@pytest.mark.asyncio
+async def test_unfilled_slot_is_never_regressed_by_later_unclear(monkeypatch):
+    """unfilled도 filled처럼 확정 상태다 — _unresolved_required_slots가 해결된 것으로 취급한다.
+    추출기의 unclear는 "이 슬롯이 불명확"이 아니라 "이번 발화에서 확인되지 않았다"는 기본값이라
+    매 턴 돌아오는데, 그게 unfilled를 덮으면 확정된 답이 지워져 같은 질문을 다시 묻는다
+    (골든셋 vj-008에서 인터뷰가 종결에 도달하지 못하고 슬롯①을 반복 질문)."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "unclear",   # 이번 발화는 슬롯①을 언급하지 않았다
+                "deposit_under_limit": "filled",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unclear",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.UNFILLED)
+    state = {"user_input": "1억이요", "victim_slots": existing}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].moved_in_and_fixed_date == SlotStatus.UNFILLED
+    # 확정된 슬롯을 다시 묻지 않고 다음 미해결 슬롯으로 넘어간다
+    assert result["victim_pending_slot"] == "multiple_victims"
+
+
+@pytest.mark.asyncio
+async def test_unfilled_slot_still_accepts_user_correction(monkeypatch):
+    """되돌림 방지는 unclear에만 건다 — unfilled를 통째로 잠그면 사용자의 정정
+    ("아 사실 전입신고 했어요")까지 막힌다."""
+    monkeypatch.setattr(
+        victim_check.llm_d_part,
+        "call_victim_check",
+        _fake_call_victim_check(
+            {
+                "moved_in_and_fixed_date": "filled",
+                "deposit_under_limit": "unclear",
+                "multiple_victims": "unclear",
+                "no_intent_to_return": "unclear",
+                "multiple_victims_reason": None,
+                "auction_completed": None,
+            }
+        ),
+    )
+    existing = VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.UNFILLED)
+    state = {"user_input": "아 사실 작년에 전입신고 했어요", "victim_slots": existing}
+
+    result = await check_victim_status(state)
+
+    assert result["victim_slots"].moved_in_and_fixed_date == SlotStatus.FILLED
 
 
 @pytest.mark.asyncio

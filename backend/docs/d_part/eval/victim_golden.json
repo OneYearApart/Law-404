@@ -1,0 +1,276 @@
+[
+  {
+    "id": "vj-001",
+    "title": "표준 플로우 — 4슬롯 순차 충족 후 구제수단 없음 → 높음",
+    "expect_outcome": "judgment",
+    "expect_judgment": "높음",
+    "turns": [
+      {
+        "user": "집주인이랑 연락이 안돼요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "moved_in_and_fixed_date",
+        "note": "연락두절은 피해 결과일 뿐이라 슬롯④의 근거가 아니다 — 프롬프트가 명시적으로 unclear를 요구한다"
+      },
+      {
+        "user": "작년에 전입신고랑 확정일자 받아뒀어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "deposit_under_limit",
+        "note": "슬롯① 충족. 다음 미해결 슬롯을 _SLOT_ORDER 순서대로 묻는다"
+      },
+      {
+        "user": "보증금 2억이에요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "multiple_victims",
+        "note": "2억은 한도(5억, 최대 7억) 이하라 filled"
+      },
+      {
+        "user": "다른 세입자들도 피해봤대요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "no_intent_to_return",
+        "note": "슬롯③ 충족 + multiple_victims_reason에 근거가 기록돼야 한다"
+      },
+      {
+        "user": "임대인이 보증금 돌려줄 능력도 없으면서 빌라를 수십 채 사들였다고 해요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "'반환능력 없이 다수 주택 취득'은 프롬프트가 명시한 구체적 정황이라 filled. 4슬롯 해결 → 구제수단 게이트로"
+      },
+      {
+        "user": "아니요 그런 거 없어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": null,
+        "note": "구제수단 없음 → has_relief_measure=False → 4슬롯 전부 filled이므로 판정 '높음'"
+      }
+    ]
+  },
+  {
+    "id": "vj-002",
+    "title": "슬롯④ 함정 — 피해 결과 서술만으로는 충족되지 않는다",
+    "expect_outcome": "judgment",
+    "expect_judgment": "추가확인",
+    "turns": [
+      {
+        "user": "전입신고랑 확정일자 다 해뒀고 보증금은 1억 5천이에요. 다른 세입자들도 당했고요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "no_intent_to_return",
+        "note": "한 발화에서 슬롯①②③ 동시 추출. 슬롯④는 언급 없으니 unclear"
+      },
+      {
+        "user": "임대인이 보증금을 돌려줄 생각이 전혀 없어 보여요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "no_intent_to_return",
+        "note": "⚠️핵심 함정. '돌려줄 생각이 없어 보인다'는 주관적 인상이고 기망·반환능력 없는 자에게 소유권 양도·반환능력 없이 다수 주택 취득 같은 구체적 정황이 아니다 → unclear 유지, 같은 슬롯을 다시 물어야 한다. 기존 회귀 대본이 이 발화로 판정까지 갔는데 프롬프트 규칙상 그러면 안 된다"
+      },
+      {
+        "user": "잘 모르겠어요 그냥 느낌이에요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "no_intent_to_return",
+        "note": "회피성 응답 → unclear 유지. victim_check_attempts가 쌓인다"
+      },
+      {
+        "user": "아니요 그런 구체적인 정황은 없어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unfilled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "명시적 부정 → unfilled. unfilled는 '확인했고 충족 안 함'이라 해결된 것으로 취급되어 재질문하지 않고 다음 단계로 간다(unclear와의 결정적 차이)"
+      },
+      {
+        "user": "아니요 그런 건 없어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unfilled", "auction_completed": null},
+        "expect_ask": null,
+        "note": "구제수단 질문에 부정 → has_relief_measure=False. 슬롯④가 unfilled라 전부 filled가 아니므로 판정은 '추가확인'"
+      }
+    ]
+  },
+  {
+    "id": "vj-003",
+    "title": "경공매 완료 → 슬롯①③ 자동 면제",
+    "expect_outcome": "judgment",
+    "expect_judgment": "높음",
+    "turns": [
+      {
+        "user": "살던 집이 경매로 이미 넘어가서 다 끝났어요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": true},
+        "expect_ask": "deposit_under_limit",
+        "note": "경공매 완료 → 슬롯①③ 면제. 그래서 ①을 건너뛰고 ②를 먼저 묻는 것이 정답"
+      },
+      {
+        "user": "보증금은 3억이었어요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "filled", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": true},
+        "expect_ask": "no_intent_to_return",
+        "note": "③도 면제라 건너뛰고 ④로. ①③이 unclear로 남아있어도 면제라 판정을 막지 않는다"
+      },
+      {
+        "user": "임대인이 애초에 반환 능력이 없는 사람한테 집을 넘겨버렸어요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "filled", "multiple_victims": "unclear", "no_intent_to_return": "filled", "auction_completed": true},
+        "expect_ask": "relief",
+        "note": "'반환능력 없는 자에게 소유권 양도'는 프롬프트가 명시한 구체적 정황 → filled"
+      },
+      {
+        "user": "아니요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "filled", "multiple_victims": "unclear", "no_intent_to_return": "filled", "auction_completed": true},
+        "expect_ask": null,
+        "note": "구제수단 게이트 응답이라 슬롯은 그대로. 면제 슬롯(①③)은 unclear로 남아도 판정에서 제외되고 ②④만 보므로 둘 다 filled → '높음'"
+      }
+    ]
+  },
+  {
+    "id": "vj-004",
+    "title": "구제수단 보유 → 지원대상 제외 (판정 없음)",
+    "expect_outcome": "exclusion",
+    "expect_judgment": null,
+    "turns": [
+      {
+        "user": "전입신고 확정일자 다 받았고 보증금 8천만원이에요. 집주인이 여러 채를 반환능력 없이 사들인 게 드러났고 다른 세입자도 피해를 봤어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "한 발화로 4슬롯 전부 충족 → 곧바로 구제수단 게이트. 인터뷰 길이 최소값 케이스"
+      },
+      {
+        "user": "네 보증보험에 가입돼 있어서 그걸로 받을 수 있대요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": null,
+        "note": "구제수단 보유 → 제외 메시지, victim_judgment는 None으로 남아야 한다(요건을 다 채웠어도 판정을 내리지 않는다)"
+      }
+    ]
+  },
+  {
+    "id": "vj-005",
+    "title": "구제수단 게이트에 모호 응답 → 재질문 후 명확화",
+    "expect_outcome": "judgment",
+    "expect_judgment": "높음",
+    "turns": [
+      {
+        "user": "전입신고랑 확정일자 했고 보증금 4억입니다. 임대인이 반환능력 없이 수십 채를 매입한 게 확인됐고 피해자가 여럿이에요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "4억은 한도 이하 → filled"
+      },
+      {
+        "user": "글쎄요 그건 좀 애매한데요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "⚠️안전장치 검증. 모호한 응답을 절대 긍정으로 삼키면 안 된다 — 삼키면 실제 피해자가 부당하게 지원대상에서 제외된다. None → 같은 질문 재질문"
+      },
+      {
+        "user": "아 아니요 그런 거 하나도 없습니다",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": null,
+        "note": "명확한 부정 → 판정 '높음'"
+      }
+    ]
+  },
+  {
+    "id": "vj-006",
+    "title": "슬롯 진전 없이 3턴 → fallback(전문가 상담 안내)",
+    "expect_outcome": "fallback",
+    "expect_judgment": null,
+    "turns": [
+      {
+        "user": "전세 때문에 너무 힘들어요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "moved_in_and_fixed_date",
+        "note": "정보 없는 감정 호소 — 어떤 슬롯도 채워지면 안 된다"
+      },
+      {
+        "user": "그게 잘 기억이 안 나요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "moved_in_and_fixed_date",
+        "note": "회피 → 진전 없음, attempts 1"
+      },
+      {
+        "user": "잘 모르겠어요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "moved_in_and_fixed_date",
+        "note": "진전 없음, attempts 2"
+      },
+      {
+        "user": "음...",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": null,
+        "note": "attempts 3 도달 → 무한 재질문 대신 전문가 상담 안내로 종결. victim_fallback=True"
+      }
+    ]
+  },
+  {
+    "id": "vj-007",
+    "title": "보증금 한도 초과 → unfilled",
+    "expect_outcome": "judgment",
+    "expect_judgment": "추가확인",
+    "turns": [
+      {
+        "user": "전입신고랑 확정일자는 받아뒀어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "deposit_under_limit",
+        "note": "슬롯① 단독 충족"
+      },
+      {
+        "user": "보증금이 12억이에요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "unfilled", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "multiple_victims",
+        "note": "12억은 한도(5억, 최대 7억) 초과 → unfilled. 금액 판단이 실제로 되는지 보는 케이스"
+      },
+      {
+        "user": "네 다른 세입자도 여럿 피해를 봤어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "unfilled", "multiple_victims": "filled", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "no_intent_to_return",
+        "note": "슬롯③ 충족"
+      },
+      {
+        "user": "임대인이 계약할 때 근저당을 다 갚겠다고 속였어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "unfilled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "'기망'은 프롬프트가 명시한 구체적 정황 → filled"
+      },
+      {
+        "user": "없어요",
+        "slots": {"moved_in_and_fixed_date": "filled", "deposit_under_limit": "unfilled", "multiple_victims": "filled", "no_intent_to_return": "filled", "auction_completed": null},
+        "expect_ask": null,
+        "note": "②가 unfilled라 전부 filled가 아니므로 '추가확인'"
+      }
+    ]
+  },
+  {
+    "id": "vj-008",
+    "title": "맥락 의존 단답 — pending_question 없이는 해석 불가",
+    "expect_outcome": "judgment",
+    "expect_judgment": "추가확인",
+    "turns": [
+      {
+        "user": "보증금을 못 받고 있어요",
+        "slots": {"moved_in_and_fixed_date": "unclear", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "moved_in_and_fixed_date",
+        "note": "미반환 사실 자체는 슬롯④ 근거가 아니다(피해 결과) → 전부 unclear"
+      },
+      {
+        "user": "아니요",
+        "slots": {"moved_in_and_fixed_date": "unfilled", "deposit_under_limit": "unclear", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "deposit_under_limit",
+        "note": "⚠️핵심 케이스. 직전 질문(전입신고+확정일자)을 추출기에 넘기지 않으면 이 '아니요'를 해석할 수 없다 — 과거 실제 버그 지점. unfilled로 잡혀야 하고 unclear로 두면 같은 질문을 무한 반복한다"
+      },
+      {
+        "user": "1억이요",
+        "slots": {"moved_in_and_fixed_date": "unfilled", "deposit_under_limit": "filled", "multiple_victims": "unclear", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "multiple_victims",
+        "note": "금액만 던진 단답 — 직전 질문 맥락으로 슬롯②에 매핑돼야 한다"
+      },
+      {
+        "user": "네",
+        "slots": {"moved_in_and_fixed_date": "unfilled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unclear", "auction_completed": null},
+        "expect_ask": "no_intent_to_return",
+        "note": "긍정 단답 → filled"
+      },
+      {
+        "user": "아니요 그런 정황은 못 봤어요",
+        "slots": {"moved_in_and_fixed_date": "unfilled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unfilled", "auction_completed": null},
+        "expect_ask": "relief",
+        "note": "명시적 부정 → unfilled"
+      },
+      {
+        "user": "아니요 없습니다",
+        "slots": {"moved_in_and_fixed_date": "unfilled", "deposit_under_limit": "filled", "multiple_victims": "filled", "no_intent_to_return": "unfilled", "auction_completed": null},
+        "expect_ask": null,
+        "note": "①④가 unfilled → '추가확인'"
+      }
+    ]
+  }
+]

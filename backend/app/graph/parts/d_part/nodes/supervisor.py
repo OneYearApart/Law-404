@@ -3,19 +3,29 @@
 general_scenario의 매칭부를 흡수해 카테고리 판단을 한 곳으로 모은 노드.
 
 아직 종결되지 않은 victim_check 인터뷰(슬롯 채우는 중 / 구제수단 확인 대기)가 있으면
-재분류 없이 그대로 이어간다. special_case_matched는 여기서 우선순위 대상으로 보지
-않는다 — special_cases는 후속 대화가 없는 1회성 안내라, victim_check 슬롯 인터뷰처럼
-"이번 턴 발화 자체가 분류 불가능한 답변"이 되는 경우가 없다. 오히려 재분류를 막으면 안내
-이후 사용자가 말을 이어갈 때마다 매번 예전 안내문으로만 되돌아가게 된다.
+재분류 없이 그대로 이어간다. 직전 턴이 special_cases였다는 건 그런 대상으로 보지 않는다 —
+special_cases는 후속 대화가 없는 1회성 안내라, victim_check 슬롯 인터뷰처럼 "이번 턴 발화
+자체가 분류 불가능한 답변"이 되는 경우가 없다. 오히려 재분류를 막으면 안내 이후 사용자가
+말을 이어갈 때마다 매번 예전 안내문으로만 되돌아가게 된다.
 
-분류가 필요한 턴은 LLM tool calling 1회로 위험신호+인지여부+특수상황4종+일반13개+open_qa를
-한 번에 판별한다(call_supervisor). 카테고리별로 다음 노드를 결정하고, special_case/general_topic
-카테고리는 그 실행 노드가 바로 조회할 수 있도록 special_case_matched/general_topic_matched에
-값을 채워 넘긴다. 계약 단계(stage)도 이 분류 결과에서 파생시킨다(단위 29).
+분류가 필요한 턴은 LLM tool calling 1회로 상황의 축(인지여부·위험신호·topic·특수상황)을
+한 번에 판별해 state["situation"]에 담는다(call_supervisor). 호출은 1회 그대로다 — 축이 늘었다고
+축마다 호출하면 여러 노드로 쪼개져 있던 시절의 비용으로 되돌아간다.
+
+라우팅은 그 상황모델에서 규칙으로 파생시킨다(route) — LLM에게 "어디로 보낼까"를 묻지 않는다.
+축을 어떻게 조합해 경로를 정하는지는 도메인이 고정해둔 규칙이라 매 턴 추론할 값이 아니고,
+순수함수라 LLM 호출 없이 그대로 테스트할 수 있다. 파생 결과는 state에 저장하지 않고 그래프
+엣지가 route()를 직접 부른다 — 저장하면 상황모델과 라우팅 대상이라는 진실원천이 둘이 된다.
+
+이 노드가 남기는 건 situation 하나뿐이다. 실행 노드는 거기서 자기 topic/special_case를 읽는다.
 """
-from typing import Optional
-
-from app.graph.parts.d_part.schemas import DPartGraphState, Stage, VictimRequirementSlots, get_active_query
+from app.graph.parts.d_part.schemas import (
+    DPartGraphState,
+    SITUATION_TOPIC_TO_SPECIAL_CASE,
+    SPECIAL_CASE_TO_SITUATION_TOPIC,
+    SituationState,
+    VictimRequirementSlots,
+)
 from app.llm import d_part as llm_d_part
 
 _SLOT_FIELDS = ("moved_in_and_fixed_date", "deposit_under_limit", "multiple_victims", "no_intent_to_return")
@@ -25,54 +35,110 @@ def _has_slot_progress(slots: VictimRequirementSlots | None) -> bool:
     return slots is not None and any(getattr(slots, name) is not None for name in _SLOT_FIELDS)
 
 
-def _stage_from_topic_key(topic_key: str) -> Optional[Stage]:
-    """general_topic 키 접두어에서 계약 단계를 역산한다("전-①등기부등본_위험신호" → Stage.PRE).
+def interview_in_progress(state: DPartGraphState) -> bool:
+    """아직 종결되지 않은 victim_check 인터뷰가 진행 중인지 — 이번 턴 발화가 슬롯 질문에 대한
+    답이라 재분류 대상이 아니라는 뜻이다.
 
-    단계를 키에 담고 있는 건 general_topic 13개뿐이다. special_case 4종은 단계 축이 없고
-    (신탁사기는 계약 전에도 후에도 발생한다), victim_interview/open_qa는 키 자체가 없다.
-    그런 턴은 stage를 건드리지 않고 이전 턴 값을 그대로 둔다 — 모르는 값을 추측해 채우지 않는다.
-    """
-    try:
-        return Stage(topic_key.split("-", 1)[0])
-    except ValueError:
-        return None
-
-
-def _in_progress_route(state: DPartGraphState) -> str | None:
-    """아직 종결되지 않은 victim_check 인터뷰가 진행 중이면 재분류 없이 그대로 이어간다.
     종결(victim_flow_closed)된 뒤에도 슬롯 값은 세션에 그대로 남으므로, 슬롯 진행 여부보다
     종결 플래그를 먼저 본다 — 안 그러면 인터뷰가 끝난 대화방의 모든 후속 턴이 영구히
-    victim_check로 고정된다."""
+    victim_check로 고정된다.
+
+    이 축은 SituationState에 없다(기존 플래그에서 파생되는 값이라 저장하면 진실원천이 둘이
+    된다). 그래서 route()가 아니라 여기가 갖고 있고, supervisor(LLM 호출 skip)와 그래프
+    엣지(라우팅) 양쪽이 이 함수를 부른다.
+    """
     if state.get("victim_flow_closed"):
-        return None
-    if state.get("awaiting_relief_confirmation") or _has_slot_progress(state.get("victim_slots")):
+        return False
+    return bool(
+        state.get("awaiting_relief_confirmation") or _has_slot_progress(state.get("victim_slots"))
+    )
+
+
+def _normalize_overlap_axes(situation: SituationState) -> None:
+    """특수 4종과 13개 항목이 같은 상황을 가리키는 겹침 구간에서, 모델이 한쪽 축만 채웠으면
+    나머지 한쪽을 규칙으로 채운다.
+
+    전-③/전-⑤/전-⑥은 특수상황 4종과 같은 상황의 "인정 전" 판본이라(13개 항목 설명이 그렇게
+    명시한다), 어느 쪽이냐는 recognized가 정한다. 그런데 모델은 이 겹치는 발화에서 special_case를
+    채울지 말지 일관되지 않았다 — "피해자로 인정받았는데 다가구 선순위는 어떻게 확인하나요"에서
+    같은 프롬프트로 5회 중 1~4회만 채웠다(실호출 측정). 프롬프트를 더 세게 밀면 반대로 상황이
+    안 드러난 발화에도 4종을 지어냈다.
+
+    그래서 모델에게 조르는 대신 규칙으로 정한다 — 겹침 관계는 도메인이 이미 고정해둔 사실이라
+    매 턴 LLM에게 다시 물어볼 값이 아니다. 판정이 결정론적이 되고 테스트도 가능해진다.
+
+    역방향도 같은 이유로 필요하다. 미인지형인데 모델이 topic 대신 special_case만 채우면
+    route()가 그 값을 읽는 분기가 없어서(special_case는 recognized 블록 안에서만 읽힌다)
+    상황을 정확히 판별하고도 open_qa로 떨어진다 — "이 집이 신탁사 소유라고 하던데요"에서
+    실측(골든셋 gen-005). 그러면 전-⑤ topic_tag 정조준 검색 대신 광역 검색을 받게 되므로
+    라우팅 라벨만 틀리는 게 아니라 답변 근거의 질이 떨어진다.
+    """
+    if situation.recognized:
+        if not situation.special_case:
+            situation.special_case = SITUATION_TOPIC_TO_SPECIAL_CASE.get(situation.topic)
+    elif not situation.topic:
+        situation.topic = SPECIAL_CASE_TO_SITUATION_TOPIC.get(situation.special_case)
+
+
+def situation_from_supervisor_result(result: dict) -> SituationState:
+    """call_supervisor의 tool 인자 dict를 상황모델로 변환한다.
+
+    해당 없는 축은 키가 아예 빠져 오므로 .get()으로 읽는다. 어휘 검증은 SituationState가 한다.
+    LLM 출력을 상황모델로 바꾸는 곳은 여기 하나여야 한다 — 호출부가 각자 SituationState를
+    조립하면 정규화(_normalize_overlap_axes)를 빠뜨린 채로도 그럴듯하게 동작한다.
+    """
+    situation = SituationState(
+        recognized=result.get("recognized"),
+        risk_signals=result.get("risk_signals") or [],
+        topic=result.get("topic"),
+        special_case=result.get("special_case"),
+    )
+    _normalize_overlap_axes(situation)
+    return situation
+
+
+def route(situation: SituationState) -> str:
+    """상황모델에서 이번 턴 실행 노드를 파생시키는 순수함수.
+
+    인터뷰 축(victim_check 진행 중)은 여기 없다 — 상황모델이 아니라 기존 플래그에서 파생되는
+    값이라 호출부(그래프 엣지)가 interview_in_progress로 먼저 거른다.
+
+    특수상황 분기는 예전 프롬프트 문언("위험신호가 있고 + 인정된 상태")과 달리 위험신호를
+    요구하지 않는다. 예전엔 그 조건을 LLM이 뭉뚱그려 판단했지만, 이제 risk_signals는 6종 enum에
+    문자로 매칭된 결과라 "신탁을 걸어놨다" 같은 발화에선 빈 배열로 온다 — 옛/새 코드를 같은 발화로
+    실호출 비교해 확인했다. 위험신호를 요구하면 인정받은 사용자가 특수상황을 말해도 자유질의로
+    새어나간다. 애초에 이미 인정받은 사용자에게 위험신호 유무를 다시 묻는 건 의미가 없다.
+
+    인정받았는데 특수 4종도 topic도 아닌 사용자는 recognized_general이 받는다. 예전엔 이들이
+    제약 없는 자유질의(open_qa)로 떨어져 인지형 지원절차 개요를 못 받았다 — 납작한 카테고리
+    구조라 코드에 드러나지 않던 빈칸이었다.
+
+    인정받았어도 topic이 잡히면 general_scenario 그대로다. 13개 항목은 항목별 topic_tag로 조문·
+    판례를 정조준해 검색하는데, 인지 여부를 이유로 recognized_general(전체 검색)로 보내면 애써
+    판별한 topic 축을 버리게 된다. "인정받은 사람에게 예방 톤이 나온다"는 건 라우팅이 아니라
+    프롬프트에서 다룰 문제다.
+    """
+    if situation.recognized:
+        if situation.special_case:
+            return "special_cases"
+        if not situation.topic:
+            return "recognized_general"
+    elif situation.risk_signals:
         return "victim_check"
-    return None
+    if situation.topic:
+        return "general_scenario"
+    return "open_qa"
 
 
 async def run_supervisor(state: DPartGraphState) -> DPartGraphState:
-    """이번 턴 라우팅 대상(route_target)을 결정한다."""
-    in_progress = _in_progress_route(state)
-    if in_progress is not None:
-        state["route_target"] = in_progress
+    """이번 턴 상황모델(situation)을 갱신한다. 라우팅은 그래프 엣지가 이 값에서 파생시킨다.
+
+    인터뷰 진행 중인 턴은 재분류하지 않는다 — 발화가 슬롯 질문에 대한 답이라 분류 대상이
+    아니고, 이전 턴 situation을 그대로 둔다(LLM 호출도 건너뛴다).
+    """
+    if interview_in_progress(state):
         return state
 
-    result = await llm_d_part.call_supervisor(get_active_query(state))
-    category = result["category"]
-
-    if category == "victim_interview":
-        state["route_target"] = "victim_check"
-    elif category.startswith("special_case:"):
-        state["special_case_matched"] = category.removeprefix("special_case:")
-        state["route_target"] = "special_cases"
-    elif category.startswith("general_topic:"):
-        topic_key = category.removeprefix("general_topic:")
-        state["general_topic_matched"] = topic_key
-        derived_stage = _stage_from_topic_key(topic_key)
-        if derived_stage is not None:
-            state["stage"] = derived_stage
-        state["route_target"] = "general_scenario"
-    else:
-        state["route_target"] = "open_qa"
-
+    result = await llm_d_part.call_supervisor(state["user_input"])
+    state["situation"] = situation_from_supervisor_result(result)
     return state

@@ -11,6 +11,11 @@ export function registerTokenRefresher(refresher) {
   tokenRefresher = refresher;
 }
 
+// SSE 스트리밍처럼 apiRequest를 타지 않는 요청이 401 재시도를 직접 처리할 수 있게 노출한다.
+export async function refreshAccessToken() {
+  return tokenRefresher ? tokenRefresher() : null;
+}
+
 // login/signup/refresh/logout은 쿠키 기반이라 Bearer를 붙이지도, 401 재시도를 하지도 않는다
 // (특히 /auth/refresh 재시도는 무한루프가 된다). /auth/me는 Bearer가 필요하므로 제외 대상이 아니다.
 function isCookieAuthEndpoint(path) {

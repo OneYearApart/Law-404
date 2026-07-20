@@ -9,7 +9,8 @@ action_plan 빌더 테스트 (DB/네트워크/LLM 접근 없는 순수 로직).
 import pytest
 
 from app.graph.parts.d_part.nodes._disclaimer import DISCLAIMER
-from app.graph.parts.d_part.nodes.action_plan import build_action_plan
+from app.graph.parts.d_part.nodes import support_data
+from app.graph.parts.d_part.nodes.support_appendix import build_action_plan
 from app.graph.parts.d_part.nodes.finalize import _BANNED_JUDGMENT_TERMS
 from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimRequirementSlots
 
@@ -79,3 +80,28 @@ def test_present_judgment_treated_as_high_defensively():
     """'있음'은 현재 victim_check가 산출하지 않지만(§8.5), 빌더는 방어적으로 높음과 동일 처리."""
     text = build_action_plan(VictimJudgment.PRESENT, _all_filled())
     assert "피해자 결정" in text
+
+
+@pytest.mark.parametrize("text", [
+    *support_data._SPECIAL_CASE_GUIDANCE.values(),
+    support_data._RECOGNIZED_GUIDANCE,
+])
+def test_recognized_guidance_has_no_banned_terms(text):
+    """인지형 안내도 미인지형 액션플랜과 같은 판단언어 규칙을 지킨다(§9.3)."""
+    for term in _BANNED_JUDGMENT_TERMS:
+        assert term not in text
+
+
+@pytest.mark.parametrize("text", [
+    *support_data._SPECIAL_CASE_GUIDANCE.values(),
+    support_data._RECOGNIZED_GUIDANCE,
+])
+def test_recognized_guidance_has_no_duplicate_disclaimer(text):
+    """면책은 finalize가 붙인다 — 여기 적으면 두 번 나간다."""
+    assert DISCLAIMER not in text
+
+
+def test_recognized_guidance_has_no_prevention_advice():
+    """이미 피해자로 인정받은 사용자에게 붙는 안내다 — 계약 전 예방 조언이 섞이면 안 된다."""
+    assert "계약 전" not in support_data._RECOGNIZED_GUIDANCE
+    assert "피해자 결정" in support_data._RECOGNIZED_GUIDANCE
