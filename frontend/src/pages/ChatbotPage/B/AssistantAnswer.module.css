@@ -26,7 +26,64 @@
 }
 
 .answerText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   white-space: pre-wrap;
+}
+
+.answerHeading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-16) 0 var(--space-4);
+  padding-top: var(--space-14);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+  border-top: var(--border-width) solid #e5edf9;
+}
+
+.answerHeading:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.headingNumber {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.headingTitle {
+  font-size: 2rem;
+  font-weight: var(--font-weight-bold);
+}
+
+.answerLine {
+  display: block;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
+}
+
+.calendarEventLine {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: var(--space-4);
+  padding: var(--space-8) var(--space-10);
+  color: #153b7a;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.5;
+  /* background: #f2f7ff; */
+  border: var(--border-width) solid #d9e7ff;
+  border-radius: var(--radius-medium);
+}
+
+.answerSpacer {
+  height: var(--space-4);
 }
 
 .calendarButton {

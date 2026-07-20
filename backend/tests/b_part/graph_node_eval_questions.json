@@ -1,0 +1,130 @@
+{
+  "description": "B파트 LangGraph 노드 흐름 회귀 평가 질문 세트",
+  "single_turn": [
+    {
+      "id": "node_missing_001",
+      "group": "missing_scope",
+      "question": "계약 종료일이 다가오는데 갱신 가능한가요?",
+      "expected": {
+        "retrieved_count": 0,
+        "rule_min_count": 0,
+        "retrieval_reason": "required_missing_information",
+        "planner_validation_decision": "ask_context_missing_info",
+        "skipped_tools_include": ["rule_engine", "calendar_candidate", "retriever"],
+        "calendar_registration_status": null
+      }
+    },
+    {
+      "id": "node_scope_001",
+      "group": "keyword_scope",
+      "question": "전세사기 위험을 등기부등본으로 확인하고 싶어요.",
+      "expected": {
+        "retrieved_count": 0,
+        "rule_min_count": 0,
+        "scope": "out_of_scope",
+        "skipped_tools_include": ["rule_engine", "calendar_candidate", "retriever"],
+        "calendar_registration_status": null
+      }
+    },
+    {
+      "id": "node_rule_rag_001",
+      "group": "rule_retrieve_answer",
+      "question": "계약 종료일이 2027년 3월 1일인데 갱신은 언제부터 가능해?",
+      "expected": {
+        "retrieved_min_count": 1,
+        "rule_min_count": 1,
+        "calendar_event_min_count": 3,
+        "planner_validation_decision": "continue",
+        "executed_tools_include": ["rule_engine", "calendar_candidate", "retriever"],
+        "pending_action_type": "calendar_event_confirmation",
+        "calendar_registration_status": null
+      }
+    },
+    {
+      "id": "node_calendar_001",
+      "group": "calendar_confirmation",
+      "question": "응 등록해줘",
+      "pending_action": {
+        "type": "calendar_event_confirmation",
+        "status": "pending",
+        "events": [
+          {
+            "title": "계약갱신요구 마감일",
+            "date": "2027-01-01",
+            "description": "이 날짜 전까지 갱신 의사를 통지하는 것이 중요합니다.",
+            "event_type": "renewal_request_deadline",
+            "source_rule_type": "renewal_request_period",
+            "all_day": true
+          }
+        ]
+      },
+      "expected": {
+        "retrieved_count": 0,
+        "rule_min_count": 0,
+        "executed_tools_include": ["calendar_confirmation"],
+        "skipped_tools_include": ["rule_engine", "calendar_candidate", "retriever"],
+        "calendar_registration_status": "ready_to_register",
+        "calendar_tool_status": "dry_run",
+        "calendar_tool_event_count": 1
+      }
+    },
+    {
+      "id": "node_calendar_live_001",
+      "group": "calendar_confirmation_live_guard",
+      "question": "응 등록해줘",
+      "calendar_mode": "live",
+      "calendar_provider": "google_calendar",
+      "calendar_id": "primary",
+      "pending_action": {
+        "type": "calendar_event_confirmation",
+        "status": "pending",
+        "events": [
+          {
+            "title": "계약갱신요구 마감일",
+            "date": "2027-01-01",
+            "description": "이 날짜 전까지 갱신 의사를 통지하는 것이 중요합니다.",
+            "event_type": "renewal_request_deadline",
+            "source_rule_type": "renewal_request_period",
+            "all_day": true
+          }
+        ]
+      },
+      "expected": {
+        "retrieved_count": 0,
+        "rule_min_count": 0,
+        "executed_tools_include": ["calendar_confirmation"],
+        "skipped_tools_include": ["rule_engine", "calendar_candidate", "retriever"],
+        "calendar_registration_status": "ready_to_register",
+        "calendar_tool_status": "not_configured",
+        "calendar_tool_event_count": 1
+      }
+    }
+  ],
+  "multi_turn": [
+    {
+      "id": "node_memory_001",
+      "group": "memory_missing_to_rule",
+      "turns": [
+        {
+          "message": "계약이 곧 끝나는데 집주인이 아무 말도 없습니다. 자동으로 연장되나요?",
+          "expected": {
+            "retrieved_count": 0,
+            "retrieval_reason": "required_missing_information",
+            "planner_validation_decision": "ask_context_missing_info",
+            "skipped_tools_include": ["rule_engine", "calendar_candidate", "retriever"]
+          }
+        },
+        {
+          "message": "26년 10월 10일입니다.",
+          "expected": {
+            "retrieved_min_count": 1,
+            "rule_min_count": 1,
+            "planner_validation_decision": "continue",
+            "executed_tools_include": ["rule_engine", "calendar_candidate", "retriever"],
+            "contract_end_date": "2026-10-10"
+          }
+        }
+      ]
+    }
+  ]
+}

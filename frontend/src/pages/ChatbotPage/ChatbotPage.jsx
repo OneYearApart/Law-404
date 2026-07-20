@@ -76,12 +76,12 @@ const STARTER_GUIDES = Object.freeze({
   },
   "during-contract": {
     eyebrow: "계약 중 상담",
-    title: "계약서에서 무엇을 확인할까요?",
+    title: "거주 중 어떤 문제가 생겼나요?",
     description:
-      "작성 중인 계약 내용이나 걱정되는 조항을 알려 주세요. 확인할 부분과 수정이 필요한 행동을 정리해 드립니다.",
+      "계약갱신, 월세 인상, 수리 요청, 중도해지처럼 거주 중 생긴 문제를 알려 주세요. 필요한 확인 사항과 대응 방법을 정리해 드립니다.",
     examples: [
-      "계약서 금액과 설명받은 금액이 달라요.",
-      "특약에 불리한 내용이 있는지 확인하고 싶어요.",
+      "계약 갱신을 언제까지 할 수 있는지 알고싶어요.",
+      "집에 변기가 고장났는데 수리비는 누가 내야 되나요?",
     ],
   },
   "after-contract": {
@@ -433,7 +433,8 @@ function ChatbotPage({ consultationType }) {
   ]);
 
   // D파트 스트리밍은 메시지 개수가 아니라 마지막 답변의 길이가 늘어나므로 그것도 같이 따라간다.
-  const streamedLength = messages[messages.length - 1]?.content?.text?.length ?? 0;
+  const streamedLength =
+    messages[messages.length - 1]?.content?.text?.length ?? 0;
 
   useEffect(() => {
     if (isAPart) {
@@ -623,7 +624,7 @@ function ChatbotPage({ consultationType }) {
     if (currentConversationId) {
       return currentConversationId;
     }
- 
+
     const created = await createCConversation();
     saveConversationId(created.conversation_id);
     return created.conversation_id;
@@ -769,7 +770,9 @@ function ChatbotPage({ consultationType }) {
               setNotice(
                 "Google Calendar 연결 후 일정 등록 여부를 다시 확인합니다.",
               );
-              handleShowCalendarConnectGuide();
+              setNotice(
+                "Google Calendar 연결이 필요합니다. 연결하기 버튼을 눌러 계정 연동을 진행해 주세요.",
+              );
               return;
             }
 
@@ -801,7 +804,7 @@ function ChatbotPage({ consultationType }) {
   const runCChatTurn = async ({ question }) => {
     const conversationId = await ensureCConversation();
     const assistantMessageId = createMessageId("assistant");
- 
+
     appendMessages({
       id: assistantMessageId,
       role: "assistant",
@@ -816,7 +819,7 @@ function ChatbotPage({ consultationType }) {
         error: null,
       },
     });
- 
+
     await streamCAsk(
       { question, conversationId },
       {
@@ -879,17 +882,17 @@ function ChatbotPage({ consultationType }) {
     isStreaming: false,
     error: null,
   });
- 
+
   const runCDocumentTurn = async (question) => {
     const conversationId = await ensureCConversation();
     const assistantMessageId = createMessageId("assistant");
- 
+
     appendMessages({
       id: assistantMessageId,
       role: "assistant",
       content: { kind: "document", isStreaming: true, status: null },
     });
- 
+
     try {
       const result = await sendCDocumentMessage({
         userMessage: question,
@@ -908,7 +911,7 @@ function ChatbotPage({ consultationType }) {
       });
     }
   };
- 
+
   const handleCImageSelected = async (event) => {
     const file = event.target.files?.[0];
     if (event.target) {
@@ -917,24 +920,24 @@ function ChatbotPage({ consultationType }) {
     if (!file || isBusy) {
       return;
     }
- 
+
     setError("");
     setNotice("");
     setIsLoading(true);
- 
+
     appendMessages({
       id: createMessageId("user-image"),
       role: "user",
       content: `[계약서 이미지 업로드 — ${file.name}]`,
     });
- 
+
     const assistantMessageId = createMessageId("assistant");
     appendMessages({
       id: assistantMessageId,
       role: "assistant",
       content: { kind: "document", isStreaming: true, status: null },
     });
- 
+
     try {
       const conversationId = await ensureCConversation();
       const result = await sendCDocumentImage({ file, conversationId });
@@ -953,19 +956,19 @@ function ChatbotPage({ consultationType }) {
       setIsLoading(false);
     }
   };
- 
+
   const enterCDocumentMode = () => {
     setIsCDocumentMode(true);
     setNotice(
       "내용증명 작성 모드로 전환했습니다. 임차인·임대인 정보와 보증금 액수를 알려 주시거나, 계약서 사진을 올려 주세요.",
     );
   };
- 
+
   const exitCDocumentMode = () => {
     setIsCDocumentMode(false);
     setNotice("");
   };
-  
+
   const handleShowCalendarConnectGuide = async () => {
     if (isCalendarConnectionLoading) {
       return;
@@ -1162,7 +1165,7 @@ function ChatbotPage({ consultationType }) {
         const pendingAction = isCalendarApprovalMessage(question)
           ? getLatestBPendingAction()
           : null;
- 
+
         await runBChatTurn({
           question,
           pendingAction,
@@ -1493,7 +1496,7 @@ function ChatbotPage({ consultationType }) {
       </section>
 
       <AnimatePresence>
-        {(error || notice) && (
+        {(error || (notice && !(isBPart && showCalendarConnectionPanel))) && (
           <motion.div
             className={`${styles.feedback} ${error ? styles.error : styles.notice}`}
             initial={{ opacity: 0, y: 8 }}
@@ -1548,8 +1551,8 @@ function ChatbotPage({ consultationType }) {
                 </button>
               </div>
               <p className={styles.calendarConnectionDescription}>
-                계약 종료일과 갱신요구 마감일을 내 Google Calendar에
-                등록하려면 먼저 Google 계정 연결이 필요합니다.
+                계약 종료일과 갱신요구 마감일을 내 Google Calendar에 등록하려면
+                먼저 Google 계정 연결이 필요합니다.
               </p>
               {calendarConnectGuide?.note ? (
                 <p className={styles.calendarConnectionDescription}>
@@ -1557,13 +1560,12 @@ function ChatbotPage({ consultationType }) {
                 </p>
               ) : (
                 <p className={styles.calendarConnectionDescription}>
-                  연결 버튼을 누르면 Google Calendar 권한 승인 화면이
-                  열립니다.
+                  연결 버튼을 누르면 Google Calendar 권한 승인 화면이 열립니다.
                 </p>
               )}
             </section>
           )}
-           {isCPart && (
+        {isCPart && (
           <div className={styles.cDocBar}>
             {isCDocumentMode ? (
               <>
