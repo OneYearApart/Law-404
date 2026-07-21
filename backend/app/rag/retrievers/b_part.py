@@ -21,7 +21,7 @@ from app.rag.retrievers.base import BaseRetriever
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
-DEFAULT_DATABASE_URL = "postgresql://edu:1234@localhost:5433/edudb"
+DEFAULT_DATABASE_URL = "postgresql://edu:1234@localhost:5435/edudb"
 EMBEDDING_MODEL = "text-embedding-3-small"
 TABLE_NAME = "b_part_embeddings"
 

@@ -7,7 +7,7 @@ from psycopg2.extras import execute_values
 from datetime import datetime
 
 # 【DB 접속】
-DB_URL = "postgresql://edu:1234@localhost:5433/edudb"
+DB_URL = "postgresql://edu:1234@localhost:5435/edudb"
 
 
 # ════════════════════════════════════════════════════════════════════════════════

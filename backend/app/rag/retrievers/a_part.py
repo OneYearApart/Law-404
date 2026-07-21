@@ -16,7 +16,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://edu:1234@localhost:5433/edudb",
+    "postgresql://edu:1234@localhost:5435/edudb",
 )
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

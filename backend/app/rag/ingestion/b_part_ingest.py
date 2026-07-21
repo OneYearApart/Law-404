@@ -43,7 +43,7 @@ DEFAULT_PRECEDENT_PATH = B_PART_DATA_DIR / "precedents_selected_contract_period3
 DEFAULT_CHUNK_OUTPUT = B_PART_DATA_DIR / "knowledge_base_chunked.jsonl"
 DEFAULT_SUMMARY_OUTPUT = B_PART_DATA_DIR / "knowledge_base_chunked_summary.json"
 
-DEFAULT_DATABASE_URL = "postgresql://edu:1234@localhost:5433/edudb"
+DEFAULT_DATABASE_URL = "postgresql://edu:1234@localhost:5435/edudb"
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSION = 1536
 DEFAULT_BATCH_SIZE = 50

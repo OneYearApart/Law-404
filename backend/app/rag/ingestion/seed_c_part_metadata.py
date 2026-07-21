@@ -23,7 +23,7 @@ load_dotenv()
 # ════════════════════════════════════════════════════════════════════════════════
 
 # 【DATABASE_URL】
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://edu:1234@localhost:5433/edudb")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://edu:1234@localhost:5435/edudb")
 
 # 【JSON 파일 경로】
 JSON_FILE = "data_collection_c/data/precedents_selected_카테고리3.json"
