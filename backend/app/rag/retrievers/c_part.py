@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://edu:1234@localhost:5433/edudb")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://edu:1234@localhost:5435/edudb")
 
 CATEGORY_ID = 3
 EMBEDDING_MODEL = "text-embedding-3-small"

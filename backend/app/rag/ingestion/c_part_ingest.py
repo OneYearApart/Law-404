@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # API 키와 DB 정보
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://edu:1234@localhost:5433/edudb")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://edu:1234@localhost:5435/edudb")
 
 # 데이터 경로 (개인 PC의 수집 데이터)
 DATA_BASE_PATH = Path(__file__).parent.parent.parent.parent / "data_collection_c" / "data"

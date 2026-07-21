@@ -14,7 +14,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = BACKEND_ROOT.parent
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://edu:1234@localhost:5433/edudb"
+    database_url: str = "postgresql://edu:1234@localhost:5435/edudb"
     OPENAI_API_KEY: str
 
     @property

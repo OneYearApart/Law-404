@@ -89,6 +89,19 @@ function DAssistantAnswer({ content }) {
   const statusLabel = STATUS_LABELS[status];
   const bodySections = useMemo(() => splitDBody(text), [text]);
   const sectionTitles = SECTION_TITLES[answerKind] ?? DEFAULT_SECTION_TITLES;
+  // 같은 출처 문서가 여러 청크로 검색되면 source_type+label이 겹치는 인용이 중복으로 들어온다.
+  // 카드는 label만 보여주므로 중복 카드는 무의미 — 첫 항목만 남겨 중복 렌더/키 충돌을 막는다.
+  const uniqueCitations = useMemo(() => {
+    const seen = new Set();
+    return citations.filter((citation) => {
+      const key = `${citation.source_type}-${citation.label}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }, [citations]);
 
   return (
     <>
@@ -153,11 +166,11 @@ function DAssistantAnswer({ content }) {
           </section>
         )}
 
-        {citations.length > 0 && (
+        {uniqueCitations.length > 0 && (
           <section className={styles.citations}>
             <h3 className={styles.citationsTitle}>참고 근거</h3>
             <div className={styles.citationButtons}>
-              {citations.map((citation) => (
+              {uniqueCitations.map((citation) => (
                 <button
                   type="button"
                   key={`${citation.source_type}-${citation.label}`}

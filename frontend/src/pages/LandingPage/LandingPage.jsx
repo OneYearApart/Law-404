@@ -176,7 +176,7 @@ const questionRows = [
   },
   {
     stage: '전세사기',
-    question: '계약 뒤 집주인이 다른 계좌로 잔금을 보내 달라고 합니다.',
+    question: '제 전세금이 매매가의 90%나 되는데 이래도 되나요?',
     route: ROUTES.CHAT_JEONSE_FRAUD,
   },
 ];

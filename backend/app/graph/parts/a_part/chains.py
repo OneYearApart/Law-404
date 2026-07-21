@@ -10,6 +10,7 @@ import json
 import re
 from typing import Any
 
+from app.consultation.a_part.input_validation import requests_document_review
 from app.consultation.a_part.issues import ISSUE_DEFINITIONS, get_supported_issue_ids
 from app.consultation.a_part.models import ConversationState
 from app.consultation.a_part.router import (
@@ -142,6 +143,33 @@ def route_question(
             "explicit",
         )
 
+    # 계약서·등기부 파일 자체를 읽어 달라는 일반 문서 검토 요청은
+    # q06(확인설명서·계약서 불일치)처럼 문구가 비슷한 이슈로 LLM이
+    # 오분류하기 쉽다. 먼저 결정론 라우터를 적용하고, 구체적인 불일치나
+    # 권리 위험이 명시되지 않은 순수 문서 검토 요청이면 q15로 고정한다.
+    if requests_document_review(normalized):
+        try:
+            document_review_decision = _route_with_rules(normalized)
+        except UnsupportedConsultationIssueError:
+            document_review_decision = None
+        if (
+            document_review_decision is not None
+            and document_review_decision.primary_issue_id
+            == "q15_after_contract_procedure"
+        ):
+            return (
+                document_review_decision.model_copy(
+                    update={
+                        "confidence": 1.0,
+                        "reason": (
+                            "첨부 계약서·등기부 자체를 검토해 달라는 요청이므로 "
+                            "일반 문서 검토 흐름으로 분류했습니다."
+                        ),
+                    }
+                ),
+                "document_review_rule",
+            )
+
     if use_langchain:
         try:
             from langchain_core.prompts import ChatPromptTemplate
@@ -249,6 +277,12 @@ def _looks_like_short_follow_up(value: str) -> bool:
 
 def should_preserve_active_issue(question: str, state: ConversationState) -> bool:
     """진행 중 추가 질문의 짧은 답을 새 이슈로 오분류하지 않는다."""
+
+    # 짧더라도 새로 첨부한 문서를 검토해 달라는 요청은 직전 슬롯 답변이
+    # 아니다. 기존 active issue를 유지하면 이전 이슈의 질문이 문서 분석
+    # 결과보다 먼저 노출될 수 있으므로 새 라우팅을 허용한다.
+    if requests_document_review(question):
+        return False
 
     return bool(state.active_question_key and _looks_like_short_follow_up(question))
 

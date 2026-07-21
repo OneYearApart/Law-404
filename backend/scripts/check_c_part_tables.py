@@ -4,7 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
 
-DB_URL = "postgresql://edu:1234@localhost:5433/edudb"
+DB_URL = "postgresql://edu:1234@localhost:5435/edudb"
 
 
 def show_table(cur, table_name: str, limit: int = 100):
