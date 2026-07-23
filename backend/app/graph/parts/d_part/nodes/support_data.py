@@ -18,6 +18,7 @@ _disclaimer.DISCLAIMER와 동일하게, 절차·지원수단·기관 같은 '고
 (됩니다/확실합니다/틀림없/불가능합니다/보장합니다 등 단정 표현)를 쓰지 않고 "권해드립니다"
 톤을 따른다. 면책조항은 finalize가 자동 첨부하므로 여기서 작성하지 않는다.
 """
+
 from app.graph.parts.d_part.schemas import SlotStatus, VictimRequirementSlots
 
 # ── 인지형(이미 피해자로 인정받음) ──────────────────────────────────
@@ -97,7 +98,12 @@ _CONTACTS = (
     "- 전세사기피해지원 통합 안내, HUG, 대한법률구조공단 등 전문기관 상담을 권해드립니다."
 )
 
-_SLOT_ORDER = ("moved_in_and_fixed_date", "deposit_under_limit", "multiple_victims", "no_intent_to_return")
+_SLOT_ORDER = (
+    "moved_in_and_fixed_date",
+    "deposit_under_limit",
+    "multiple_victims",
+    "no_intent_to_return",
+)
 
 
 def unfilled_slot_lines(slots: VictimRequirementSlots) -> list[str]:

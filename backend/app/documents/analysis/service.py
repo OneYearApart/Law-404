@@ -52,9 +52,7 @@ class DocumentAnalysisService:
         self.extraction_storage = extraction_storage or DocumentExtractionStorage(
             repository
         )
-        self.analysis_storage = analysis_storage or DocumentAnalysisStorage(
-            repository
-        )
+        self.analysis_storage = analysis_storage or DocumentAnalysisStorage(repository)
         self.analysis_version = analysis_version
 
     @staticmethod
@@ -217,7 +215,9 @@ class DocumentAnalysisService:
             for page in extraction.pages:
                 pages.append(page.model_copy(update={"page_number": len(pages) + 1}))
         merged_sha = digest.hexdigest()
-        successful = sum(page.status == PageExtractionStatus.COMPLETED for page in pages)
+        successful = sum(
+            page.status == PageExtractionStatus.COMPLETED for page in pages
+        )
         failed = sum(page.status == PageExtractionStatus.FAILED for page in pages)
         direct_count = sum(
             page.status == PageExtractionStatus.COMPLETED
@@ -229,7 +229,11 @@ class DocumentAnalysisService:
             and page.extraction_method == ExtractionMethod.OCR
             for page in pages
         )
-        methods = {page.extraction_method for page in pages if page.status == PageExtractionStatus.COMPLETED}
+        methods = {
+            page.extraction_method
+            for page in pages
+            if page.status == PageExtractionStatus.COMPLETED
+        }
         method = (
             next(iter(methods))
             if len(methods) == 1
@@ -237,7 +241,9 @@ class DocumentAnalysisService:
             if methods
             else ExtractionMethod.NONE
         )
-        ocr_values = [page.ocr_confidence for page in pages if page.ocr_confidence is not None]
+        ocr_values = [
+            page.ocr_confidence for page in pages if page.ocr_confidence is not None
+        ]
         direct_values = [
             page.direct_text_quality_score
             for page in pages
@@ -291,10 +297,16 @@ class DocumentAnalysisService:
             direct_text_page_count=direct_count,
             ocr_page_count=ocr_count,
             text_character_count=len(combined_text),
-            average_ocr_confidence=(sum(ocr_values) / len(ocr_values) if ocr_values else None),
-            average_direct_text_quality=(sum(direct_values) / len(direct_values) if direct_values else None),
+            average_ocr_confidence=(
+                sum(ocr_values) / len(ocr_values) if ocr_values else None
+            ),
+            average_direct_text_quality=(
+                sum(direct_values) / len(direct_values) if direct_values else None
+            ),
             open_seconds=sum(item.open_seconds for item in ordered_extractions),
-            direct_text_seconds=sum(item.direct_text_seconds for item in ordered_extractions),
+            direct_text_seconds=sum(
+                item.direct_text_seconds for item in ordered_extractions
+            ),
             render_seconds=sum(item.render_seconds for item in ordered_extractions),
             ocr_seconds=sum(item.ocr_seconds for item in ordered_extractions),
             total_seconds=sum(item.total_seconds for item in ordered_extractions),
@@ -303,7 +315,9 @@ class DocumentAnalysisService:
             ocr_config=first_extraction.ocr_config,
             combined_text=combined_text,
             pages=pages,
-            warnings=[warning for item in ordered_extractions for warning in item.warnings],
+            warnings=[
+                warning for item in ordered_extractions for warning in item.warnings
+            ],
             errors=[error for item in ordered_extractions for error in item.errors],
             completed_at=utc_now(),
         )
@@ -323,14 +337,19 @@ class DocumentAnalysisService:
             )
         extractions = [self._load_extraction(document) for document in documents]
         group_document, merged = self._merge_group(documents, extractions)
-        source_ids = [item.document_id for item in sorted(documents, key=self._natural_document_key)]
+        source_ids = [
+            item.document_id
+            for item in sorted(documents, key=self._natural_document_key)
+        ]
         if group_document.document_type != DocumentType.REGISTRY:
             raise ValueError("여러 계약서는 자동 병합하지 않습니다.")
-        result = analyze_registry(document=group_document, extraction=merged).model_copy(
-            update={"source_document_ids": source_ids}
-        )
+        result = analyze_registry(
+            document=group_document, extraction=merged
+        ).model_copy(update={"source_document_ids": source_ids})
         stored = self.analysis_storage.save_registry(group_document, result)
-        partial = merged.processing_status == DocumentProcessingStatus.PARTIAL or bool(stored.errors)
+        partial = merged.processing_status == DocumentProcessingStatus.PARTIAL or bool(
+            stored.errors
+        )
         for document in documents:
             self._mark_completed(
                 document,
@@ -352,10 +371,11 @@ class DocumentAnalysisService:
         selected = [
             document
             for document in all_documents
-            if document.document_type in {
+            if document.document_type
+            in {
                 DocumentType.LEASE_CONTRACT,
                 DocumentType.REGISTRY,
-                }
+            }
             and (not allowed_ids or document.document_id in allowed_ids)
         ]
         if allowed_ids:
@@ -375,25 +395,34 @@ class DocumentAnalysisService:
         warnings: list[str] = []
         by_type = {
             document_type: [
-                document for document in selected
+                document
+                for document in selected
                 if document.document_type == document_type
             ]
             for document_type in (
                 DocumentType.LEASE_CONTRACT,
                 DocumentType.REGISTRY,
-                )
+            )
         }
         lease_documents = by_type[DocumentType.LEASE_CONTRACT]
         if lease_documents:
             if len(lease_documents) > 1:
-                warnings.append("계약서가 여러 개라 가장 최근 업로드 문서만 분석했습니다.")
-            latest_document = sorted(lease_documents, key=lambda item: item.uploaded_at)[-1]
+                warnings.append(
+                    "계약서가 여러 개라 가장 최근 업로드 문서만 분석했습니다."
+                )
+            latest_document = sorted(
+                lease_documents, key=lambda item: item.uploaded_at
+            )[-1]
             lease_results.append(self._analyze_group([latest_document], force=force))
         registry_documents = by_type[DocumentType.REGISTRY]
         if registry_documents:
-            registry_results.append(self._analyze_group(registry_documents, force=force))
+            registry_results.append(
+                self._analyze_group(registry_documents, force=force)
+            )
             if len(registry_documents) > 1:
-                warnings.append(f"등기부 {len(registry_documents)}개 파일을 페이지 순서대로 병합했습니다.")
+                warnings.append(
+                    f"등기부 {len(registry_documents)}개 파일을 페이지 순서대로 병합했습니다."
+                )
         latest_lease = lease_results[-1] if lease_results else None
         latest_registry = registry_results[-1] if registry_results else None
         comparison = compare_documents(

@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 RAG 검색 평가 스크립트.
 
 test_questions.json의 질문을 한 번에 실행하고,
@@ -21,7 +21,6 @@ from datetime import datetime
 from pathlib import Path
 from statistics import mean
 from typing import Any
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = BACKEND_DIR.parent

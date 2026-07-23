@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.consultation.a_part.issues import get_supported_issue_ids
 
-
 SUPPORTED_ISSUE_IDS = frozenset(get_supported_issue_ids())
 
 

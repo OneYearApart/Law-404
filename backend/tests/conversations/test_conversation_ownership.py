@@ -7,6 +7,7 @@
 get_current_user 의존성을 override해 JWT 발급 없이 A/B를 전환한다.
 docker의 law404_db를 그대로 사용 — 생성한 row는 정리한다.
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -39,7 +40,9 @@ async def two_users_one_conversation():
     yield conv_id, a_id, b_id
 
     db = SessionLocal()
-    db.query(Message).filter(Message.conversation_id == conv_id).delete(synchronize_session=False)
+    db.query(Message).filter(Message.conversation_id == conv_id).delete(
+        synchronize_session=False
+    )
     db.query(Conversation).filter(Conversation.id == conv_id).delete()
     db.query(User).filter(User.id.in_([a_id, b_id])).delete(synchronize_session=False)
     db.commit()
@@ -83,7 +86,9 @@ def test_chat_d_by_non_owner_returns_404_before_streaming(two_users_one_conversa
     _login_as(b_id)
 
     with TestClient(app) as client:
-        resp = client.post("/chat/d/", json={"conversation_id": conv_id, "user_input": "안녕"})
+        resp = client.post(
+            "/chat/d/", json={"conversation_id": conv_id, "user_input": "안녕"}
+        )
 
     assert resp.status_code == 404
 

@@ -92,14 +92,22 @@ def build_document_slot_updates(
             ("q03_owner_lessor_mismatch", "contract_lessor_name", "lessor_name"),
             ("q07_mortgage", "deposit_amount", "deposit_amount"),
             ("q08_multiunit_priority", "deposit_amount", "deposit_amount"),
-            ("q14_special_clause_deposit_return", "special_clause_text", "special_clause_text"),
+            (
+                "q14_special_clause_deposit_return",
+                "special_clause_text",
+                "special_clause_text",
+            ),
             ("q15_after_contract_procedure", "move_in_date", "move_in_date"),
             ("q16_lease_report", "contract_address", "property_address"),
             ("q16_lease_report", "contract_date", "contract_date"),
             ("q16_lease_report", "deposit_amount", "deposit_amount"),
             ("q16_lease_report", "monthly_rent", "monthly_rent"),
             ("q18_address_mismatch", "contract_address", "property_address"),
-            ("q19_deposit_transfer_mismatch", "contract_total_deposit", "deposit_amount"),
+            (
+                "q19_deposit_transfer_mismatch",
+                "contract_total_deposit",
+                "deposit_amount",
+            ),
             ("q20_guarantee_check", "contract_start_date", "contract_start_date"),
             ("q20_guarantee_check", "contract_end_date", "contract_end_date"),
             ("q20_guarantee_check", "deposit_amount", "deposit_amount"),
@@ -122,16 +130,36 @@ def build_document_slot_updates(
             ("q02_co_owner", "co_owners_identified", "current_owners"),
             ("q02_co_owner", "ownership_shares_confirmed", "ownership_shares"),
             ("q03_owner_lessor_mismatch", "registry_owner_name", "current_owners"),
-            ("q04_broker_account_payment", "registry_owner_identified", "current_owners"),
+            (
+                "q04_broker_account_payment",
+                "registry_owner_identified",
+                "current_owners",
+            ),
             ("q07_mortgage", "mortgage_exists", "mortgage_exists"),
             ("q07_mortgage", "maximum_secured_amount", "maximum_secured_amount"),
             ("q07_mortgage", "latest_registry_checked", "latest_registry_checked"),
-            ("q09_registry_restriction_warning", "restriction_type", "restriction_types"),
-            ("q09_registry_restriction_warning", "restriction_active", "active_restriction_exists"),
-            ("q09_registry_restriction_warning", "latest_registry_checked", "latest_registry_checked"),
+            (
+                "q09_registry_restriction_warning",
+                "restriction_type",
+                "restriction_types",
+            ),
+            (
+                "q09_registry_restriction_warning",
+                "restriction_active",
+                "active_restriction_exists",
+            ),
+            (
+                "q09_registry_restriction_warning",
+                "latest_registry_checked",
+                "latest_registry_checked",
+            ),
             ("q10_trust", "trust_registration_exists", "trust_registration_exists"),
             ("q10_trust", "trustee_identified", "trustees"),
-            ("q17_household_certificate", "latest_registry_checked", "latest_registry_checked"),
+            (
+                "q17_household_certificate",
+                "latest_registry_checked",
+                "latest_registry_checked",
+            ),
             ("q18_address_mismatch", "registry_address", "registry_address"),
             ("q20_guarantee_check", "registry_checked", "latest_registry_checked"),
         ]
@@ -171,7 +199,9 @@ def build_document_slot_updates(
                     )
                 )
 
-        active_mortgages = [item for item in registry.mortgages if item.active is not False]
+        active_mortgages = [
+            item for item in registry.mortgages if item.active is not False
+        ]
         prior_rights = [
             item.right_type
             for item in [*registry.restrictions, *registry.trusts]
@@ -186,7 +216,14 @@ def build_document_slot_updates(
                     value=prior_rights,
                     evidence_text="등기부 분석에서 현재 유효 가능성이 있는 권리관계를 확인했습니다.",
                     confidence=min(
-                        [item.confidence for item in [*active_mortgages, *registry.restrictions, *registry.trusts]]
+                        [
+                            item.confidence
+                            for item in [
+                                *active_mortgages,
+                                *registry.restrictions,
+                                *registry.trusts,
+                            ]
+                        ]
                         or [1.0]
                     ),
                     document_ids=[registry.document_id],
@@ -194,10 +231,25 @@ def build_document_slot_updates(
             )
 
         if registry.restrictions:
-            active = [item for item in registry.restrictions if item.active is not False]
-            statuses = sorted({item.cancellation_status or "unknown" for item in registry.restrictions})
-            dates = sorted({item.registration_date for item in registry.restrictions if item.registration_date})
-            holders = sorted({item.holder for item in registry.restrictions if item.holder})
+            active = [
+                item for item in registry.restrictions if item.active is not False
+            ]
+            statuses = sorted(
+                {
+                    item.cancellation_status or "unknown"
+                    for item in registry.restrictions
+                }
+            )
+            dates = sorted(
+                {
+                    item.registration_date
+                    for item in registry.restrictions
+                    if item.registration_date
+                }
+            )
+            holders = sorted(
+                {item.holder for item in registry.restrictions if item.holder}
+            )
             updates.extend(
                 [
                     DocumentSlotUpdate(
@@ -205,30 +257,47 @@ def build_document_slot_updates(
                         slot_key="cancellation_status",
                         status=(
                             AnalysisValueStatus.CONFIRMED
-                            if all(item.active is not None for item in registry.restrictions)
+                            if all(
+                                item.active is not None
+                                for item in registry.restrictions
+                            )
                             else AnalysisValueStatus.UNCERTAIN
                         ),
                         value=statuses,
                         evidence_text="등기부 권리 제한 항목의 말소 표시를 분석했습니다.",
-                        confidence=min(item.confidence for item in registry.restrictions),
+                        confidence=min(
+                            item.confidence for item in registry.restrictions
+                        ),
                         document_ids=[registry.document_id],
                     ),
                     DocumentSlotUpdate(
                         issue_id="q09_registry_restriction_warning",
                         slot_key="registration_date",
-                        status=(AnalysisValueStatus.CONFIRMED if dates else AnalysisValueStatus.UNCERTAIN),
+                        status=(
+                            AnalysisValueStatus.CONFIRMED
+                            if dates
+                            else AnalysisValueStatus.UNCERTAIN
+                        ),
                         value=dates or None,
                         evidence_text="등기부 권리 제한 항목의 접수·설정일을 분석했습니다.",
-                        confidence=min(item.confidence for item in registry.restrictions),
+                        confidence=min(
+                            item.confidence for item in registry.restrictions
+                        ),
                         document_ids=[registry.document_id],
                     ),
                     DocumentSlotUpdate(
                         issue_id="q09_registry_restriction_warning",
                         slot_key="creditor_or_right_holder",
-                        status=(AnalysisValueStatus.CONFIRMED if holders else AnalysisValueStatus.UNCERTAIN),
+                        status=(
+                            AnalysisValueStatus.CONFIRMED
+                            if holders
+                            else AnalysisValueStatus.UNCERTAIN
+                        ),
                         value=holders or None,
                         evidence_text="등기부 권리 제한 항목의 권리자를 분석했습니다.",
-                        confidence=min(item.confidence for item in registry.restrictions),
+                        confidence=min(
+                            item.confidence for item in registry.restrictions
+                        ),
                         document_ids=[registry.document_id],
                     ),
                 ]
@@ -257,7 +326,11 @@ def build_document_slot_updates(
                         value=item.explanation,
                         evidence_text=item.explanation,
                         confidence=1.0,
-                        document_ids=[value for value in [item.left_document_id, item.right_document_id] if value],
+                        document_ids=[
+                            value
+                            for value in [item.left_document_id, item.right_document_id]
+                            if value
+                        ],
                     )
                 )
             if item.key == "property_address":
@@ -270,7 +343,14 @@ def build_document_slot_updates(
                             value=True,
                             evidence_text=item.explanation,
                             confidence=1.0,
-                            document_ids=[value for value in [item.left_document_id, item.right_document_id] if value],
+                            document_ids=[
+                                value
+                                for value in [
+                                    item.left_document_id,
+                                    item.right_document_id,
+                                ]
+                                if value
+                            ],
                         )
                     )
                 elif item.status == ComparisonStatus.MISMATCH:
@@ -280,10 +360,20 @@ def build_document_slot_updates(
                                 issue_id="q18_address_mismatch",
                                 slot_key="mismatched_address_component",
                                 status=AnalysisValueStatus.CONFIRMED,
-                                value={"contract": item.left_value, "registry": item.right_value},
+                                value={
+                                    "contract": item.left_value,
+                                    "registry": item.right_value,
+                                },
                                 evidence_text=item.explanation,
                                 confidence=1.0,
-                                document_ids=[value for value in [item.left_document_id, item.right_document_id] if value],
+                                document_ids=[
+                                    value
+                                    for value in [
+                                        item.left_document_id,
+                                        item.right_document_id,
+                                    ]
+                                    if value
+                                ],
                             ),
                             DocumentSlotUpdate(
                                 issue_id="q18_address_mismatch",
@@ -292,7 +382,14 @@ def build_document_slot_updates(
                                 value=False,
                                 evidence_text=item.explanation,
                                 confidence=1.0,
-                                document_ids=[value for value in [item.left_document_id, item.right_document_id] if value],
+                                document_ids=[
+                                    value
+                                    for value in [
+                                        item.left_document_id,
+                                        item.right_document_id,
+                                    ]
+                                    if value
+                                ],
                             ),
                         ]
                     )
@@ -305,7 +402,14 @@ def build_document_slot_updates(
                             value=None,
                             evidence_text=item.explanation,
                             confidence=0.5,
-                            document_ids=[value for value in [item.left_document_id, item.right_document_id] if value],
+                            document_ids=[
+                                value
+                                for value in [
+                                    item.left_document_id,
+                                    item.right_document_id,
+                                ]
+                                if value
+                            ],
                         )
                     )
 
@@ -318,7 +422,9 @@ def _normalize_compare(value: Any) -> Any:
     if isinstance(value, list):
         return tuple(_normalize_compare(item) for item in value)
     if isinstance(value, dict):
-        return tuple(sorted((str(key), _normalize_compare(item)) for key, item in value.items()))
+        return tuple(
+            sorted((str(key), _normalize_compare(item)) for key, item in value.items())
+        )
     return value
 
 
@@ -390,11 +496,15 @@ def apply_document_analysis_to_state(
             )
             continue
 
-        incoming_confirmed = update.status == AnalysisValueStatus.CONFIRMED and update.value is not None
+        incoming_confirmed = (
+            update.status == AnalysisValueStatus.CONFIRMED and update.value is not None
+        )
 
         if incoming_confirmed:
             if previous_status == SlotStatus.CONFIRMED:
-                if _normalize_compare(previous_value) == _normalize_compare(update.value):
+                if _normalize_compare(previous_value) == _normalize_compare(
+                    update.value
+                ):
                     continue
                 slot.status = SlotStatus.CONFLICT
                 slot.value = None
@@ -402,7 +512,9 @@ def apply_document_analysis_to_state(
                 slot.source = FactSource.SYSTEM
                 conflict_created = True
             elif previous_status == SlotStatus.CONFLICT:
-                slot.conflicting_values = _unique([*slot.conflicting_values, update.value])
+                slot.conflicting_values = _unique(
+                    [*slot.conflicting_values, update.value]
+                )
                 slot.source = FactSource.SYSTEM
             else:
                 slot.status = SlotStatus.CONFIRMED
@@ -420,12 +532,16 @@ def apply_document_analysis_to_state(
             if previous_status == SlotStatus.CONFIRMED:
                 slot.status = SlotStatus.CONFLICT
                 slot.value = None
-                slot.conflicting_values = _unique([previous_value, update.value or "uncertain_document_value"])
+                slot.conflicting_values = _unique(
+                    [previous_value, update.value or "uncertain_document_value"]
+                )
                 slot.source = FactSource.SYSTEM
                 conflict_created = True
             elif previous_status == SlotStatus.CONFLICT:
                 if update.value is not None:
-                    slot.conflicting_values = _unique([*slot.conflicting_values, update.value])
+                    slot.conflicting_values = _unique(
+                        [*slot.conflicting_values, update.value]
+                    )
                 slot.source = FactSource.SYSTEM
             else:
                 slot.status = SlotStatus.UNCERTAIN

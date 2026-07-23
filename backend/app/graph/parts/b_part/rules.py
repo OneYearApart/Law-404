@@ -16,7 +16,6 @@ import re
 from datetime import date
 from typing import Any
 
-
 RENEWAL_CATEGORIES = {"계약갱신", "계약갱신요구권"}
 RENT_INCREASE_CATEGORIES = {"차임증감"}
 

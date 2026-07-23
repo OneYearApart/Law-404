@@ -3,15 +3,22 @@ victim_check 노드 상태기계 테스트 (DB 접근 없는 순수 로직).
 LLM 호출 두 종류(call_victim_check로 슬롯 추출, parse_confirmation으로 구제수단 확인응답 판별)는
 monkeypatch로 흉내내고, 노드가 코드로 책임지는 병합/상태기계/판정 로직만 검증한다.
 """
+
 import pytest
 
 from app.graph.parts.d_part.nodes import victim_check
 from app.graph.parts.d_part.nodes.victim_check import check_victim_status
-from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimRequirementSlots
+from app.graph.parts.d_part.schemas import (
+    SlotStatus,
+    VictimJudgment,
+    VictimRequirementSlots,
+)
 
 
 def _fake_call_victim_check(payload: dict):
-    async def _fake(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
+    async def _fake(
+        user_input: str, existing_slots: dict, pending_question: str | None = None
+    ) -> dict:
         return payload
 
     return _fake
@@ -20,7 +27,9 @@ def _fake_call_victim_check(payload: dict):
 def _capturing_call_victim_check(payload: dict, seen: list):
     """추출기에 실제로 넘어간 pending_question을 기록하는 fake."""
 
-    async def _fake(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
+    async def _fake(
+        user_input: str, existing_slots: dict, pending_question: str | None = None
+    ) -> dict:
         seen.append(pending_question)
         return payload
 
@@ -50,7 +59,9 @@ async def test_initial_freeform_fills_detected_slots_and_asks_next(monkeypatch):
             }
         ),
     )
-    state = {"user_input": "작년에 전입신고랑 확정일자는 받아뒀는데 집주인이 돌려줄 생각이 없어 보여요"}
+    state = {
+        "user_input": "작년에 전입신고랑 확정일자는 받아뒀는데 집주인이 돌려줄 생각이 없어 보여요"
+    }
 
     result = await check_victim_status(state)
 
@@ -189,7 +200,7 @@ async def test_explicit_denial_marks_slot_unfilled_and_moves_on(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pending_slot_question_is_passed_to_extractor(monkeypatch):
-    """"아니요" 같은 발화는 직전 질문 없이는 무엇에 대한 답인지 알 수 없다 — 질문한 슬롯을
+    """ "아니요" 같은 발화는 직전 질문 없이는 무엇에 대한 답인지 알 수 없다 — 질문한 슬롯을
     다음 턴 추출기까지 넘기는 배선이 끊기면 그 답변을 영영 해석할 수 없게 된다."""
     seen: list = []
     monkeypatch.setattr(
@@ -403,7 +414,7 @@ async def test_unfilled_slot_is_never_regressed_by_later_unclear(monkeypatch):
         "call_victim_check",
         _fake_call_victim_check(
             {
-                "moved_in_and_fixed_date": "unclear",   # 이번 발화는 슬롯①을 언급하지 않았다
+                "moved_in_and_fixed_date": "unclear",  # 이번 발화는 슬롯①을 언급하지 않았다
                 "deposit_under_limit": "filled",
                 "multiple_victims": "unclear",
                 "no_intent_to_return": "unclear",
@@ -466,7 +477,9 @@ async def test_auction_completed_true_survives_later_turns(monkeypatch):
             }
         ),
     )
-    existing = VictimRequirementSlots(auction_completed=True, no_intent_to_return=SlotStatus.FILLED)
+    existing = VictimRequirementSlots(
+        auction_completed=True, no_intent_to_return=SlotStatus.FILLED
+    )
     state = {"user_input": "보증금은 2억이었어요", "victim_slots": existing}
 
     result = await check_victim_status(state)
@@ -520,7 +533,9 @@ async def test_reentry_after_closure_resumes_with_existing_slots(monkeypatch):
     # fallback으로 종결된 상태에서 슬롯 하나만 채워져 있던 대화방
     state = {
         "user_input": "알고 보니 다른 세입자도 3명이나 피해를 봤대요",
-        "victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED),
+        "victim_slots": VictimRequirementSlots(
+            moved_in_and_fixed_date=SlotStatus.FILLED
+        ),
         "victim_fallback": True,
         "victim_flow_closed": True,
         "victim_check_attempts": 3,
@@ -547,7 +562,9 @@ async def test_pending_final_answer_is_not_overwritten(monkeypatch):
         called = True
         return {}
 
-    monkeypatch.setattr(victim_check.llm_d_part, "call_victim_check", _fake_call_victim_check)
+    monkeypatch.setattr(
+        victim_check.llm_d_part, "call_victim_check", _fake_call_victim_check
+    )
 
     state = {
         "user_input": "전입신고랑 확정일자는 받아뒀어요",
@@ -557,5 +574,8 @@ async def test_pending_final_answer_is_not_overwritten(monkeypatch):
     result = await check_victim_status(state)
 
     assert called is False
-    assert result["final_answer"] == "말씀하신 내용을 보면 '전' 단계로 보입니다. 맞으신가요?"
+    assert (
+        result["final_answer"]
+        == "말씀하신 내용을 보면 '전' 단계로 보입니다. 맞으신가요?"
+    )
     assert result.get("victim_judgment") is None

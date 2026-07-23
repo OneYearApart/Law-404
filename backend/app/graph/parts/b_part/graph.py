@@ -17,12 +17,6 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from app.llm.b_part import generate_b_part_answer, stream_text
-from app.llm.b_part_context import analyze_b_part_context
-from app.llm.b_part_intent import analyze_b_part_intent
-from app.llm.b_part_planner import analyze_b_part_plan
-from app.llm.b_part_scope import analyze_b_part_scope
-from app.rag.retrievers.b_part import BPartRetriever
 from app.graph.parts.b_part.calendar_events import (
     build_calendar_event_candidates,
     build_calendar_pending_action,
@@ -32,8 +26,8 @@ from app.graph.parts.b_part.calendar_events import (
 from app.graph.parts.b_part.calendar_tool import run_calendar_registration
 from app.graph.parts.b_part.memory import (
     build_contextual_question,
-    extract_conversation_id,
     build_history_text,
+    extract_conversation_id,
     memory_store,
 )
 from app.graph.parts.b_part.planner_validator import validate_planner_flow
@@ -44,7 +38,12 @@ from app.graph.parts.b_part.rules import (
     parse_year_month_from_text,
     run_b_part_rules,
 )
-
+from app.llm.b_part import generate_b_part_answer, stream_text
+from app.llm.b_part_context import analyze_b_part_context
+from app.llm.b_part_intent import analyze_b_part_intent
+from app.llm.b_part_planner import analyze_b_part_plan
+from app.llm.b_part_scope import analyze_b_part_scope
+from app.rag.retrievers.b_part import BPartRetriever
 
 RETRIEVAL_MIN_TOP_SIMILARITY = 0.27
 RENEWAL_SLOT_CATEGORIES = {"계약갱신", "계약갱신요구권", "묵시적갱신"}
@@ -112,11 +111,26 @@ CATEGORY_KEYWORDS = {
         "나가라고",
         "연장 거절",
     ],
-    "묵시적갱신": ["묵시", "자동연장", "자동 연장", "아무 말", "만료됐는데", "기간이 지났"],
+    "묵시적갱신": [
+        "묵시",
+        "자동연장",
+        "자동 연장",
+        "아무 말",
+        "만료됐는데",
+        "기간이 지났",
+    ],
     "차임증감": ["월세", "차임", "임대료", "인상", "올려", "증액", "감액", "5%"],
     "전월세전환": ["전세를 월세", "월세로 전환", "반전세", "전월세전환", "전환율"],
     "수선의무": ["수리", "고장", "누수", "보일러", "곰팡이", "결로", "배관", "하자"],
-    "임대인의무": ["못 살", "사용", "수익", "방해", "거주", "집주인 의무", "임대인 의무"],
+    "임대인의무": [
+        "못 살",
+        "사용",
+        "수익",
+        "방해",
+        "거주",
+        "집주인 의무",
+        "임대인 의무",
+    ],
     "계약해지": ["해지", "중도해지", "나가고 싶", "계약을 끝", "연체", "밀렸"],
     "손해배상": ["손해배상", "배상", "파손", "망가", "피해", "손해"],
     "계약갱신": ["계약 연장", "재계약", "계약갱신", "연장 가능", "만료 전"],
@@ -203,7 +217,9 @@ def extract_user_question(request: dict[str, Any]) -> str:
                 if isinstance(content, str) and content.strip():
                     return content.strip()
 
-    raise ValueError("계약 중에 관련된 질문을 찾지 못했습니다. message 또는 query 값을 보내주세요.")
+    raise ValueError(
+        "계약 중에 관련된 질문을 찾지 못했습니다. message 또는 query 값을 보내주세요."
+    )
 
 
 def detect_categories(question: str) -> list[str]:
@@ -281,7 +297,9 @@ def should_call_llm_intent(
     return False
 
 
-def merge_categories(base_categories: list[str], new_categories: list[str]) -> list[str]:
+def merge_categories(
+    base_categories: list[str], new_categories: list[str]
+) -> list[str]:
     """기존 카테고리 순서를 유지하면서 LLM 카테고리를 뒤에 보강합니다."""
     merged = list(base_categories)
     for category in new_categories:
@@ -331,27 +349,52 @@ def find_missing_questions(question: str, categories: list[str]) -> list[str]:
     has_date = has_date_in_text(question)
     has_repair_signal = any(
         keyword in question
-        for keyword in ["수리", "고장", "누수", "보일러", "곰팡이", "결로", "배관", "하자"]
+        for keyword in [
+            "수리",
+            "고장",
+            "누수",
+            "보일러",
+            "곰팡이",
+            "결로",
+            "배관",
+            "하자",
+        ]
     )
 
     money_values = parse_money_values_from_text(question)
     has_two_money_values = len(money_values) >= 2
 
-    if any(category in categories for category in ["계약갱신", "계약갱신요구권", "묵시적갱신"]):
+    if any(
+        category in categories
+        for category in ["계약갱신", "계약갱신요구권", "묵시적갱신"]
+    ):
         if not has_date:
-            missing.append("계약 종료일과 집주인 또는 세입자가 통보한 날짜가 언제인지 알려주세요.")
+            missing.append(
+                "계약 종료일과 집주인 또는 세입자가 통보한 날짜가 언제인지 알려주세요."
+            )
 
     if any(category in categories for category in ["차임증감", "전월세전환"]):
         if not has_two_money_values:
-            missing.append("현재 월세와 집주인이 요구한 월세가 각각 얼마인지 알려주세요.")
+            missing.append(
+                "현재 월세와 집주인이 요구한 월세가 각각 얼마인지 알려주세요."
+            )
         if "최근" not in question and "1년" not in question:
-            missing.append("최근 1년 안에 보증금이나 월세를 올린 적이 있는지 알려주세요.")
+            missing.append(
+                "최근 1년 안에 보증금이나 월세를 올린 적이 있는지 알려주세요."
+            )
 
-    if has_repair_signal and any(category in categories for category in ["수선의무", "임대인의무", "계약해지", "손해배상"]):
+    if has_repair_signal and any(
+        category in categories
+        for category in ["수선의무", "임대인의무", "계약해지", "손해배상"]
+    ):
         if "문자" not in question and "카톡" not in question and "증거" not in question:
-            missing.append("집주인에게 수리를 요청한 문자, 카카오톡, 사진 같은 증거가 있는지 알려주세요.")
+            missing.append(
+                "집주인에게 수리를 요청한 문자, 카카오톡, 사진 같은 증거가 있는지 알려주세요."
+            )
         if not has_repair_timing_info(question):
-            missing.append("하자가 언제부터 있었고, 수리 요청 후 얼마나 지났는지 알려주세요.")
+            missing.append(
+                "하자가 언제부터 있었고, 수리 요청 후 얼마나 지났는지 알려주세요."
+            )
 
     return missing[:3]
 
@@ -414,15 +457,10 @@ def filter_precedents_by_similarity(
 
 def evaluate_retrieval_quality(retrieved: list[dict[str, Any]]) -> dict[str, Any]:
     """검색 결과가 답변 생성에 충분한지 가볍게 판단합니다."""
-    similarities = [
-        float(result.get("similarity", 0) or 0)
-        for result in retrieved
-    ]
+    similarities = [float(result.get("similarity", 0) or 0) for result in retrieved]
     max_similarity = max(similarities, default=0.0)
     average_similarity = (
-        round(sum(similarities) / len(similarities), 4)
-        if similarities
-        else 0.0
+        round(sum(similarities) / len(similarities), 4) if similarities else 0.0
     )
 
     if not retrieved:
@@ -474,7 +512,9 @@ def should_call_scope_analyzer(question: str, categories: list[str]) -> bool:
 def build_scope_guidance_answer(scope_result: dict[str, Any]) -> str:
     """범위 밖 또는 애매한 질문에 대한 안내 답변을 만듭니다."""
     scope = scope_result.get("scope")
-    reason = scope_result.get("reason") or "질문만으로는 B파트 범위인지 판단하기 어렵습니다."
+    reason = (
+        scope_result.get("reason") or "질문만으로는 B파트 범위인지 판단하기 어렵습니다."
+    )
     clarification_question = (
         scope_result.get("clarification_question")
         or "주택임대차 계약 중 어떤 문제인지 조금 더 구체적으로 알려주세요."
@@ -540,9 +580,8 @@ def build_contract_end_day_question(year: int, month: int) -> str:
 
 def is_contract_end_date_clarification(question: str) -> bool:
     """사용자가 '계약 종료일이 언제냐'고 되묻는 상황인지 확인합니다."""
-    return (
-        "계약 종료일" in question
-        and any(keyword in question for keyword in ["언제", "뭐", "무엇", "알려"])
+    return "계약 종료일" in question and any(
+        keyword in question for keyword in ["언제", "뭐", "무엇", "알려"]
     )
 
 
@@ -586,8 +625,13 @@ def can_continue_with_rule_results(question: str, categories: list[str]) -> bool
     """
     if "차임증감" in categories and len(parse_money_values_from_text(question)) >= 2:
         return True
-    has_defect = any(keyword in question for keyword in ["누수", "보일러", "곰팡이", "결로", "배관", "하자"])
-    has_damage = any(keyword in question for keyword in ["망가", "파손", "손해", "손해배상", "피해"])
+    has_defect = any(
+        keyword in question
+        for keyword in ["누수", "보일러", "곰팡이", "결로", "배관", "하자"]
+    )
+    has_damage = any(
+        keyword in question for keyword in ["망가", "파손", "손해", "손해배상", "피해"]
+    )
     if has_defect and has_damage:
         return True
     return False
@@ -634,7 +678,9 @@ class BPartMVPGraph:
         builder = StateGraph(BPartGraphState)
         builder.add_node("prepare_context", self._prepare_context_node)
         builder.add_node("check_keyword_scope", self._check_keyword_scope_node)
-        builder.add_node("handle_calendar_confirmation", self._handle_calendar_confirmation_node)
+        builder.add_node(
+            "handle_calendar_confirmation", self._handle_calendar_confirmation_node
+        )
         builder.add_node("plan", self._plan_node)
         builder.add_node("validate_plan", self._validate_plan_node)
         builder.add_node("missing_scope", self._missing_scope_node)
@@ -685,9 +731,7 @@ class BPartMVPGraph:
         original_question = extract_user_question(request)
         conversation_id = extract_conversation_id(request)
         history_messages = (
-            memory_store.get_messages(conversation_id)
-            if conversation_id
-            else []
+            memory_store.get_messages(conversation_id) if conversation_id else []
         )
         history_text = build_history_text(history_messages)
         question, memory_meta = build_contextual_question(
@@ -703,8 +747,7 @@ class BPartMVPGraph:
         if context_result.get("source") == "llm":
             question = context_result.get("resolved_question") or question
             memory_meta["used_memory"] = bool(
-                memory_meta.get("used_memory")
-                or context_result.get("is_followup")
+                memory_meta.get("used_memory") or context_result.get("is_followup")
             )
             memory_meta["reason"] = (
                 "llm_context_resolver"
@@ -729,7 +772,9 @@ class BPartMVPGraph:
             "memory_meta": memory_meta,
         }
 
-    async def _check_keyword_scope_node(self, state: BPartGraphState) -> BPartGraphState:
+    async def _check_keyword_scope_node(
+        self, state: BPartGraphState
+    ) -> BPartGraphState:
         """LangGraph 노드: 명확한 B파트 범위 밖 질문을 빠르게 종료합니다."""
         original_question = state["original_question"]
         question = state["question"]
@@ -737,10 +782,9 @@ class BPartMVPGraph:
         context_result = state["context_result"]
         memory_meta = state["memory_meta"]
 
-        out_of_scope = (
-            detect_out_of_scope_reason(original_question)
-            or detect_out_of_scope_reason(question)
-        )
+        out_of_scope = detect_out_of_scope_reason(
+            original_question
+        ) or detect_out_of_scope_reason(question)
         if not out_of_scope:
             return state
 
@@ -791,7 +835,9 @@ class BPartMVPGraph:
             return "end"
         return "continue"
 
-    async def _handle_calendar_confirmation_node(self, state: BPartGraphState) -> BPartGraphState:
+    async def _handle_calendar_confirmation_node(
+        self, state: BPartGraphState
+    ) -> BPartGraphState:
         """LangGraph 노드: 사용자의 캘린더 등록 승인 메시지를 처리합니다."""
         request = state.get("request", {})
         original_question = state["original_question"]
@@ -811,7 +857,9 @@ class BPartMVPGraph:
         if request.get("calendar_connection_required"):
             calendar_tool_result = {
                 "status": "calendar_connection_required",
-                "provider": str(request.get("calendar_provider", "smithery_googlecalendar")),
+                "provider": str(
+                    request.get("calendar_provider", "smithery_googlecalendar")
+                ),
                 "reason": "user_calendar_connection_not_found",
                 "event_count": len(calendar_registration.get("events", [])),
                 "events": calendar_registration.get("events", []),
@@ -842,11 +890,11 @@ class BPartMVPGraph:
                 "캘린더에 등록하려면 먼저 내 계정의 Google Calendar connection을 연결해 주세요."
             )
         elif calendar_tool_result.get("status") == "not_configured":
-            answer = (
-                "Google Calendar 등록 설정이 아직 완료되지 않았습니다. 연결 상태를 확인해 주세요."
-            )
+            answer = "Google Calendar 등록 설정이 아직 완료되지 않았습니다. 연결 상태를 확인해 주세요."
         elif calendar_tool_result.get("status") == "failed":
-            answer = "Google Calendar 등록에 실패했습니다. 연결 상태와 권한을 확인해 주세요."
+            answer = (
+                "Google Calendar 등록에 실패했습니다. 연결 상태와 권한을 확인해 주세요."
+            )
         else:
             answer = "캘린더 등록 요청을 처리했습니다. 등록 결과를 확인해 주세요."
 
@@ -937,7 +985,9 @@ class BPartMVPGraph:
         question = state["question"]
         categories = state.get("categories", [])
         planner_validation = state.get("planner_validation", {})
-        tools_to_use = planner_validation.get("tools_to_use", ["rule_engine", "retriever"])
+        tools_to_use = planner_validation.get(
+            "tools_to_use", ["rule_engine", "retriever"]
+        )
         if not isinstance(tools_to_use, list):
             tools_to_use = ["rule_engine", "retriever"]
         executed_tools = list(state.get("executed_tools", []))
@@ -960,7 +1010,9 @@ class BPartMVPGraph:
                     categories,
                     intent_result.get("categories", []),
                 )
-                rule_results = run_b_part_rules(question=question, categories=categories)
+                rule_results = run_b_part_rules(
+                    question=question, categories=categories
+                )
         else:
             skipped_tools.append("rule_engine")
 
@@ -996,9 +1048,7 @@ class BPartMVPGraph:
         planner_validation = state.get("planner_validation", {})
 
         memory_state = (
-            memory_store.get_state(conversation_id)
-            if conversation_id
-            else {}
+            memory_store.get_state(conversation_id) if conversation_id else {}
         )
         renewal_slot_context = has_renewal_slot_context(
             question=question,
@@ -1015,7 +1065,9 @@ class BPartMVPGraph:
                 day = parse_day_from_text(original_question)
                 if day is not None:
                     try:
-                        contract_end_date = date(int(pending_year), int(pending_month), day)
+                        contract_end_date = date(
+                            int(pending_year), int(pending_month), day
+                        )
                     except ValueError:
                         answer = (
                             f"{pending_year}년 {pending_month}월에는 {day}일이 없습니다. "
@@ -1088,10 +1140,9 @@ class BPartMVPGraph:
                     return {**state, "final_state": final_state}
 
         if renewal_slot_context and not has_date_in_text(question):
-            year_month = (
-                parse_year_month_from_text(original_question)
-                or parse_year_month_from_text(question)
-            )
+            year_month = parse_year_month_from_text(
+                original_question
+            ) or parse_year_month_from_text(question)
             if year_month and conversation_id:
                 year, month = year_month
                 memory_store.update_state(
@@ -1138,7 +1189,9 @@ class BPartMVPGraph:
                     "final_state": final_state,
                 }
 
-        required_missing_questions = context_result.get("required_missing_questions", [])
+        required_missing_questions = context_result.get(
+            "required_missing_questions", []
+        )
         if planner_validation.get("context_should_stop"):
             required_missing_questions = planner_validation.get(
                 "context_missing_questions",
@@ -1164,7 +1217,9 @@ class BPartMVPGraph:
             self._save_turn(conversation_id, original_question, answer)
             return {**state, "final_state": final_state}
 
-        planner_missing_questions = planner_validation.get("planner_missing_questions", [])
+        planner_missing_questions = planner_validation.get(
+            "planner_missing_questions", []
+        )
         if planner_validation.get("planner_should_stop"):
             answer = "\n".join(planner_missing_questions)
             final_state = self._build_early_final_state(
@@ -1264,7 +1319,9 @@ class BPartMVPGraph:
                 "skipped_tools": list(dict.fromkeys(skipped_tools)),
             }
 
-        retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+        retrieved = self._retrieve(
+            question=question, categories=categories, top_k=top_k
+        )
         executed_tools.append("retriever")
         retrieval_quality = evaluate_retrieval_quality(retrieved)
 
@@ -1281,7 +1338,9 @@ class BPartMVPGraph:
             rule_results = run_b_part_rules(question=question, categories=categories)
             calendar_events = build_calendar_event_candidates(rule_results)
             pending_action = build_calendar_pending_action(calendar_events)
-            retrieved = self._retrieve(question=question, categories=categories, top_k=top_k)
+            retrieved = self._retrieve(
+                question=question, categories=categories, top_k=top_k
+            )
             retrieval_quality = evaluate_retrieval_quality(retrieved)
             retrieval_quality["refined_by_llm"] = True
             if "rule_engine" not in executed_tools:
@@ -1418,7 +1477,9 @@ class BPartMVPGraph:
         memory_store.add_message(conversation_id, "user", user_question)
         memory_store.add_message(conversation_id, "assistant", assistant_answer)
 
-    def _retrieve(self, question: str, categories: list[str], top_k: int) -> list[dict[str, Any]]:
+    def _retrieve(
+        self, question: str, categories: list[str], top_k: int
+    ) -> list[dict[str, Any]]:
         """
         B파트 검색 전략.
 
@@ -1494,5 +1555,6 @@ class BPartMVPGraph:
             ]
 
         return combined_results[:top_k]
+
 
 graph = BPartMVPGraph()

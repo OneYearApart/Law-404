@@ -4,6 +4,7 @@ GET /conversations                      — 사이드바 대화 목록
 GET /conversations/{id}                 — 특정 대화 로드
 POST /conversations/{id}/messages       — 공통 메시지 저장
 """
+
 from fastapi import APIRouter, Depends, status
 
 from app.auth.dependencies import get_current_user
@@ -18,7 +19,9 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_conversation(body: CreateConversationRequest, user=Depends(get_current_user)):
+async def create_conversation(
+    body: CreateConversationRequest, user=Depends(get_current_user)
+):
     return await repository.create_conversation(user.id, body.part, body.title)
 
 

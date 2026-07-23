@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.documents.models import utc_now
 
-
 ANALYSIS_VERSION = "document-analysis-v11-generic-document-summary"
 COMPARISON_VERSION = "document-comparison-v7-lease-registry-only"
 

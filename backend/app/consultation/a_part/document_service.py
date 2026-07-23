@@ -61,9 +61,7 @@ class APartDocumentUploadService:
         self.analysis_service = analysis_service or DocumentAnalysisService(
             repository=upload_service.repository
         )
-        self.conversation_service = (
-            conversation_service or APartConversationService()
-        )
+        self.conversation_service = conversation_service or APartConversationService()
         self.database_repository = database_repository
 
     def _persist_document(
@@ -207,10 +205,7 @@ class APartDocumentUploadService:
         force: bool = False,
     ) -> DocumentExtractionResponse:
         state = self.conversation_service.get_state(conversation_id)
-        if not any(
-            item.document_id == document_id
-            for item in state.documents
-        ):
+        if not any(item.document_id == document_id for item in state.documents):
             raise ValueError(
                 f"현재 상담에 연결되지 않은 document_id입니다: {document_id}"
             )
@@ -236,7 +231,6 @@ class APartDocumentUploadService:
             state=updated_state,
         )
 
-
     def analyze_documents(
         self,
         *,
@@ -251,8 +245,7 @@ class APartDocumentUploadService:
         if requested_ids and not requested_ids.issubset(connected_ids):
             missing = sorted(requested_ids - connected_ids)
             raise ValueError(
-                "현재 상담에 연결되지 않은 document_id입니다: "
-                + ", ".join(missing)
+                "현재 상담에 연결되지 않은 document_id입니다: " + ", ".join(missing)
             )
 
         # 업로드 단계에서는 파일만 저장한다. 사용자가 문서 검토 질문을
@@ -291,14 +284,18 @@ class APartDocumentUploadService:
         comparison = response.comparison
         updates = build_document_slot_updates(
             lease=(response.lease_analyses[-1] if response.lease_analyses else None),
-            registry=(response.registry_analyses[-1] if response.registry_analyses else None),
+            registry=(
+                response.registry_analyses[-1] if response.registry_analyses else None
+            ),
             comparison=comparison,
         )
         mapping = apply_document_analysis_to_state(
             state,
             updates=updates,
             triggered_issue_ids=(comparison.triggered_issue_ids if comparison else []),
-            comparison_result_path=(comparison.comparison_result_path if comparison else None),
+            comparison_result_path=(
+                comparison.comparison_result_path if comparison else None
+            ),
             analysis_version=ANALYSIS_VERSION,
         )
         stored_state = self.conversation_service.store.save(state)
@@ -373,10 +370,8 @@ class APartDocumentUploadService:
             "comparisons": 0,
         }
         if self.database_repository is not None:
-            database_cleanup = (
-                self.database_repository.delete_conversation_artifacts(
-                    conversation_id=conversation_id
-                )
+            database_cleanup = self.database_repository.delete_conversation_artifacts(
+                conversation_id=conversation_id
             )
 
         return {

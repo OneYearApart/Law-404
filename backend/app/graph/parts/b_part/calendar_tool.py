@@ -19,7 +19,6 @@ import httpx
 
 from app.core.config import settings
 
-
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_TIMEZONE = "Asia/Seoul"
 KST_OFFSET = "+09:00"
@@ -210,12 +209,10 @@ def dry_run_calendar_registration(
     events = calendar_registration["events"]
     converted_events = [to_calendar_mcp_event(event) for event in events]
     google_create_event_args = [
-        to_google_calendar_create_event_args(event)
-        for event in events
+        to_google_calendar_create_event_args(event) for event in events
     ]
     smithery_create_event_args = [
-        to_smithery_create_event_args(event)
-        for event in events
+        to_smithery_create_event_args(event) for event in events
     ]
     return {
         "status": "dry_run",
@@ -308,8 +305,12 @@ def _call_smithery_create_event_via_api(
         "event_args": event_args,
         "response": response_payload,
         "response_data": response_data,
-        "provider_event_id": response_data.get("id") if isinstance(response_data, dict) else None,
-        "html_link": response_data.get("htmlLink") if isinstance(response_data, dict) else None,
+        "provider_event_id": response_data.get("id")
+        if isinstance(response_data, dict)
+        else None,
+        "html_link": response_data.get("htmlLink")
+        if isinstance(response_data, dict)
+        else None,
     }
 
 
@@ -387,8 +388,12 @@ def _call_smithery_create_event_via_cli(
         "event_args": event_args,
         "response": response,
         "response_data": response_data,
-        "provider_event_id": response_data.get("id") if isinstance(response_data, dict) else None,
-        "html_link": response_data.get("htmlLink") if isinstance(response_data, dict) else None,
+        "provider_event_id": response_data.get("id")
+        if isinstance(response_data, dict)
+        else None,
+        "html_link": response_data.get("htmlLink")
+        if isinstance(response_data, dict)
+        else None,
     }
 
 
@@ -529,7 +534,11 @@ def register_smithery_google_calendar_events(
             "provider": "smithery_googlecalendar",
         }
 
-    events = calendar_registration.get("events", []) if isinstance(calendar_registration, dict) else []
+    events = (
+        calendar_registration.get("events", [])
+        if isinstance(calendar_registration, dict)
+        else []
+    )
     smithery_create_event_args = [
         to_smithery_create_event_args(
             event,

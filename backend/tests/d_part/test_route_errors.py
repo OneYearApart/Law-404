@@ -6,6 +6,7 @@
 
 get_current_user는 override, DB/그래프는 monkeypatch로 흉내(네트워크·DB 접근 없음).
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -25,7 +26,9 @@ def _override_auth():
 
 def test_missing_conversation_id_returns_422():
     with TestClient(app) as client:
-        resp = client.post("/chat/d/", json={"user_input": "안녕"})  # conversation_id 없음
+        resp = client.post(
+            "/chat/d/", json={"user_input": "안녕"}
+        )  # conversation_id 없음
     assert resp.status_code == 422
 
 
@@ -45,10 +48,12 @@ def test_graph_exception_emits_error_event_and_ends_stream(monkeypatch):
     monkeypatch.setattr(d_part_route, "d_graph", _BoomGraph())
 
     with TestClient(app) as client:
-        resp = client.post("/chat/d/", json={"conversation_id": 1, "user_input": "안녕"})
+        resp = client.post(
+            "/chat/d/", json={"conversation_id": 1, "user_input": "안녕"}
+        )
 
     assert resp.status_code == 200  # 스트림은 200으로 시작됨(예외는 스트림 안에서 발생)
     body = resp.text
-    assert '"type":"loading"' in body       # 스트림이 실제로 시작됐고
-    assert '"type":"error"' in body          # 조용히 끊기지 않고 error 이벤트로 종료
+    assert '"type":"loading"' in body  # 스트림이 실제로 시작됐고
+    assert '"type":"error"' in body  # 조용히 끊기지 않고 error 이벤트로 종료
     assert d_part_route._ERROR_MESSAGE in body

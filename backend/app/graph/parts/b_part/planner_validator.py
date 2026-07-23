@@ -13,7 +13,6 @@ from typing import Any
 
 from app.graph.parts.b_part.rules import parse_money_values_from_text
 
-
 SUPPORTED_TOOLS = {"rule_engine", "retriever", "calendar_candidate"}
 
 TOOL_ALIASES = {
@@ -91,15 +90,21 @@ def can_continue_with_available_facts(question: str, categories: list[str]) -> b
         for keyword in ["누수", "보일러", "곰팡이", "결로", "배관", "하자", "수리"]
     )
     has_damage = any(
-        keyword in question
-        for keyword in ["망가", "파손", "손해", "손해배상", "피해"]
+        keyword in question for keyword in ["망가", "파손", "손해", "손해배상", "피해"]
     )
     if has_defect and has_damage:
         return True
 
     has_termination_intent = any(
         keyword in question
-        for keyword in ["중도해지", "해지", "계약을 끝", "계약 끝", "나가고 싶", "그만 살"]
+        for keyword in [
+            "중도해지",
+            "해지",
+            "계약을 끝",
+            "계약 끝",
+            "나가고 싶",
+            "그만 살",
+        ]
     )
     if has_defect and has_termination_intent:
         return True
@@ -119,9 +124,21 @@ def has_rule_calculation_signal(question: str, categories: list[str]) -> bool:
     """날짜/금액 계산이 필요한 질문인지 판단합니다."""
     if len(parse_money_values_from_text(question)) >= 2:
         return True
-    if any(keyword in question for keyword in ["계약 종료일", "종료일", "만료일", "갱신", "마감일"]):
+    if any(
+        keyword in question
+        for keyword in ["계약 종료일", "종료일", "만료일", "갱신", "마감일"]
+    ):
         return True
-    return any(category in categories for category in ["차임증감", "전월세전환", "계약갱신", "계약갱신요구권", "묵시적갱신"])
+    return any(
+        category in categories
+        for category in [
+            "차임증감",
+            "전월세전환",
+            "계약갱신",
+            "계약갱신요구권",
+            "묵시적갱신",
+        ]
+    )
 
 
 def build_tool_policy(

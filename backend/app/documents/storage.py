@@ -13,7 +13,6 @@ from uuid import uuid4
 from app.documents.models import DocumentType, UploadedDocument
 from app.documents.validation import ValidatedUpload
 
-
 SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
 
@@ -34,10 +33,7 @@ class FileDocumentRepository:
 
     def __init__(self, root: Path | str | None = None) -> None:
         default_root = (
-            Path(__file__).resolve().parents[2]
-            / "storage"
-            / "a_part"
-            / "uploads"
+            Path(__file__).resolve().parents[2] / "storage" / "a_part" / "uploads"
         )
         self.root = Path(root or default_root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -110,18 +106,12 @@ class FileDocumentRepository:
         document_type: DocumentType,
         upload: ValidatedUpload,
     ) -> UploadedDocument:
-        normalized_conversation_id = self.validate_conversation_id(
-            conversation_id
-        )
+        normalized_conversation_id = self.validate_conversation_id(conversation_id)
 
         with self._lock:
             existing_documents = self._load_index(normalized_conversation_id)
             duplicate = next(
-                (
-                    item
-                    for item in existing_documents
-                    if item.sha256 == upload.sha256
-                ),
+                (item for item in existing_documents if item.sha256 == upload.sha256),
                 None,
             )
 
@@ -180,8 +170,7 @@ class FileDocumentRepository:
     def list_documents(self, conversation_id: str) -> list[UploadedDocument]:
         with self._lock:
             return [
-                item.model_copy(deep=True)
-                for item in self._load_index(conversation_id)
+                item.model_copy(deep=True) for item in self._load_index(conversation_id)
             ]
 
     def get(
@@ -191,9 +180,7 @@ class FileDocumentRepository:
     ) -> UploadedDocument:
         documents = self.list_documents(conversation_id)
         try:
-            return next(
-                item for item in documents if item.document_id == document_id
-            )
+            return next(item for item in documents if item.document_id == document_id)
         except StopIteration as error:
             raise DocumentNotFoundError(
                 f"문서를 찾을 수 없습니다: {document_id}"
@@ -286,23 +273,13 @@ class FileDocumentRepository:
         with self._lock:
             documents = self._load_index(conversation_id)
             target = next(
-                (
-                    item
-                    for item in documents
-                    if item.document_id == document_id
-                ),
+                (item for item in documents if item.document_id == document_id),
                 None,
             )
             if target is None:
-                raise DocumentNotFoundError(
-                    f"문서를 찾을 수 없습니다: {document_id}"
-                )
+                raise DocumentNotFoundError(f"문서를 찾을 수 없습니다: {document_id}")
 
-            remaining = [
-                item
-                for item in documents
-                if item.document_id != document_id
-            ]
+            remaining = [item for item in documents if item.document_id != document_id]
             self.resolve_path(target).unlink(missing_ok=True)
             for extra_path in (
                 target.extraction_result_path,
@@ -310,9 +287,7 @@ class FileDocumentRepository:
                 target.analysis_result_path,
             ):
                 if extra_path:
-                    self.resolve_relative_path(extra_path).unlink(
-                        missing_ok=True
-                    )
+                    self.resolve_relative_path(extra_path).unlink(missing_ok=True)
             comparison_path = (
                 f"{target.conversation_id}/"
                 f"{target.conversation_id}.document_comparison.json"

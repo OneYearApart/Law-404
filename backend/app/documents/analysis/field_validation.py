@@ -13,7 +13,6 @@ from app.documents.analysis.models import (
 )
 from app.documents.extraction_models import ExtractionMethod, PageExtractionResult
 
-
 Normalizer = Callable[[str], Any | None]
 
 

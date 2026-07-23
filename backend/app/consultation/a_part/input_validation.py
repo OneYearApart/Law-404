@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import unicodedata
 
-
 MAX_CHAT_INPUT_CHARS = 4000
 
 

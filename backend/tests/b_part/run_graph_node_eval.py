@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 LangGraph 노드 흐름 회귀 평가 스크립트.
 
 이 스크립트는 답변 문장 자체보다 LangGraph 각 단계가 의도한 흐름으로
@@ -29,14 +29,11 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_QUESTIONS_PATH = (
     Path(__file__).resolve().parent / "graph_node_eval_questions.json"
 )
-DEFAULT_OUTPUT_PATH = (
-    Path(__file__).resolve().parent / "graph_node_eval_results.json"
-)
+DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent / "graph_node_eval_results.json"
 
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
@@ -130,13 +127,19 @@ def extract_actual(final_state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def check_expectations(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
+def check_expectations(
+    actual: dict[str, Any], expected: dict[str, Any]
+) -> dict[str, Any]:
     checks: dict[str, bool] = {}
 
     if "retrieved_count" in expected:
-        checks["retrieved_count"] = actual["retrieved_count"] == expected["retrieved_count"]
+        checks["retrieved_count"] = (
+            actual["retrieved_count"] == expected["retrieved_count"]
+        )
     if "retrieved_min_count" in expected:
-        checks["retrieved_min_count"] = actual["retrieved_count"] >= expected["retrieved_min_count"]
+        checks["retrieved_min_count"] = (
+            actual["retrieved_count"] >= expected["retrieved_min_count"]
+        )
     if "rule_min_count" in expected:
         checks["rule_min_count"] = actual["rule_count"] >= expected["rule_min_count"]
     if "calendar_event_min_count" in expected:
@@ -144,39 +147,47 @@ def check_expectations(actual: dict[str, Any], expected: dict[str, Any]) -> dict
             actual["calendar_event_count"] >= expected["calendar_event_min_count"]
         )
     if "retrieval_reason" in expected:
-        checks["retrieval_reason"] = actual["retrieval_reason"] == expected["retrieval_reason"]
+        checks["retrieval_reason"] = (
+            actual["retrieval_reason"] == expected["retrieval_reason"]
+        )
     if "scope" in expected:
         checks["scope"] = actual["scope"] == expected["scope"]
     if "planner_validation_decision" in expected:
         checks["planner_validation_decision"] = (
-            actual["planner_validation_decision"] == expected["planner_validation_decision"]
+            actual["planner_validation_decision"]
+            == expected["planner_validation_decision"]
         )
     if "executed_tools_include" in expected:
         expected_tools = expected["executed_tools_include"]
         checks["executed_tools_include"] = all(
-            tool in actual["executed_tools"]
-            for tool in expected_tools
+            tool in actual["executed_tools"] for tool in expected_tools
         )
     if "skipped_tools_include" in expected:
         expected_tools = expected["skipped_tools_include"]
         checks["skipped_tools_include"] = all(
-            tool in actual["skipped_tools"]
-            for tool in expected_tools
+            tool in actual["skipped_tools"] for tool in expected_tools
         )
     if "pending_action_type" in expected:
-        checks["pending_action_type"] = actual["pending_action_type"] == expected["pending_action_type"]
+        checks["pending_action_type"] = (
+            actual["pending_action_type"] == expected["pending_action_type"]
+        )
     if "calendar_registration_status" in expected:
         checks["calendar_registration_status"] = (
-            actual["calendar_registration_status"] == expected["calendar_registration_status"]
+            actual["calendar_registration_status"]
+            == expected["calendar_registration_status"]
         )
     if "calendar_tool_status" in expected:
-        checks["calendar_tool_status"] = actual["calendar_tool_status"] == expected["calendar_tool_status"]
+        checks["calendar_tool_status"] = (
+            actual["calendar_tool_status"] == expected["calendar_tool_status"]
+        )
     if "calendar_tool_event_count" in expected:
         checks["calendar_tool_event_count"] = (
             actual["calendar_tool_event_count"] == expected["calendar_tool_event_count"]
         )
     if "contract_end_date" in expected:
-        checks["contract_end_date"] = expected["contract_end_date"] in actual["contract_end_dates"]
+        checks["contract_end_date"] = (
+            expected["contract_end_date"] in actual["contract_end_dates"]
+        )
 
     return {
         "items": checks,
@@ -265,9 +276,15 @@ async def run_multi_turn_case(case: dict[str, Any], top_k: int) -> dict[str, Any
     }
 
 
-def build_summary(single_results: list[dict[str, Any]], multi_results: list[dict[str, Any]]) -> dict[str, Any]:
-    single_passes = [bool(result.get("checks", {}).get("passed")) for result in single_results]
-    multi_passes = [bool(result.get("checks", {}).get("passed")) for result in multi_results]
+def build_summary(
+    single_results: list[dict[str, Any]], multi_results: list[dict[str, Any]]
+) -> dict[str, Any]:
+    single_passes = [
+        bool(result.get("checks", {}).get("passed")) for result in single_results
+    ]
+    multi_passes = [
+        bool(result.get("checks", {}).get("passed")) for result in multi_results
+    ]
 
     all_passes = single_passes + multi_passes
     missing_stop_results = [
@@ -285,7 +302,9 @@ def build_summary(single_results: list[dict[str, Any]], multi_results: list[dict
         "single_turn_cases": len(single_results),
         "multi_turn_cases": len(multi_results),
         "pass_rate": round(mean(all_passes), 4) if all_passes else 0.0,
-        "single_turn_pass_rate": round(mean(single_passes), 4) if single_passes else 0.0,
+        "single_turn_pass_rate": round(mean(single_passes), 4)
+        if single_passes
+        else 0.0,
         "multi_turn_pass_rate": round(mean(multi_passes), 4) if multi_passes else 0.0,
         "pre_retrieval_stop_rate": round(mean(missing_stop_hits), 4)
         if missing_stop_hits

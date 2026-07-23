@@ -5,6 +5,7 @@ D파트 검색 전략.
 조문 + 관련 판례 + 사례집 케이스를 참조조문/주제태그로 링크해서 함께 가져옵니다.
 (원문→해설→상황적용 응답 구조 지원 — 기획서 4.3 참고)
 """
+
 from typing import Optional
 
 from fastapi.concurrency import run_in_threadpool
@@ -29,8 +30,8 @@ _CHUNK_COLUMNS = """id, source_type, statute_name, article_no, case_no,
 # search_by_topic 컨텍스트 상한. topic_tags 태깅(links_d.py::TOPIC_TAG_KEYWORDS)이 광범위한
 # 키워드 기반이라 태그 일치 청크가 판례/HUG 각각 수십~수백 건일 수 있다 → 유사도 상위 top_k만.
 _STATUTE_TOP_K = 3
-_TOPIC_TOP_K = 3                                        # 판례/HUG사례집 각각
-_MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
+_TOPIC_TOP_K = 3  # 판례/HUG사례집 각각
+_MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K  # = 9
 
 # 단위 28: open_qa(트리 밖 자유질의) 전용 균형 검색. source_type별 쿼터로 한 종류(주로 판례)가
 # 컨텍스트를 독점해 조문이 없어도 원문→해설→상황적용을 지어내는 것을 막고, distance 임계값으로
@@ -42,7 +43,14 @@ _MAX_TOPIC_CONTEXT_CHUNKS = _STATUTE_TOP_K + _TOPIC_TOP_K + _TOPIC_TOP_K   # = 9
 # 늘어도 검색 설정이 따라오지 않은 누락이다. 생활법령은 제도를 일반 시민 눈높이로 풀어쓴 층이라
 # "이게 뭔가요/어떻게 하나요" 류 자유질의에 가장 잘 맞는데, 같은 질문을 topic 경로(guides를 함께
 # 검색한다)로 흘렸을 때와 답변 품질 차이가 크게 났다(임차권등기명령 질의 실측).
-_OPEN_QA_QUOTA = {"법령원문": 2, "판례": 2, "HUG사례집": 2, "HUG규정": 1, "생활법령": 2, "정부자료": 1}
+_OPEN_QA_QUOTA = {
+    "법령원문": 2,
+    "판례": 2,
+    "HUG사례집": 2,
+    "HUG규정": 1,
+    "생활법령": 2,
+    "정부자료": 1,
+}
 _MAX_DISTANCE = 0.65
 
 # 용어사전은 HUG규정 안에 Q&A·부록표와 섞여 있어 metadata.항목유형으로만 가려낼 수 있다
@@ -64,7 +72,7 @@ class DPartRetriever(BaseRetriever):
         source_type: Optional[str] = None,
         query_vector: Optional[list[float]] = None,
     ) -> list[Chunk]:
-        if query_vector is None:                        # 호출부가 미리 임베딩한 벡터를 넘기면 재임베딩 생략
+        if query_vector is None:  # 호출부가 미리 임베딩한 벡터를 넘기면 재임베딩 생략
             query_vector = await embed(query)
         grade_filter = "AND grade = :grade" if grade else ""
         source_type_filter = "AND source_type = :source_type" if source_type else ""
@@ -102,10 +110,17 @@ class DPartRetriever(BaseRetriever):
         query_vector = await embed(query)
         merged: list[Chunk] = []
         for source_type, top_k in quota.items():
-            merged.extend(await self.search(
-                query, top_k=top_k, source_type=source_type, query_vector=query_vector
-            ))
-        filtered = [c for c in merged if c.distance is not None and c.distance < _MAX_DISTANCE]
+            merged.extend(
+                await self.search(
+                    query,
+                    top_k=top_k,
+                    source_type=source_type,
+                    query_vector=query_vector,
+                )
+            )
+        filtered = [
+            c for c in merged if c.distance is not None and c.distance < _MAX_DISTANCE
+        ]
         filtered.sort(key=lambda c: c.distance)
         return filtered
 
@@ -118,17 +133,31 @@ class DPartRetriever(BaseRetriever):
         (작업단위 40/41 + 코드트랙 재랭킹, HUG규정 편입은 작업단위 48). query_text는 한 번만 임베딩해 재사용한다."""
         query_vector = await embed(query_text)
         statute_chunks = await self.search(
-            query_text, top_k=_STATUTE_TOP_K, source_type="법령원문", query_vector=query_vector
+            query_text,
+            top_k=_STATUTE_TOP_K,
+            source_type="법령원문",
+            query_vector=query_vector,
         )
         case_law = await self._fetch_by_topic_tag(topic_key, "판례", query_vector)
         cases = await self._fetch_by_topic_tag(topic_key, "HUG사례집", query_vector)
-        guides = (await self._fetch_by_topic_tag(topic_key, "생활법령", query_vector)
-                  + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector)
-                  + await self._fetch_by_topic_tag(topic_key, "HUG규정", query_vector))   # 작업단위 48
-        return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
+        guides = (
+            await self._fetch_by_topic_tag(topic_key, "생활법령", query_vector)
+            + await self._fetch_by_topic_tag(topic_key, "정부자료", query_vector)
+            + await self._fetch_by_topic_tag(topic_key, "HUG규정", query_vector)
+        )  # 작업단위 48
+        return {
+            "statute": statute_chunks,
+            "case_law": case_law,
+            "cases": cases,
+            "guides": guides,
+        }
 
     async def _fetch_by_topic_tag(
-        self, topic_key: str, source_type: str, query_vector: list[float], top_k: int = _TOPIC_TOP_K
+        self,
+        topic_key: str,
+        source_type: str,
+        query_vector: list[float],
+        top_k: int = _TOPIC_TOP_K,
     ) -> list[Chunk]:
         """topic_tags에 topic_key가 걸린 청크를 벡터 유사도 순으로 top_k건 반환.
         `&&`(배열 겹침) 파라미터는 psycopg2가 리스트를 잘 어댑팅하지만 의도를 명시하려 text[]로 캐스팅한다."""
@@ -156,20 +185,38 @@ class DPartRetriever(BaseRetriever):
         rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
 
-    async def search_by_requirement(self, slot_result: dict, situation_query: str | None = None) -> dict:
+    async def search_by_requirement(
+        self, slot_result: dict, situation_query: str | None = None
+    ) -> dict:
         """요건 슬롯 중 하나라도 평가(충족/불충족/불명확)가 내려졌으면 전세사기피해자법
         제3조(요건 항① + 제외사유 항②) 청크를 조회하고, 링크된 판례/사례집을 함께 붙여 반환한다.
         situation_query(사용자 발화)가 있으면 상황적용 grounding용 생활법령을 벡터 검색해 guides로 붙인다(작업단위 51)."""
-        slots = slot_result.model_dump() if hasattr(slot_result, "model_dump") else slot_result
-        article_nos = JEONSE_LAW_ARTICLE3_HANGS if any(v is not None for v in slots.values()) else []
+        slots = (
+            slot_result.model_dump()
+            if hasattr(slot_result, "model_dump")
+            else slot_result
+        )
+        article_nos = (
+            JEONSE_LAW_ARTICLE3_HANGS
+            if any(v is not None for v in slots.values())
+            else []
+        )
 
         statute_chunks = await self._fetch_statute_articles(article_nos)
         case_law = await self._link_related(statute_chunks, source="판례")
         cases = await self._link_related(statute_chunks, source="HUG사례집")
         # 상황적용 grounding: 요건 슬롯은 조문 키라 topic_tag가 없으므로 발화로 생활법령을 벡터 검색(작업단위 51)
-        guides = (await self.search(situation_query, top_k=2, source_type="생활법령")
-                  if situation_query else [])
-        return {"statute": statute_chunks, "case_law": case_law, "cases": cases, "guides": guides}
+        guides = (
+            await self.search(situation_query, top_k=2, source_type="생활법령")
+            if situation_query
+            else []
+        )
+        return {
+            "statute": statute_chunks,
+            "case_law": case_law,
+            "cases": cases,
+            "guides": guides,
+        }
 
     async def load_glossary(self) -> list[dict]:
         """HUG 종합안내 "붙임 2. 용어사전"에서 적재된 용어 풀이 전량 + 코드 보충분.
@@ -229,9 +276,14 @@ class DPartRetriever(BaseRetriever):
 
         def _query():
             with get_engine().connect() as conn:
-                return conn.execute(
-                    sql, {"statute_name": JEONSE_LAW_NAME, "article_nos": article_nos}
-                ).mappings().all()
+                return (
+                    conn.execute(
+                        sql,
+                        {"statute_name": JEONSE_LAW_NAME, "article_nos": article_nos},
+                    )
+                    .mappings()
+                    .all()
+                )
 
         rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]
@@ -251,32 +303,53 @@ class DPartRetriever(BaseRetriever):
 
         def _query():
             with get_engine().connect() as conn:
-                precedent_ids = conn.execute(text("""
+                precedent_ids = (
+                    conn.execute(
+                        text("""
                     SELECT DISTINCT source_id
                     FROM d_reference_links
                     WHERE linked_type = '법령원문'
                       AND (linked_id = ANY(:chunk_ids) OR linked_statute_name = ANY(:statute_names))
-                """), {"chunk_ids": chunk_ids, "statute_names": statute_names}).scalars().all()
+                """),
+                        {"chunk_ids": chunk_ids, "statute_names": statute_names},
+                    )
+                    .scalars()
+                    .all()
+                )
 
                 if source == "판례":
                     target_ids = list(precedent_ids)
                 else:
                     if not precedent_ids:
                         return []
-                    target_ids = list(conn.execute(text("""
+                    target_ids = list(
+                        conn.execute(
+                            text("""
                         SELECT DISTINCT linked_id
                         FROM d_reference_links
                         WHERE linked_type = 'HUG사례집' AND source_id = ANY(:precedent_ids)
-                    """), {"precedent_ids": list(precedent_ids)}).scalars().all())
+                    """),
+                            {"precedent_ids": list(precedent_ids)},
+                        )
+                        .scalars()
+                        .all()
+                    )
 
                 if not target_ids:
                     return []
 
-                return conn.execute(text(f"""
+                return (
+                    conn.execute(
+                        text(f"""
                     SELECT {_CHUNK_COLUMNS}, NULL AS distance
                     FROM {self.table_name}
                     WHERE id = ANY(:ids)
-                """), {"ids": target_ids}).mappings().all()
+                """),
+                        {"ids": target_ids},
+                    )
+                    .mappings()
+                    .all()
+                )
 
         rows = await run_in_threadpool(_query)
         return [Chunk(**dict(row)) for row in rows]

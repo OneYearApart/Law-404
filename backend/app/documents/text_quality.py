@@ -58,9 +58,7 @@ def evaluate_direct_text_quality(
         for character in normalized
         if ord(character) < 32 and character not in {"\n", "\t"}
     )
-    repeated_symbols = len(
-        re.findall(r"([^\w\s가-힣])\1{2,}", compact)
-    )
+    repeated_symbols = len(re.findall(r"([^\w\s가-힣])\1{2,}", compact))
 
     meaningful_ratio = _ratio(meaningful, total)
     replacement_ratio = _ratio(replacement, total)

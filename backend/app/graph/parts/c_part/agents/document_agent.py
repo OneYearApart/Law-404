@@ -17,10 +17,11 @@
 import json
 import logging
 import re
-from typing import Optional
 from datetime import datetime, timedelta
-from app.rag.ingestion.clova_ocr import ClovaOCR
+from typing import Optional
+
 from langchain_core.language_models import BaseLanguageModel
+
 from app.rag.ingestion.clova_ocr import ClovaOCR
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ OPTIONAL_FIELDS = {
 }
 
 # 【기본값】사용자가 안 정하면 이걸 씁니다
-DEFAULT_DEADLINE_DAYS = 14   # 통상 14일. 너무 짧으면 임대인이 준비를 못 합니다.
+DEFAULT_DEADLINE_DAYS = 14  # 통상 14일. 너무 짧으면 임대인이 준비를 못 합니다.
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -227,12 +228,12 @@ GENERATE_PROMPT = """당신은 주택임대차 전문가입니다.
 # 【DocumentAgent】
 # ════════════════════════════════════════════════════════════════════════════════
 
-class DocumentAgent:
 
+class DocumentAgent:
     def __init__(self, llm: BaseLanguageModel, ocr: Optional[ClovaOCR] = None):
-            self.llm = llm
-            # 【OCR】없으면 자동 생성. URL/Secret 미설정이면 is_available()=False
-            self.ocr = ocr or ClovaOCR()
+        self.llm = llm
+        # 【OCR】없으면 자동 생성. URL/Secret 미설정이면 is_available()=False
+        self.ocr = ocr or ClovaOCR()
 
     # ────────────────────────────────────────────────────────────────────────
     # 【1】정보 추출
@@ -244,7 +245,7 @@ class DocumentAgent:
         collected: dict,
         expected_field: Optional[str] = None,
     ) -> dict:
-        
+
         logger.info(f"[DocumentAgent] 정보 추출: '{user_message[:40]}...'")
 
         # 【이미 아는 정보를 프롬프트에 넣기】
@@ -258,7 +259,7 @@ class DocumentAgent:
                 expected_field, ""
             )
             expected_label = f"{expected_field} ({label})" if label else expected_field
- 
+
         prompt = EXTRACT_PROMPT.format(
             known_info=known or "(없음)",
             expected_field=expected_label,
@@ -277,7 +278,7 @@ class DocumentAgent:
             extracted = json.loads(content)
         except json.JSONDecodeError:
             logger.warning(f"[DocumentAgent] JSON 파싱 실패: {content[:100]}")
-            return collected   # 추출 실패 → 기존 정보 유지
+            return collected  # 추출 실패 → 기존 정보 유지
 
         if not isinstance(extracted, dict):
             return collected
@@ -296,11 +297,12 @@ class DocumentAgent:
 
             updated[key] = value
             logger.info(f"[DocumentAgent]   → {key} = {value}")
- 
+
         # 내부 관리용 키는 collected에 남기지 않는다(다음 턴에 process가 다시 설정).
         updated.pop("_awaiting", None)
- 
+
         return updated
+
     # ────────────────────────────────────────────────────────────────────────
     # 【OCR】이미지에서 정보 추출
     # ────────────────────────────────────────────────────────────────────────
@@ -341,8 +343,7 @@ class DocumentAgent:
         # 【OCR 사용 가능 확인】
         if not self.ocr.is_available():
             raise RuntimeError(
-                "OCR이 설정되지 않았습니다. "
-                "텍스트로 정보를 직접 입력해 주세요."
+                "OCR이 설정되지 않았습니다. 텍스트로 정보를 직접 입력해 주세요."
             )
 
         logger.info("[DocumentAgent] 이미지에서 정보 추출 시작")
@@ -356,13 +357,17 @@ class DocumentAgent:
             )
         except Exception as e:
             logger.error(f"[DocumentAgent] OCR 실패: {type(e).__name__}")
-            raise RuntimeError("이미지에서 텍스트를 읽지 못했습니다. "
-                               "더 선명한 사진으로 다시 시도하거나, "
-                               "텍스트로 입력해 주세요.")
+            raise RuntimeError(
+                "이미지에서 텍스트를 읽지 못했습니다. "
+                "더 선명한 사진으로 다시 시도하거나, "
+                "텍스트로 입력해 주세요."
+            )
 
         if not ocr_text.strip():
-            raise RuntimeError("이미지에서 텍스트를 찾지 못했습니다. "
-                               "계약서가 잘 보이는 사진인지 확인해 주세요.")
+            raise RuntimeError(
+                "이미지에서 텍스트를 찾지 못했습니다. "
+                "계약서가 잘 보이는 사진인지 확인해 주세요."
+            )
 
         logger.info(f"[DocumentAgent] OCR 완료 ({len(ocr_text)}자 추출)")
 
@@ -375,6 +380,7 @@ class DocumentAgent:
         )
 
         return updated
+
     async def process_image(
         self,
         image_base64: str,
@@ -439,8 +445,7 @@ class DocumentAgent:
                 "status": "need_more_info",
                 "collected": collected,
                 "extracted_from_image": [
-                    REQUIRED_FIELDS[f] for f in newly_found
-                    if f in REQUIRED_FIELDS
+                    REQUIRED_FIELDS[f] for f in newly_found if f in REQUIRED_FIELDS
                 ],
                 "missing": missing,
                 "missing_labels": [REQUIRED_FIELDS[f] for f in missing],
@@ -458,8 +463,7 @@ class DocumentAgent:
             "status": "complete",
             "collected": collected,
             "extracted_from_image": [
-                REQUIRED_FIELDS[f] for f in newly_found
-                if f in REQUIRED_FIELDS
+                REQUIRED_FIELDS[f] for f in newly_found if f in REQUIRED_FIELDS
             ],
             "missing": [],
             "missing_labels": [],
@@ -467,6 +471,7 @@ class DocumentAgent:
             "next_question": None,
             "document": document,
         }
+
     # ────────────────────────────────────────────────────────────────────────
     # 【2】부족한 정보 확인
     # ────────────────────────────────────────────────────────────────────────
@@ -479,10 +484,7 @@ class DocumentAgent:
         ⚠️ 필수(REQUIRED_FIELDS)만 봅니다.
            선택 항목까지 다 물어보면 사용자가 지칩니다.
         """
-        return [
-            field for field in REQUIRED_FIELDS
-            if not collected.get(field)
-        ]
+        return [field for field in REQUIRED_FIELDS if not collected.get(field)]
 
     # ────────────────────────────────────────────────────────────────────────
     # 【3】되묻기
@@ -514,9 +516,7 @@ class DocumentAgent:
 
         prompt = ASK_PROMPT.format(
             known_info=self._format_known_info(collected) or "(아직 없음)",
-            missing_list="\n".join(
-                f"- {REQUIRED_FIELDS[f]}" for f in missing
-            ),
+            missing_list="\n".join(f"- {REQUIRED_FIELDS[f]}" for f in missing),
             next_field=f"{next_field} ({next_label})",
         )
 
@@ -553,12 +553,13 @@ class DocumentAgent:
         document = response.content.strip()
 
         # 【검증】GPT가 마크다운을 남겼으면 제거
-        document = re.sub(r"\*\*", "", document)                          # 볼드
-        document = re.sub(r"^#+\s*", "", document, flags=re.MULTILINE)    # 헤더
+        document = re.sub(r"\*\*", "", document)  # 볼드
+        document = re.sub(r"^#+\s*", "", document, flags=re.MULTILINE)  # 헤더
         document = re.sub(r" +\n", "\n", document)
         document = re.sub(r"\n{3,}", "\n\n", document)
 
         return document.strip()
+
     # ────────────────────────────────────────────────────────────────────────
     # 【5】process — 에이전트의 핵심
     # ────────────────────────────────────────────────────────────────────────
@@ -612,16 +613,16 @@ class DocumentAgent:
         # 【3-A】부족하면 → 되묻는다
         if missing:
             question = await self.ask_next(collected, missing)
- 
+
             # ★ 이번에 물어보는 항목을 기록 → 다음 턴 extract_info의 힌트로 사용
             collected = dict(collected)
             collected["_awaiting"] = missing[0]
- 
+
             logger.info(
                 f"[DocumentAgent] 정보 부족 "
                 f"({filled}/{total}) — 다음 질문: {missing[0]}"
             )
- 
+
             return {
                 "status": "need_more_info",
                 "collected": collected,

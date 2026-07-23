@@ -1,8 +1,8 @@
 """Calendar connection API 요청/응답 모델."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 DEFAULT_CALENDAR_PROVIDER = "smithery_googlecalendar"
 

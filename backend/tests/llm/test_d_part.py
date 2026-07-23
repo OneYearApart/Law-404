@@ -2,6 +2,7 @@
 app/llm/d_part.py 프롬프트 조립 + JSON 파싱 + 재시도 테스트.
 실제 OpenAI 네트워크 호출은 monkeypatch로 흉내내고, DB 접근 없음.
 """
+
 import json
 from types import SimpleNamespace
 
@@ -20,7 +21,9 @@ def _rate_limit_error() -> RateLimitError:
 
 
 def _make_chunk(content: str):
-    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=content))])
+    return SimpleNamespace(
+        choices=[SimpleNamespace(delta=SimpleNamespace(content=content))]
+    )
 
 
 async def _fake_stream(contents: list[str]):
@@ -35,7 +38,12 @@ async def _no_sleep(_seconds):
 def _parsed_response(model):
     """chat.completions.parse가 돌려주는 응답 흉내 — .message.parsed에 pydantic 인스턴스가 온다."""
     return SimpleNamespace(
-        choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(parsed=model, refusal=None))]
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(parsed=model, refusal=None),
+            )
+        ]
     )
 
 
@@ -74,7 +82,12 @@ async def test_call_victim_check_raises_when_parse_returns_nothing(monkeypatch):
 
     async def _fake_parse(**kwargs):
         return SimpleNamespace(
-            choices=[SimpleNamespace(finish_reason="length", message=SimpleNamespace(parsed=None, refusal=None))]
+            choices=[
+                SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(parsed=None, refusal=None),
+                )
+            ]
         )
 
     monkeypatch.setattr(d_part._client.chat.completions, "parse", _fake_parse)
@@ -102,12 +115,18 @@ async def test_query_expansion_strips_markdown_code_fence(monkeypatch):
 
 
 def _tool_call_response(arguments: dict):
-    call = SimpleNamespace(function=SimpleNamespace(arguments=json.dumps(arguments, ensure_ascii=False)))
-    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))])
+    call = SimpleNamespace(
+        function=SimpleNamespace(arguments=json.dumps(arguments, ensure_ascii=False))
+    )
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))]
+    )
 
 
 @pytest.mark.asyncio
-async def test_call_confirmation_returns_tool_answer_and_uses_cheaper_model(monkeypatch):
+async def test_call_confirmation_returns_tool_answer_and_uses_cheaper_model(
+    monkeypatch,
+):
     captured = {}
 
     async def _fake_create(**kwargs):
@@ -116,14 +135,18 @@ async def test_call_confirmation_returns_tool_answer_and_uses_cheaper_model(monk
 
     monkeypatch.setattr(d_part._client.chat.completions, "create", _fake_create)
 
-    result = await d_part.call_confirmation("'전' 단계로 보입니다. 맞으신가요?", "맞긴 한데 좀 애매해요")
+    result = await d_part.call_confirmation(
+        "'전' 단계로 보입니다. 맞으신가요?", "맞긴 한데 좀 애매해요"
+    )
 
     assert result["answer"] == "unclear"
     # 3-way 판별에 gpt-4o를 쓸 이유가 없다 — 매 턴 호출되는 경로라 더 싼 모델로 고정
     assert captured["model"] == d_part.CONFIRMATION_MODEL
     assert captured["model"] != d_part.MODEL
     # enum으로 세 값 밖을 못 나가도록 tool calling을 강제한다
-    assert captured["tools"][0]["function"]["parameters"]["properties"]["answer"]["enum"] == [
+    assert captured["tools"][0]["function"]["parameters"]["properties"]["answer"][
+        "enum"
+    ] == [
         "yes",
         "no",
         "unclear",

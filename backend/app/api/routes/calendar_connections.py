@@ -48,7 +48,10 @@ async def get_connection_status(
                 connection_id=connection.connection_id,
             )
             authorization_url = smithery_connection.authorization_url
-            if smithery_connection.status and smithery_connection.status != connection.status:
+            if (
+                smithery_connection.status
+                and smithery_connection.status != connection.status
+            ):
                 connection = update_calendar_connection_status(
                     db,
                     connection=connection,

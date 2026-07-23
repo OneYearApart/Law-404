@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL = os.getenv("B_PART_SCOPE_MODEL", os.getenv("B_PART_LLM_MODEL", "gpt-4o"))
 
@@ -189,8 +188,13 @@ B파트 범위 밖:
     raw_text = _extract_response_text(response)
     parsed = _extract_json_object(raw_text)
     clarification_question = parsed.get("clarification_question")
-    if not isinstance(clarification_question, str) or not clarification_question.strip():
-        clarification_question = "주택임대차 계약 중 어떤 문제인지 조금 더 구체적으로 알려주세요."
+    if (
+        not isinstance(clarification_question, str)
+        or not clarification_question.strip()
+    ):
+        clarification_question = (
+            "주택임대차 계약 중 어떤 문제인지 조금 더 구체적으로 알려주세요."
+        )
 
     reason = parsed.get("reason")
     if not isinstance(reason, str) or not reason.strip():
@@ -201,6 +205,8 @@ B파트 범위 밖:
         "raw_text": raw_text,
         "scope": _normalize_scope(parsed.get("scope")),
         "reason": reason,
-        "suggested_categories": _normalize_categories(parsed.get("suggested_categories")),
+        "suggested_categories": _normalize_categories(
+            parsed.get("suggested_categories")
+        ),
         "clarification_question": clarification_question,
     }

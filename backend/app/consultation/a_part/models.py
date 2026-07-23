@@ -113,9 +113,7 @@ class ConversationState(BaseModel):
         document_ids: set[str] = set()
         for document in self.documents:
             if document.conversation_id != self.conversation_id:
-                raise ValueError(
-                    "첨부 문서의 conversation_id가 상담 상태와 다릅니다."
-                )
+                raise ValueError("첨부 문서의 conversation_id가 상담 상태와 다릅니다.")
             if document.document_id in document_ids:
                 raise ValueError("documents에 중복 document_id가 있습니다.")
             document_ids.add(document.document_id)
@@ -140,9 +138,7 @@ class ConversationState(BaseModel):
         normalized = content.strip()
         if not normalized:
             raise ValueError("대화 메시지는 빈 문자열일 수 없습니다.")
-        self.messages.append(
-            ConversationMessage(role=role, content=normalized)
-        )
+        self.messages.append(ConversationMessage(role=role, content=normalized))
         if role == MessageRole.USER:
             self.turn_count += 1
         self.touch()
@@ -151,14 +147,9 @@ class ConversationState(BaseModel):
         """문서를 중복 없이 상담 상태에 연결한다."""
 
         if document.conversation_id != self.conversation_id:
-            raise ValueError(
-                "첨부 문서의 conversation_id가 상담 상태와 다릅니다."
-            )
+            raise ValueError("첨부 문서의 conversation_id가 상담 상태와 다릅니다.")
 
-        if any(
-            item.document_id == document.document_id
-            for item in self.documents
-        ):
+        if any(item.document_id == document.document_id for item in self.documents):
             return False
 
         self.documents.append(document.as_conversation_reference())
@@ -169,9 +160,7 @@ class ConversationState(BaseModel):
         """같은 document_id의 최신 처리 메타데이터로 교체한다."""
 
         if document.conversation_id != self.conversation_id:
-            raise ValueError(
-                "갱신 문서의 conversation_id가 상담 상태와 다릅니다."
-            )
+            raise ValueError("갱신 문서의 conversation_id가 상담 상태와 다릅니다.")
 
         for index, current in enumerate(self.documents):
             if current.document_id == document.document_id:
@@ -281,10 +270,7 @@ def create_conversation_state(
 
     related = list(related_issue_ids or [])
     issue_ids = [primary_issue_id, *related]
-    issue_slots = {
-        issue_id: build_issue_slots(issue_id)
-        for issue_id in issue_ids
-    }
+    issue_slots = {issue_id: build_issue_slots(issue_id) for issue_id in issue_ids}
 
     return ConversationState(
         primary_issue_id=primary_issue_id,

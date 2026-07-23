@@ -17,7 +17,6 @@ from app.consultation.a_part.models import (
     utc_now,
 )
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 DEFAULT_EXTRACTION_MODEL = "gpt-4o-mini"
@@ -67,18 +66,14 @@ class SlotUpdateExtractor(Protocol):
         *,
         user_text: str,
         state: ConversationState,
-    ) -> SlotExtractionResult:
-        ...
+    ) -> SlotExtractionResult: ...
 
 
 def _normalize_compare(value: SlotValue) -> object:
     if isinstance(value, str):
         return " ".join(value.strip().lower().split())
     if isinstance(value, list):
-        return tuple(
-            " ".join(str(item).strip().lower().split())
-            for item in value
-        )
+        return tuple(" ".join(str(item).strip().lower().split()) for item in value)
     return value
 
 
@@ -158,18 +153,20 @@ def extract_active_question_update(
         for marker in ("누구", "언제", "얼마", "무엇", "어디", "어떤", "어떻게")
     )
     boolean_question = not asks_for_value and (
-        slot.key.endswith((
-            "_confirmed",
-            "_checked",
-            "_completed",
-            "_received",
-            "_kept",
-            "_planned",
-            "_available",
-            "_effective",
-            "_agreed",
-            "_exists",
-        ))
+        slot.key.endswith(
+            (
+                "_confirmed",
+                "_checked",
+                "_completed",
+                "_received",
+                "_kept",
+                "_planned",
+                "_available",
+                "_effective",
+                "_agreed",
+                "_exists",
+            )
+        )
         or slot.question.endswith(("나요?", "있나요?", "했나요?"))
     )
 
@@ -256,7 +253,12 @@ def extract_active_question_update(
 
     # 값 자체를 묻는 질문에는 "네, 확인했어요" 같은 대답을 값으로 저장하지 않는다.
     vague_affirmatives = {
-        "네", "예", "네확인했어요", "예확인했어요", "확인했어요", "맞아요"
+        "네",
+        "예",
+        "네확인했어요",
+        "예확인했어요",
+        "확인했어요",
+        "맞아요",
     }
     if not boolean_question and compact in vague_affirmatives:
         return None
@@ -301,9 +303,7 @@ class OpenAISlotUpdateExtractor:
 
         resolved_key = api_key or os.getenv("OPENAI_API_KEY")
         resolved_model = (
-            model
-            or os.getenv("OPENAI_CHAT_MODEL")
-            or DEFAULT_EXTRACTION_MODEL
+            model or os.getenv("OPENAI_CHAT_MODEL") or DEFAULT_EXTRACTION_MODEL
         ).strip()
 
         if not resolved_key:
@@ -329,9 +329,7 @@ class OpenAISlotUpdateExtractor:
         if state.last_answer:
             answer = state.last_answer.get("answer", state.last_answer)
             if isinstance(answer, dict):
-                recent_questions = list(
-                    answer.get("follow_up_questions") or []
-                )[:3]
+                recent_questions = list(answer.get("follow_up_questions") or [])[:3]
 
         system_prompt = """
 너는 Law 404 상담 상태 추출기다.
@@ -378,9 +376,7 @@ class OpenAISlotUpdateExtractor:
                 text_format=SlotExtractionResult,
             )
         except Exception as error:
-            raise RuntimeError(
-                f"후속 답변 슬롯 추출 실패: {error}"
-            ) from error
+            raise RuntimeError(f"후속 답변 슬롯 추출 실패: {error}") from error
 
         parsed = response.output_parsed
         if parsed is None:
@@ -409,9 +405,7 @@ def apply_slot_updates(
 
         slot = issue_slots.get(update.slot_key)
         if slot is None:
-            message = (
-                f"{update.issue_id}에 없는 slot_key: {update.slot_key}"
-            )
+            message = f"{update.issue_id}에 없는 slot_key: {update.slot_key}"
             if strict:
                 raise ValueError(message)
             summary.ignored.append(message)
@@ -427,13 +421,8 @@ def apply_slot_updates(
             summary.ignored.append(message)
             continue
 
-        if (
-            update.status == SlotStatus.CONFIRMED
-            and update.value is None
-        ):
-            message = (
-                f"confirmed 값이 비어 있음: {update.issue_id}.{update.slot_key}"
-            )
+        if update.status == SlotStatus.CONFIRMED and update.value is None:
+            message = f"confirmed 값이 비어 있음: {update.issue_id}.{update.slot_key}"
             if strict:
                 raise ValueError(message)
             summary.ignored.append(message)
@@ -445,14 +434,11 @@ def apply_slot_updates(
         conflict_resolved = False
 
         if update.status == SlotStatus.CONFIRMED:
-            if (
-                previous_status == SlotStatus.CONFIRMED
-                and not _values_equal(previous_value, update.value)
+            if previous_status == SlotStatus.CONFIRMED and not _values_equal(
+                previous_value, update.value
             ):
                 slot.status = SlotStatus.CONFLICT
-                slot.conflicting_values = _unique_values(
-                    [previous_value, update.value]
-                )
+                slot.conflicting_values = _unique_values([previous_value, update.value])
                 slot.value = None
                 conflict_created = True
             elif previous_status == SlotStatus.CONFLICT:
@@ -495,9 +481,7 @@ def apply_slot_updates(
 
         slot.source = FactSource.USER
         slot.evidence_text = (
-            update.evidence_text.strip()
-            if update.evidence_text
-            else None
+            update.evidence_text.strip() if update.evidence_text else None
         )
         slot.updated_at = utc_now()
 

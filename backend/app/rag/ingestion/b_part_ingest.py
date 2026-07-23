@@ -25,7 +25,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # 초기 설정
 # ---------------------------------------------------------------------------
@@ -126,6 +125,7 @@ class LegalChunk:
 # 공통 유틸 함수
 # ---------------------------------------------------------------------------
 
+
 def load_local_env() -> None:
     """python-dotenv 의존성 없이 backend/.env 파일을 읽습니다."""
     env_path = BACKEND_DIR / ".env"
@@ -191,7 +191,9 @@ def guess_category(*texts: str, default: str = "기타") -> str:
     return default
 
 
-def guess_statute_category(law_name: str, article: str, title: str, content: str) -> str:
+def guess_statute_category(
+    law_name: str, article: str, title: str, content: str
+) -> str:
     for law_keyword, category_by_article in STATUTE_CATEGORY_RULES.items():
         if law_keyword in law_name and article in category_by_article:
             return category_by_article[article]
@@ -209,7 +211,11 @@ def split_long_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
     if len(text) <= max_chars:
         return [text]
 
-    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]
+    paragraphs = [
+        paragraph.strip()
+        for paragraph in re.split(r"\n\s*\n", text)
+        if paragraph.strip()
+    ]
     chunks: list[str] = []
     current = ""
 
@@ -271,6 +277,7 @@ load_local_env()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
+
 class BPartDataLoader:
     def __init__(self, statute_path: Path, precedent_path: Path):
         self.statute_path = statute_path
@@ -295,12 +302,17 @@ class BPartDataLoader:
 # 2단계. 청킹
 # ---------------------------------------------------------------------------
 
+
 class StatuteChunker:
     """법령을 조문/항 단위로 나누고, 너무 긴 항은 추가 분할합니다."""
 
     clause_pattern = re.compile(r"(?=(?:^|\n)\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])")
 
-    def __init__(self, max_chars: int = DEFAULT_MAX_CHARS, overlap_chars: int = DEFAULT_OVERLAP_CHARS):
+    def __init__(
+        self,
+        max_chars: int = DEFAULT_MAX_CHARS,
+        overlap_chars: int = DEFAULT_OVERLAP_CHARS,
+    ):
         self.max_chars = max_chars
         self.overlap_chars = overlap_chars
 
@@ -311,7 +323,9 @@ class StatuteChunker:
         logger.info("법령 청크 %s개 생성 완료", len(chunks))
         return chunks
 
-    def _chunk_statute(self, item: dict[str, Any], statute_index: int) -> list[LegalChunk]:
+    def _chunk_statute(
+        self, item: dict[str, Any], statute_index: int
+    ) -> list[LegalChunk]:
         law_name = clean_text(item.get("law_name"))
         article = normalize_article(item.get("article"), item.get("branch"))
         title = clean_text(item.get("title"))
@@ -323,7 +337,9 @@ class StatuteChunker:
 
         for clause_index, clause_text in enumerate(clause_parts, start=1):
             clause_label = self._extract_clause_label(clause_text) or str(clause_index)
-            sub_chunks = split_long_text(clause_text, self.max_chars, self.overlap_chars)
+            sub_chunks = split_long_text(
+                clause_text, self.max_chars, self.overlap_chars
+            )
 
             for sub_index, sub_text in enumerate(sub_chunks, start=1):
                 chunk_id = (
@@ -366,7 +382,9 @@ class StatuteChunker:
         return chunks
 
     def _split_by_clause(self, content: str) -> list[str]:
-        parts = [part.strip() for part in self.clause_pattern.split(content) if part.strip()]
+        parts = [
+            part.strip() for part in self.clause_pattern.split(content) if part.strip()
+        ]
         if not parts:
             return [content] if content else []
 
@@ -389,21 +407,32 @@ class PrecedentChunker:
 
     section_pattern = re.compile(r"(판시사항|판결요지|판례내용)\s*:", re.MULTILINE)
 
-    def __init__(self, max_chars: int = DEFAULT_MAX_CHARS, overlap_chars: int = DEFAULT_OVERLAP_CHARS):
+    def __init__(
+        self,
+        max_chars: int = DEFAULT_MAX_CHARS,
+        overlap_chars: int = DEFAULT_OVERLAP_CHARS,
+    ):
         self.max_chars = max_chars
         self.overlap_chars = overlap_chars
 
-    def chunk_precedents(self, precedent_data: list[dict[str, Any]]) -> list[LegalChunk]:
+    def chunk_precedents(
+        self, precedent_data: list[dict[str, Any]]
+    ) -> list[LegalChunk]:
         chunks: list[LegalChunk] = []
         for precedent_index, item in enumerate(precedent_data, start=1):
             chunks.extend(self._chunk_precedent(item, precedent_index))
         logger.info("판례 청크 %s개 생성 완료", len(chunks))
         return chunks
 
-    def _chunk_precedent(self, item: dict[str, Any], precedent_index: int) -> list[LegalChunk]:
+    def _chunk_precedent(
+        self, item: dict[str, Any], precedent_index: int
+    ) -> list[LegalChunk]:
         metadata = dict(item.get("metadata") or {})
         page_content = clean_text(item.get("page_content"))
-        case_number = clean_text(metadata.get("case_number")) or f"precedent_{precedent_index:04d}"
+        case_number = (
+            clean_text(metadata.get("case_number"))
+            or f"precedent_{precedent_index:04d}"
+        )
         case_name = clean_text(metadata.get("case_name"))
         decision_date = clean_text(metadata.get("decision_date"))
         category = clean_text(metadata.get("category")) or guess_category(page_content)
@@ -413,7 +442,9 @@ class PrecedentChunker:
 
         for section_index, (section_name, section_text) in enumerate(sections, start=1):
             chunk_type = SECTION_LABELS.get(section_name, "body")
-            sub_chunks = split_long_text(section_text, self.max_chars, self.overlap_chars)
+            sub_chunks = split_long_text(
+                section_text, self.max_chars, self.overlap_chars
+            )
 
             for sub_index, sub_text in enumerate(sub_chunks, start=1):
                 chunk_id = (
@@ -461,7 +492,11 @@ class PrecedentChunker:
         for index, match in enumerate(matches):
             section_name = match.group(1)
             start = match.end()
-            end = matches[index + 1].start() if index + 1 < len(matches) else len(page_content)
+            end = (
+                matches[index + 1].start()
+                if index + 1 < len(matches)
+                else len(page_content)
+            )
             section_text = page_content[start:end].strip()
             if section_text:
                 sections.append((section_name, section_text))
@@ -477,6 +512,7 @@ class PrecedentChunker:
 # 3단계. 임베딩 생성
 # ---------------------------------------------------------------------------
 
+
 class EmbeddingGenerator:
     def __init__(self, api_key: str, model: str = EMBEDDING_MODEL):
         if not api_key:
@@ -488,7 +524,9 @@ class EmbeddingGenerator:
         self.dimension = EMBEDDING_DIMENSION
         logger.info("임베딩 모델 초기화 완료: %s", self.model)
 
-    def generate_embeddings(self, chunks: list[LegalChunk], batch_size: int = DEFAULT_BATCH_SIZE) -> list[LegalChunk]:
+    def generate_embeddings(
+        self, chunks: list[LegalChunk], batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> list[LegalChunk]:
         logger.info("임베딩 생성 시작: %s개 청크", len(chunks))
 
         for start in range(0, len(chunks), batch_size):
@@ -512,6 +550,7 @@ class EmbeddingGenerator:
 # ---------------------------------------------------------------------------
 # 4단계. 데이터베이스 적재
 # ---------------------------------------------------------------------------
+
 
 class DatabaseIngestor:
     def __init__(self, database_url: str, table_name: str = TABLE_NAME):
@@ -612,6 +651,7 @@ class DatabaseIngestor:
 # 5단계. 파이프라인 조율
 # ---------------------------------------------------------------------------
 
+
 class BPartRAGPipeline:
     def __init__(
         self,
@@ -628,7 +668,9 @@ class BPartRAGPipeline:
         self.chunk_output_path = chunk_output_path
         self.summary_output_path = summary_output_path
         self.database_url = database_url or os.getenv("DATABASE_URL", DATABASE_URL)
-        self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY", OPENAI_API_KEY)
+        self.openai_api_key = openai_api_key or os.getenv(
+            "OPENAI_API_KEY", OPENAI_API_KEY
+        )
         self.dry_run = dry_run
 
         self.data_loader = BPartDataLoader(statute_path, precedent_path)
@@ -657,7 +699,9 @@ class BPartRAGPipeline:
         logger.info("요약 파일 생성 완료: %s", self.summary_output_path)
 
         if self.dry_run:
-            logger.info("[3/5단계] dry-run 모드입니다. 임베딩 생성과 DB 적재를 건너뜁니다.")
+            logger.info(
+                "[3/5단계] dry-run 모드입니다. 임베딩 생성과 DB 적재를 건너뜁니다."
+            )
             return summary
 
         logger.info("[3/5단계] 임베딩 생성")
@@ -687,7 +731,9 @@ class BPartRAGPipeline:
     ) -> dict[str, Any]:
         by_source_type = Counter(chunk.source_type for chunk in chunks)
         by_category = Counter(chunk.category for chunk in chunks)
-        by_chunk_type = Counter(chunk.metadata.get("chunk_type", "unknown") for chunk in chunks)
+        by_chunk_type = Counter(
+            chunk.metadata.get("chunk_type", "unknown") for chunk in chunks
+        )
 
         return {
             "dataset_version": DATASET_VERSION,

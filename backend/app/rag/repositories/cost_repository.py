@@ -5,8 +5,10 @@
 
 import logging
 from typing import Optional
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

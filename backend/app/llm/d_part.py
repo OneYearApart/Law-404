@@ -25,13 +25,20 @@ supervisor는 실측 결과 켜지 않았다(_SUPERVISOR_TOOL 주석 참고).
 _call_llm은 스트리밍으로 받아 전체 텍스트로 모아 반환한다 — 이제 형태가 없는 산문을 받는
 call_query_expansion 전용이다. 실제 enum/pydantic 모델로의 변환은 호출하는 노드 쪽 책임이다.
 """
+
 import asyncio
 import json
 from pathlib import Path
 from typing import AsyncGenerator
 
 from langsmith.wrappers import wrap_openai
-from openai import APIError, APIStatusError, AsyncOpenAI, LengthFinishReasonError, RateLimitError
+from openai import (
+    APIError,
+    APIStatusError,
+    AsyncOpenAI,
+    LengthFinishReasonError,
+    RateLimitError,
+)
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -87,7 +94,9 @@ def _is_retryable(exc: Exception) -> bool:
     return True  # 연결/타임아웃 등 전송 계층 실패와 ToolCallMissing은 재시도 대상
 
 
-_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
+_PROMPTS_DIR = (
+    Path(__file__).resolve().parent.parent / "graph" / "parts" / "d_part" / "prompts"
+)
 
 # supervisor는 카테고리 하나가 아니라 상황의 축을 각각 판별한다(SituationState). 예전엔 축들이
 # 카테고리 enum 하나로 압축돼 있어 인지여부가 topic에 가려지는 등 축끼리 서로를 덮어썼다.
@@ -126,8 +135,16 @@ _SUPERVISOR_TOOL = {
                     "items": {"type": "string", "enum": list(RISK_SIGNALS)},
                     "description": "발화에서 확인되는 위험신호 (없으면 빈 배열)",
                 },
-                "topic": {"type": "string", "enum": list(GENERAL_TOPIC_LABELS), "description": "일반 시나리오 13개 항목"},
-                "special_case": {"type": "string", "enum": list(SPECIAL_CASE_CATEGORIES), "description": "특수상황 4종"},
+                "topic": {
+                    "type": "string",
+                    "enum": list(GENERAL_TOPIC_LABELS),
+                    "description": "일반 시나리오 13개 항목",
+                },
+                "special_case": {
+                    "type": "string",
+                    "enum": list(SPECIAL_CASE_CATEGORIES),
+                    "description": "특수상황 4종",
+                },
                 "reason": {"type": "string", "description": "판단 근거 한 줄"},
             },
             "required": ["recognized", "risk_signals"],
@@ -173,7 +190,13 @@ def _render_prompt(prompt_name: str, **kwargs) -> str:
 # 같은 조건이 프롬프트 안에 쌓여, 모델이 자기 경로에 해당하지 않는 지시까지 읽어야 했다.
 # 이제 각 경로는 자기 지시만 받는다. 인용·형식 규칙은 경로별로 복제하면 드리프트가 나므로
 # response_common에 한 번만 두고 앞에 붙인다.
-RESPONSE_ANSWER_KINDS = ("judgment", "scenario", "special_case", "recognized_general", "open_qa")
+RESPONSE_ANSWER_KINDS = (
+    "judgment",
+    "scenario",
+    "special_case",
+    "recognized_general",
+    "open_qa",
+)
 
 
 async def _call_llm(prompt: str) -> str:
@@ -185,14 +208,18 @@ async def _call_llm(prompt: str) -> str:
                 temperature=STRUCTURED_TEMPERATURE,
                 stream=True,
             )
-            return "".join([event.choices[0].delta.content or "" async for event in stream])
+            return "".join(
+                [event.choices[0].delta.content or "" async for event in stream]
+            )
         except APIError as exc:
             if attempt == MAX_RETRIES - 1 or not _is_retryable(exc):
                 raise
             await asyncio.sleep(2**attempt)
     # MAX_RETRIES=0이면 루프가 한 번도 안 돌아 암묵적으로 None이 반환된다. 그러면 호출부가
     # 한참 떨어진 곳에서 터지므로(옛 _call_structured는 json.loads(None)) 여기서 끊는다.
-    raise RuntimeError(f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다")
+    raise RuntimeError(
+        f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다"
+    )
 
 
 def _strip_code_fence(text: str) -> str:
@@ -250,10 +277,14 @@ async def _call_parsed(prompt_name: str, schema: type[BaseModel], **kwargs) -> d
             if attempt == MAX_RETRIES - 1 or not _is_retryable(exc):
                 raise
             await asyncio.sleep(2**attempt)
-    raise RuntimeError(f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다")
+    raise RuntimeError(
+        f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다"
+    )
 
 
-async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs) -> dict:
+async def _call_tool(
+    prompt_name: str, tool: dict, model: str = MODEL, **kwargs
+) -> dict:
     """응답을 텍스트로 파싱하지 않고 OpenAI tool calling으로 스키마(enum)를 강제해, 모델이
     정의된 카테고리 밖의 값을 반환할 수 없게 한다. 스트리밍 대상이 아니라 stream=False로 호출한다.
 
@@ -288,10 +319,14 @@ async def _call_tool(prompt_name: str, tool: dict, model: str = MODEL, **kwargs)
             if attempt == MAX_RETRIES - 1 or not _is_retryable(exc):
                 raise
             await asyncio.sleep(2**attempt)
-    raise RuntimeError(f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다")
+    raise RuntimeError(
+        f"unreachable: MAX_RETRIES={MAX_RETRIES}로는 호출이 한 번도 실행되지 않는다"
+    )
 
 
-async def call_victim_check(user_input: str, existing_slots: dict, pending_question: str | None = None) -> dict:
+async def call_victim_check(
+    user_input: str, existing_slots: dict, pending_question: str | None = None
+) -> dict:
     return await _call_parsed(
         "victim_check",
         VictimSlotExtraction,
@@ -333,7 +368,9 @@ async def call_confirmation(question: str, user_input: str) -> dict:
     )
 
 
-async def generate_response(context: str, answer_kind: str) -> AsyncGenerator[str, None]:
+async def generate_response(
+    context: str, answer_kind: str
+) -> AsyncGenerator[str, None]:
     """최종 응답(해설→상황적용) 진짜 토큰 스트리밍 — 다른 call_*와 달리 전체를 모아
     JSON 파싱하지 않고 그대로 흘려보낸다. 스트림 시작 후 실패하면 이미 클라이언트로
     청크가 나간 상태라 재시도하지 않고 그대로 전파한다.

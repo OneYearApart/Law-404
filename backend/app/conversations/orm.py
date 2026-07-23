@@ -2,6 +2,7 @@
 Conversation 테이블 SQLAlchemy ORM 모델.
 파트 무관 공통 도메인 — schema.sql의 conversations 정의를 그대로 포팅한다.
 """
+
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func

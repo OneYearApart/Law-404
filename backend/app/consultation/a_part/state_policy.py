@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.consultation.a_part.issues import get_issue_definition
@@ -11,8 +13,6 @@ from app.consultation.a_part.models import (
     SlotStatus,
 )
 from app.consultation.a_part.question_builder import FollowUpQuestion
-from typing import Any
-
 
 HIGH_RISK_ISSUES = {
     "q01_owner_proxy",
@@ -56,15 +56,27 @@ TRUE_REQUIRED_KEYS = {
 ISSUE_HOLD_ACTIONS: dict[str, tuple[str, ...]] = {
     "q01_owner_proxy": ("계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
     "q02_co_owner": ("계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
-    "q03_owner_lessor_mismatch": ("계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
+    "q03_owner_lessor_mismatch": (
+        "계약서 서명 또는 계약 진행",
+        "계약금 또는 잔금 송금",
+    ),
     "q04_broker_account_payment": ("계약금 송금",),
     "q05_account_change_before_contract": ("계약금 또는 잔금 송금",),
     "q06_broker_explanation_mismatch": ("정정 전 계약서 서명 또는 계약 진행",),
     "q07_mortgage": ("확인 전 계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
-    "q08_multiunit_priority": ("확인 전 계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
-    "q09_registry_restriction_warning": ("계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
+    "q08_multiunit_priority": (
+        "확인 전 계약서 서명 또는 계약 진행",
+        "계약금 또는 잔금 송금",
+    ),
+    "q09_registry_restriction_warning": (
+        "계약서 서명 또는 계약 진행",
+        "계약금 또는 잔금 송금",
+    ),
     "q10_trust": ("계약서 서명 또는 계약 진행", "계약금 또는 잔금 송금"),
-    "q14_special_clause_deposit_return": ("특약 정정 전 계약서 서명 또는 계약 진행", "계약금 송금"),
+    "q14_special_clause_deposit_return": (
+        "특약 정정 전 계약서 서명 또는 계약 진행",
+        "계약금 송금",
+    ),
     "q18_address_mismatch": ("주소 확인·정정 전 계약서 서명", "계약금 또는 잔금 송금"),
     "q19_deposit_transfer_mismatch": ("차액 확인 전 추가 송금 또는 잔금 지급",),
 }
@@ -131,10 +143,7 @@ class ConversationRiskAssessment(BaseModel):
 def _bool_false_requires_confirmation(slot: SlotState) -> bool:
     if slot.value is not False:
         return False
-    return (
-        slot.key in TRUE_REQUIRED_KEYS
-        or slot.key.endswith(TRUE_REQUIRED_SUFFIXES)
-    )
+    return slot.key in TRUE_REQUIRED_KEYS or slot.key.endswith(TRUE_REQUIRED_SUFFIXES)
 
 
 def _is_unresolved_critical(slot: SlotState) -> bool:
@@ -199,11 +208,7 @@ def _slot_for(
 
 
 def _slot_is_confirmed_true(slot: SlotState | None) -> bool:
-    return bool(
-        slot
-        and slot.status == SlotStatus.CONFIRMED
-        and slot.value is True
-    )
+    return bool(slot and slot.status == SlotStatus.CONFIRMED and slot.value is True)
 
 
 def _slot_text(slot: SlotState | None) -> str:
@@ -228,11 +233,7 @@ def _slot_has_conflict(slot: SlotState | None) -> bool:
 
 
 def _text_slot_is_confirmed(slot: SlotState | None) -> bool:
-    return bool(
-        slot
-        and slot.status == SlotStatus.CONFIRMED
-        and _slot_text(slot)
-    )
+    return bool(slot and slot.status == SlotStatus.CONFIRMED and _slot_text(slot))
 
 
 def _owner_proxy_slots(state: ConversationState) -> dict[str, SlotState | None]:
@@ -331,9 +332,7 @@ def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
         (payment, "대금 수령 권한"),
         (account, "계약금 계좌 예금주"),
     ]
-    conflict_labels = [
-        label for slot, label in slot_pairs if _slot_has_conflict(slot)
-    ]
+    conflict_labels = [label for slot, label in slot_pairs if _slot_has_conflict(slot)]
     if conflict_labels:
         conflict_text = _join_korean(conflict_labels)
         return {
@@ -445,7 +444,9 @@ def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
 
         if len(actions) < 3:
             if account_state == "unknown":
-                actions.append("계약금 계좌의 예금주를 확인하고 실제 소유자와의 관계를 대조합니다.")
+                actions.append(
+                    "계약금 계좌의 예금주를 확인하고 실제 소유자와의 관계를 대조합니다."
+                )
             elif account_state == "non_owner" and payment_yes:
                 actions.append(
                     f"{account_value}로 계약금을 받을 권한을 확인한 기록과 계좌 정보를 함께 보관합니다."
@@ -597,10 +598,12 @@ def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
         )
 
     if not actions:
-        actions.extend([
-            "위임 자료의 계약 체결·서명·대금 수령 범위가 실제 계약서 내용과 일치하는지 최종 대조합니다.",
-            "소유자와 확인한 권한 내용, 위임 자료와 계좌 정보를 계약서와 함께 보관합니다.",
-        ])
+        actions.extend(
+            [
+                "위임 자료의 계약 체결·서명·대금 수령 범위가 실제 계약서 내용과 일치하는지 최종 대조합니다.",
+                "소유자와 확인한 권한 내용, 위임 자료와 계좌 정보를 계약서와 함께 보관합니다.",
+            ]
+        )
 
     reasons: list[str] = []
     if unresolved_text:
@@ -610,9 +613,13 @@ def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
                 f"{_with_particle(unresolved_text, '은', '는')} 확인되지 않았습니다."
             )
         else:
-            reasons.append(f"{_with_particle(unresolved_text, '이', '가')} 확인되지 않았습니다.")
+            reasons.append(
+                f"{_with_particle(unresolved_text, '이', '가')} 확인되지 않았습니다."
+            )
     else:
-        reasons.append("대리 계약 판단에 필요한 핵심 권한과 위임 자료는 사용자 답변상 모두 확인됐습니다.")
+        reasons.append(
+            "대리 계약 판단에 필요한 핵심 권한과 위임 자료는 사용자 답변상 모두 확인됐습니다."
+        )
 
     if account_state == "non_owner":
         if payment_yes:
@@ -624,7 +631,9 @@ def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
                 "계약금 계좌가 소유자 본인 명의가 아니므로 대금 수령 권한을 별도로 확인해야 합니다."
             )
     elif account_state == "unknown":
-        reasons.append("계약금 계좌 예금주를 확인하지 못해 송금 대상을 확정할 수 없습니다.")
+        reasons.append(
+            "계약금 계좌 예금주를 확인하지 못해 송금 대상을 확정할 수 없습니다."
+        )
 
     if contract_blocked or payment_blocked or account_state == "non_owner":
         reasons.append(
@@ -649,7 +658,6 @@ def _owner_proxy_final_payload(state: ConversationState) -> dict[str, Any]:
         "required_information": _unique(required_information)[:6],
         "confirmation_message": None,
     }
-
 
 
 def _reference_title(reference: Any) -> str:
@@ -686,7 +694,11 @@ def _q01_reference_payload(
         title = _reference_title(reference)
         if "주택임대차보호법 해설집" not in title:
             continue
-        item = dict(reference) if isinstance(reference, dict) else reference.model_dump(mode="python")
+        item = (
+            dict(reference)
+            if isinstance(reference, dict)
+            else reference.model_dump(mode="python")
+        )
         references.append(item)
         break
 
@@ -696,7 +708,9 @@ def _q01_reference_payload(
     return references[:3]
 
 
-def _owner_proxy_risk_assessment(state: ConversationState) -> ConversationRiskAssessment:
+def _owner_proxy_risk_assessment(
+    state: ConversationState,
+) -> ConversationRiskAssessment:
     payload = _owner_proxy_final_payload(state)
     slots = _owner_proxy_slots(state)
     conflict_labels = [
@@ -711,6 +725,7 @@ def _owner_proxy_risk_assessment(state: ConversationState) -> ConversationRiskAs
         unresolved_critical_labels=list(payload["required_information"]),
         conflict_labels=_unique(conflict_labels),
     )
+
 
 def _hold_actions_for_state(state: ConversationState) -> list[str]:
     actions: list[str] = []
@@ -740,8 +755,7 @@ def evaluate_conversation_risk(
     conflict_labels = _unique(conflict_labels)
     unresolved_labels = _unique(unresolved_labels)
     has_high_risk_issue = any(
-        issue_id in HIGH_RISK_ISSUES
-        for issue_id in state.all_issue_ids
+        issue_id in HIGH_RISK_ISSUES for issue_id in state.all_issue_ids
     )
 
     if conflict_labels:
@@ -753,9 +767,7 @@ def evaluate_conversation_risk(
                 "자료나 실제 표시 내용을 다시 확인하기 전에는 기존 판단을 확정하지 않습니다."
             ),
             hold_actions=(
-                _hold_actions_for_state(state)
-                if has_high_risk_issue
-                else []
+                _hold_actions_for_state(state) if has_high_risk_issue else []
             ),
             unresolved_critical_labels=unresolved_labels,
             conflict_labels=conflict_labels,
@@ -764,19 +776,13 @@ def evaluate_conversation_risk(
     if unresolved_labels:
         labels = ", ".join(unresolved_labels[:3])
         return ConversationRiskAssessment(
-            risk_level=(
-                "진행 보류 권장"
-                if has_high_risk_issue
-                else "확인 필요"
-            ),
+            risk_level=("진행 보류 권장" if has_high_risk_issue else "확인 필요"),
             core_judgment=(
                 f"현재 답변에서 일부 사실은 확인됐지만 핵심 확인 항목이 남아 있습니다: {labels}. "
                 "남은 항목을 확인한 뒤 위험 수준과 다음 행동을 다시 판단해야 합니다."
             ),
             hold_actions=(
-                _hold_actions_for_state(state)
-                if has_high_risk_issue
-                else []
+                _hold_actions_for_state(state) if has_high_risk_issue else []
             ),
             unresolved_critical_labels=unresolved_labels,
             conflict_labels=[],
@@ -829,8 +835,7 @@ def apply_state_policy_to_response(
     }
 
     q01_is_final = (
-        state.primary_issue_id == "q01_owner_proxy"
-        and not follow_up_questions
+        state.primary_issue_id == "q01_owner_proxy" and not follow_up_questions
     )
     q01_payload: dict[str, Any] | None = None
 
@@ -850,10 +855,7 @@ def apply_state_policy_to_response(
 
     answer["risk_level"] = assessment.risk_level
     answer["hold_actions"] = assessment.hold_actions[:3]
-    answer["follow_up_questions"] = [
-        item.question
-        for item in follow_up_questions[:1]
-    ]
+    answer["follow_up_questions"] = [item.question for item in follow_up_questions[:1]]
 
     if q01_payload is not None:
         # 내부 issue 이름이 섞인 generic unresolved label을 최종 화면에 넣지 않는다.
@@ -873,4 +875,3 @@ def apply_state_policy_to_response(
 
     updated = response.__class__.model_validate(data)
     return updated, assessment
-

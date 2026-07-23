@@ -67,9 +67,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
                 ) from error
 
             if not isinstance(row, dict):
-                raise RuntimeError(
-                    f"JSON 객체가 아닙니다: {path} line {line_number}"
-                )
+                raise RuntimeError(f"JSON 객체가 아닙니다: {path} line {line_number}")
 
             rows.append(row)
 
@@ -111,9 +109,7 @@ def convert_chunk_row(
             "collection": collection,
             "document_id": str(row.get("chunk_id") or ""),
             "source_id": row.get("source_id"),
-            "source_type": str(
-                row.get("source_type") or default_source_type
-            ),
+            "source_type": str(row.get("source_type") or default_source_type),
             "title": str(row.get("source_title") or ""),
             "text": str(row.get("chunk_text") or "").strip(),
             "metadata": dict(row),
@@ -168,9 +164,7 @@ def split_text_by_tokens(
         raise ValueError("overlap_tokens는 0 이상이어야 합니다.")
 
     if overlap_tokens >= max_tokens:
-        raise ValueError(
-            "overlap_tokens는 max_tokens보다 작아야 합니다."
-        )
+        raise ValueError("overlap_tokens는 max_tokens보다 작아야 합니다.")
 
     tokens = TOKEN_ENCODING.encode(text)
 
@@ -211,9 +205,7 @@ def expand_document_for_embedding(
         if chunk_count == 1:
             chunk_document_id = parent_document_id
         else:
-            chunk_document_id = (
-                f"{parent_document_id}__part_{chunk_index:03d}"
-            )
+            chunk_document_id = f"{parent_document_id}__part_{chunk_index:03d}"
 
         chunk_metadata["parent_document_id"] = parent_document_id
         chunk_metadata["chunk_index"] = chunk_index
@@ -246,19 +238,14 @@ def load_all_documents() -> list[dict[str, Any]]:
             document = config["converter"](row)
 
             if not document["document_id"]:
-                raise RuntimeError(
-                    f"document_id 없음: {config['name']}"
-                )
+                raise RuntimeError(f"document_id 없음: {config['name']}")
 
             if not document["text"]:
                 raise RuntimeError(
-                    "text 빈 값: "
-                    f"{config['name']} / {document['document_id']}"
+                    f"text 빈 값: {config['name']} / {document['document_id']}"
                 )
 
-            collection_documents.extend(
-                expand_document_for_embedding(document)
-            )
+            collection_documents.extend(expand_document_for_embedding(document))
 
         documents.extend(collection_documents)
 
@@ -282,15 +269,11 @@ def create_embeddings(texts: list[str]) -> list[list[float]]:
                 input=texts,
             )
 
-            embeddings = [
-                item.embedding
-                for item in response.data
-            ]
+            embeddings = [item.embedding for item in response.data]
 
             if len(embeddings) != len(texts):
                 raise RuntimeError(
-                    "임베딩 개수 불일치: "
-                    f"입력={len(texts)}, 출력={len(embeddings)}"
+                    f"임베딩 개수 불일치: 입력={len(texts)}, 출력={len(embeddings)}"
                 )
 
             for embedding in embeddings:
@@ -318,9 +301,7 @@ def create_embeddings(texts: list[str]) -> list[list[float]]:
             )
             time.sleep(wait_seconds)
 
-    raise RuntimeError(
-        f"임베딩 생성 최종 실패: {last_error}"
-    ) from last_error
+    raise RuntimeError(f"임베딩 생성 최종 실패: {last_error}") from last_error
 
 
 def chunked(
@@ -332,7 +313,7 @@ def chunked(
         raise ValueError("배치 크기는 1 이상이어야 합니다.")
 
     for start in range(0, len(items), size):
-        yield items[start:start + size]
+        yield items[start : start + size]
 
 
 def get_existing_document_keys(
@@ -356,10 +337,7 @@ def get_existing_document_keys(
         )
         rows = cur.fetchall()
 
-    return {
-        (collection, document_id)
-        for collection, document_id in rows
-    }
+    return {(collection, document_id) for collection, document_id in rows}
 
 
 def upsert_documents(
@@ -438,15 +416,11 @@ def upsert_documents(
 def validate_environment() -> None:
     """실행 전에 환경 변수와 입력 파일을 확인한다."""
     if not OPENAI_API_KEY:
-        raise RuntimeError(
-            f"OPENAI_API_KEY가 없습니다. 확인 위치: {ENV_PATH}"
-        )
+        raise RuntimeError(f"OPENAI_API_KEY가 없습니다. 확인 위치: {ENV_PATH}")
 
     for config in DATASET_CONFIGS:
         if not config["path"].exists():
-            raise FileNotFoundError(
-                f"입력 파일이 없습니다: {config['path']}"
-            )
+            raise FileNotFoundError(f"입력 파일이 없습니다: {config['path']}")
 
 
 def main() -> None:
@@ -454,10 +428,10 @@ def main() -> None:
 
     documents = load_all_documents()
 
-    print("원본 문서 수:", sum(
-        len(read_jsonl(config["path"]))
-        for config in DATASET_CONFIGS
-    ))
+    print(
+        "원본 문서 수:",
+        sum(len(read_jsonl(config["path"])) for config in DATASET_CONFIGS),
+    )
     print("청킹 후 전체 임베딩 문서 수:", len(documents))
 
     with psycopg2.connect(DATABASE_URL) as conn:
@@ -482,19 +456,14 @@ def main() -> None:
             print("추가로 적재할 문서가 없습니다.")
             return
 
-        total_batches = (
-            len(pending_documents) + BATCH_SIZE - 1
-        ) // BATCH_SIZE
+        total_batches = (len(pending_documents) + BATCH_SIZE - 1) // BATCH_SIZE
 
         for batch_index, batch in enumerate(
             chunked(pending_documents, BATCH_SIZE),
             start=1,
         ):
             try:
-                texts = [
-                    document["text"]
-                    for document in batch
-                ]
+                texts = [document["text"] for document in batch]
                 embeddings = create_embeddings(texts)
                 upsert_documents(conn, batch, embeddings)
                 conn.commit()
@@ -508,9 +477,7 @@ def main() -> None:
                 )
 
                 for item_index, document in enumerate(batch):
-                    token_count = len(
-                        TOKEN_ENCODING.encode(document["text"])
-                    )
+                    token_count = len(TOKEN_ENCODING.encode(document["text"]))
                     print(
                         "배치 항목:",
                         f"index={item_index}",

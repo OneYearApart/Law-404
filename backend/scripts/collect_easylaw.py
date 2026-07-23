@@ -24,13 +24,14 @@ D파트 "상황적용" 층 수집 — 찾기쉬운 생활법령정보(easylaw.go
 주의: 본 스크립트는 개발용 수집 도구라 bs4를 쓴다(런타임 인제스천 파서 easylaw_docs_d.py는
 JSON만 읽어 bs4 비의존). collect_statutes.py와 동일하게 산출물 JSON이 repo 밖에 남는다.
 """
+
 import argparse
 import json
 import re
 import sys
 import time
 from pathlib import Path
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 
@@ -58,7 +59,9 @@ def discover_leaves(landing_html: str, csm_seq: int) -> list[tuple[str, str, str
     leaf_re = re.compile(
         rf"csmSeq={csm_seq}[^\"'<>]*?ccfNo=(\d+)[^\"'<>]*?cciNo=(\d+)[^\"'<>]*?cnpClsNo=(\d+)"
     )
-    return sorted(set(leaf_re.findall(landing_html)), key=lambda t: tuple(int(x) for x in t))
+    return sorted(
+        set(leaf_re.findall(landing_html)), key=lambda t: tuple(int(x) for x in t)
+    )
 
 
 _UI_NOISE = {"인쇄체크", "인쇄", "목록", "이전", "다음"}
@@ -73,7 +76,11 @@ def _clean_text(el) -> str:
             if any(cells):
                 rows.append(" | ".join(cells))
         table.replace_with("\n".join(rows))
-    lines = [l for l in el.get_text("\n", strip=True).split("\n") if l.strip() not in _UI_NOISE]
+    lines = [
+        l
+        for l in el.get_text("\n", strip=True).split("\n")
+        if l.strip() not in _UI_NOISE
+    ]
     text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
     return text.strip()
 
@@ -81,8 +88,9 @@ def _clean_text(el) -> str:
 def parse_leaf(html: str) -> dict | None:
     soup = BeautifulSoup(html, "html.parser")
     title_tag = soup.find("title")
-    title = (title_tag.get_text(strip=True).split("(본문)")[0].strip()
-             if title_tag else "")
+    title = (
+        title_tag.get_text(strip=True).split("(본문)")[0].strip() if title_tag else ""
+    )
     content_el = soup.select_one("#ovDiv")
     if content_el is None:
         return None
@@ -113,7 +121,9 @@ def run(out_dir: Path, csm_seq: int):
         else:
             leaf.update({"ccfNo": ccf, "cciNo": cci, "cnpClsNo": cnp, "url": url})
             pages.append(leaf)
-            print(f"  [수집] {ccf}.{cci}.{cnp} '{leaf['title']}' ({len(leaf['content'])}자)")
+            print(
+                f"  [수집] {ccf}.{cci}.{cnp} '{leaf['title']}' ({len(leaf['content'])}자)"
+            )
         time.sleep(REQUEST_DELAY_SEC)
 
     record = {
@@ -125,15 +135,22 @@ def run(out_dir: Path, csm_seq: int):
         "페이지": pages,
     }
     out_path = out_dir / _out_name(csm_seq)
-    out_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"=== [csmSeq={csm_seq}] 완료: {len(pages)}페이지 -> {out_path} ===\n")
 
 
 def main():
     p = argparse.ArgumentParser(description="easylaw 생활법령 수집 (작업단위 40/50)")
     p.add_argument("--out", default="./easylaw", help="출력 디렉토리")
-    p.add_argument("--csmSeq", type=int, action="append", dest="csm_seqs",
-                   help="수집할 booklet csmSeq (복수 지정 가능, 미지정 시 1972)")
+    p.add_argument(
+        "--csmSeq",
+        type=int,
+        action="append",
+        dest="csm_seqs",
+        help="수집할 booklet csmSeq (복수 지정 가능, 미지정 시 1972)",
+    )
     args = p.parse_args()
     csm_seqs = args.csm_seqs or [DEFAULT_CSM_SEQ]
     for csm_seq in csm_seqs:

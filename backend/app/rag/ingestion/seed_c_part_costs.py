@@ -2,9 +2,10 @@
 【시드 스크립트】공식 법령 데이터 입력
 """
 
+from datetime import datetime
+
 import psycopg2
 from psycopg2.extras import execute_values
-from datetime import datetime
 
 # 【DB 접속】
 DB_URL = "postgresql://edu:1234@localhost:5433/edudb"
@@ -18,9 +19,9 @@ REGION_TIERS = [
     {
         "tier_name": "서울특별시",
         "tier_description": "서울특별시 전역",
-        "deposit_threshold": 165_000_000,      # 1억 6,500만원
-        "max_priority_payment": 55_000_000,    # 5,500만원
-        "caution_note": None,                  # 서울은 구분이 명확해서 주의사항 없음
+        "deposit_threshold": 165_000_000,  # 1억 6,500만원
+        "max_priority_payment": 55_000_000,  # 5,500만원
+        "caution_note": None,  # 서울은 구분이 명확해서 주의사항 없음
         "legal_basis": "주택임대차보호법 시행령 제11조 (2023.2.21 개정)",
     },
     {
@@ -29,8 +30,8 @@ REGION_TIERS = [
             "수도권정비계획법에 따른 과밀억제권역(서울특별시 제외), "
             "세종특별자치시, 용인시, 화성시, 김포시"
         ),
-        "deposit_threshold": 145_000_000,      # 1억 4,500만원
-        "max_priority_payment": 48_000_000,    # 4,800만원
+        "deposit_threshold": 145_000_000,  # 1억 4,500만원
+        "max_priority_payment": 48_000_000,  # 4,800만원
         # ⚠️ 여기가 핵심 주의사항
         "caution_note": (
             "경기도·인천광역시는 시·군에 따라 등급이 다릅니다. "
@@ -45,8 +46,8 @@ REGION_TIERS = [
             "광역시(과밀억제권역에 포함된 지역과 군지역은 제외), "
             "안산시, 광주시, 파주시, 이천시, 평택시"
         ),
-        "deposit_threshold": 85_000_000,       # 8,500만원
-        "max_priority_payment": 28_000_000,    # 2,800만원
+        "deposit_threshold": 85_000_000,  # 8,500만원
+        "max_priority_payment": 28_000_000,  # 2,800만원
         "caution_note": (
             "광역시라도 군지역(예: 부산 기장군)은 '그 밖의 지역'으로 분류됩니다."
         ),
@@ -55,8 +56,8 @@ REGION_TIERS = [
     {
         "tier_name": "그 밖의 지역",
         "tier_description": "위 세 구분에 해당하지 않는 모든 지역",
-        "deposit_threshold": 75_000_000,       # 7,500만원
-        "max_priority_payment": 25_000_000,    # 2,500만원
+        "deposit_threshold": 75_000_000,  # 7,500만원
+        "max_priority_payment": 25_000_000,  # 2,500만원
         "caution_note": None,
         "legal_basis": "주택임대차보호법 시행령 제11조 (2023.2.21 개정)",
     },
@@ -98,7 +99,6 @@ PROCEDURE_COSTS = [
             "송달 지연·재송달 시 추가 비용이 발생할 수 있습니다."
         ),
     },
-
     # ────────────────────────────────────────────────────────────────────────
     # 【2】소액사건 — 소가에 따라 계산
     # ────────────────────────────────────────────────────────────────────────
@@ -120,15 +120,13 @@ PROCEDURE_COSTS = [
         ),
         "eligibility": "소가(청구금액) 3,000만원 이하인 민사사건",
         "cost_source": (
-            "민사소송 등 인지법 제2조 / "
-            "송달료규칙의 시행에 따른 업무처리요령 별표1"
+            "민사소송 등 인지법 제2조 / 송달료규칙의 시행에 따른 업무처리요령 별표1"
         ),
         "cost_caution": (
             "당사자 수가 늘어나면 송달료가 증가합니다. "
             "변론이 길어지면 송달료를 추가 납부해야 할 수 있습니다."
         ),
     },
-
     # ────────────────────────────────────────────────────────────────────────
     # 【3】일반소송 — 소가에 따라 계산 (송달료 회수가 다름)
     # ────────────────────────────────────────────────────────────────────────
@@ -149,15 +147,13 @@ PROCEDURE_COSTS = [
         ),
         "eligibility": "소가 3,000만원 초과 (소액사건 대상이 아닌 경우)",
         "cost_source": (
-            "민사소송 등 인지법 제2조 / "
-            "송달료규칙의 시행에 따른 업무처리요령 별표1"
+            "민사소송 등 인지법 제2조 / 송달료규칙의 시행에 따른 업무처리요령 별표1"
         ),
         "cost_caution": (
             "항소 시 인지대는 1심의 1.5배, 상고 시 2배입니다. "
             "패소하면 상대방 소송비용도 부담할 수 있습니다."
         ),
     },
-
     # ────────────────────────────────────────────────────────────────────────
     # 【4】내용증명 — 법원 절차가 아님 (우체국)
     # ────────────────────────────────────────────────────────────────────────
@@ -176,7 +172,6 @@ PROCEDURE_COSTS = [
             "가까운 우체국에서 확인하세요."
         ),
     },
-
     # ────────────────────────────────────────────────────────────────────────
     # 【5】경매 배당 — 임차인이 신청하는 게 아님
     # ────────────────────────────────────────────────────────────────────────
@@ -205,6 +200,7 @@ PROCEDURE_COSTS = [
 # 【실행 함수】
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 def seed_region_tiers(cur):
     """
     【시드 1】지역별 소액임차인 기준
@@ -217,26 +213,31 @@ def seed_region_tiers(cur):
     cur.execute("DELETE FROM region_standards")
 
     for tier in REGION_TIERS:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO region_standards (
                 tier_name, tier_description,
                 deposit_threshold, max_priority_payment,
                 caution_note, legal_basis
             ) VALUES (%s, %s, %s, %s, %s, %s)
-        """, (
-            tier["tier_name"],
-            tier["tier_description"],
-            tier["deposit_threshold"],
-            tier["max_priority_payment"],
-            tier["caution_note"],
-            tier["legal_basis"],
-        ))
+        """,
+            (
+                tier["tier_name"],
+                tier["tier_description"],
+                tier["deposit_threshold"],
+                tier["max_priority_payment"],
+                tier["caution_note"],
+                tier["legal_basis"],
+            ),
+        )
 
         # 【확인 출력】억 단위로 보기 좋게
         thr = tier["deposit_threshold"] / 100_000_000
         pay = tier["max_priority_payment"] / 10_000
-        print(f"  ✓ {tier['tier_name']:12s} "
-              f"보증금 {thr:.2f}억 이하 → 최우선변제 {pay:,.0f}만원")
+        print(
+            f"  ✓ {tier['tier_name']:12s} "
+            f"보증금 {thr:.2f}억 이하 → 최우선변제 {pay:,.0f}만원"
+        )
 
     print(f"  → {len(REGION_TIERS)}건 입력 완료")
 
@@ -248,7 +249,8 @@ def seed_procedure_costs(cur):
     print("\n【2】procedure_info 비용 정보 업데이트 중...")
 
     for proc in PROCEDURE_COSTS:
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE procedure_info
             SET fixed_cost_total      = %s,
                 fixed_cost_breakdown  = %s,
@@ -258,15 +260,17 @@ def seed_procedure_costs(cur):
                 cost_caution          = %s,
                 updated_at            = NOW()
             WHERE procedure_name = %s
-        """, (
-            proc["fixed_cost_total"],
-            proc["fixed_cost_breakdown"],
-            proc["variable_cost_formula"],
-            proc["eligibility"],
-            proc["cost_source"],
-            proc["cost_caution"],
-            proc["procedure_name"],
-        ))
+        """,
+            (
+                proc["fixed_cost_total"],
+                proc["fixed_cost_breakdown"],
+                proc["variable_cost_formula"],
+                proc["eligibility"],
+                proc["cost_source"],
+                proc["cost_caution"],
+                proc["procedure_name"],
+            ),
+        )
 
         # 【확인】UPDATE가 실제로 됐는지
         if cur.rowcount == 0:

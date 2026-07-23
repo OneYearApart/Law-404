@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 graph 통합 평가 스크립트.
 
 Scope Checker, Intent Analyzer, Rule Engine, Calendar 후보 생성, RAG 검색이
@@ -24,7 +24,6 @@ from datetime import datetime
 from pathlib import Path
 from statistics import mean
 from typing import Any
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_QUESTIONS_PATH = Path(__file__).resolve().parent / "graph_eval_questions.json"
@@ -78,13 +77,17 @@ def collect_rule_types(rule_results: list[dict[str, Any]]) -> list[str]:
     return rule_types
 
 
-def has_expected_category(actual_categories: list[str], expected_categories: list[str]) -> bool:
+def has_expected_category(
+    actual_categories: list[str], expected_categories: list[str]
+) -> bool:
     if not expected_categories:
         return True
     return any(category in actual_categories for category in expected_categories)
 
 
-def has_expected_rule_type(actual_rule_types: list[str], expected_rule_types: list[str]) -> bool:
+def has_expected_rule_type(
+    actual_rule_types: list[str], expected_rule_types: list[str]
+) -> bool:
     if not expected_rule_types:
         return True
 
@@ -247,7 +250,9 @@ def build_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
             group_summary[group]["passed"] += 1
 
     for value in group_summary.values():
-        value["pass_rate"] = round(value["passed"] / value["total"], 4) if value["total"] else 0.0
+        value["pass_rate"] = (
+            round(value["passed"] / value["total"], 4) if value["total"] else 0.0
+        )
 
     non_error_items = [item for item in items if not item.get("error")]
     retrieval_skipped_values: list[bool] = []
@@ -273,7 +278,9 @@ def build_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
 
         requested_tools = planner_result.get("tools_to_use")
         executed_tools = execution_plan.get("executed_tools")
-        if not isinstance(requested_tools, list) or not isinstance(executed_tools, dict):
+        if not isinstance(requested_tools, list) or not isinstance(
+            executed_tools, dict
+        ):
             continue
 
         requested_set = {str(tool) for tool in requested_tools}
@@ -297,7 +304,9 @@ def build_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
         "calendar_hit_rate": rate("calendar_hit"),
         "pending_action_hit_rate": rate("pending_action_hit"),
         "retrieval_skipped_rate": average_bool(retrieval_skipped_values),
-        "average_retrieved_count": round(mean(retrieved_counts), 4) if retrieved_counts else 0.0,
+        "average_retrieved_count": round(mean(retrieved_counts), 4)
+        if retrieved_counts
+        else 0.0,
         "tool_alignment": {
             tool_name: average_bool(values)
             for tool_name, values in tool_alignment_values.items()
@@ -330,7 +339,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--questions", type=Path, default=DEFAULT_QUESTIONS_PATH)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--limit", type=int, default=0, help="앞에서 N개 질문만 평가합니다.")
+    parser.add_argument(
+        "--limit", type=int, default=0, help="앞에서 N개 질문만 평가합니다."
+    )
     parser.add_argument("--group", default="", help="특정 group만 평가합니다.")
     return parser.parse_args()
 

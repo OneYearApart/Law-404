@@ -14,7 +14,6 @@ from typing import Any
 
 from app.graph.parts.b_part.rules import has_date_in_text, parse_year_month_from_text
 
-
 MAX_HISTORY_MESSAGES = 8
 
 
@@ -63,7 +62,9 @@ class BPartInMemoryChatMessageHistory:
     def get_state(self, session_id: str) -> dict[str, Any]:
         return dict(self._state.get(session_id, {}))
 
-    def replace_messages(self, session_id: str, messages: list[BPartChatMessage]) -> None:
+    def replace_messages(
+        self, session_id: str, messages: list[BPartChatMessage]
+    ) -> None:
         """외부 저장소에서 읽은 메시지 목록으로 현재 세션 메시지를 교체합니다."""
         if not session_id:
             return
@@ -293,11 +294,7 @@ def get_last_user_message(messages: list[BPartChatMessage]) -> str:
 
 def get_recent_user_messages(messages: list[BPartChatMessage], limit: int = 3) -> str:
     """최근 사용자 메시지 여러 개를 시간순으로 가져옵니다."""
-    user_messages = [
-        message.content
-        for message in messages
-        if message.role == "user"
-    ]
+    user_messages = [message.content for message in messages if message.role == "user"]
     recent_messages = user_messages[-limit:]
     return "\n".join(f"- {message}" for message in recent_messages)
 
@@ -309,9 +306,7 @@ def get_last_missing_info_request(messages: list[BPartChatMessage]) -> str:
             continue
 
         lines = [
-            line.strip("-• \t")
-            for line in message.content.splitlines()
-            if line.strip()
+            line.strip("-• \t") for line in message.content.splitlines() if line.strip()
         ]
         request_lines = [
             line
@@ -351,10 +346,9 @@ def build_contextual_question(
             "history_message_count": 0,
         }
 
-    should_use_memory = (
-        is_short_followup_answer(current_question)
-        and has_assistant_asked_missing_info(history_messages)
-    )
+    should_use_memory = is_short_followup_answer(
+        current_question
+    ) and has_assistant_asked_missing_info(history_messages)
 
     if not should_use_memory:
         return current_question, {

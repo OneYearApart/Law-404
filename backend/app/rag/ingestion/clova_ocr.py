@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class ClovaOCR:
-
-
     def __init__(
         self,
         invoke_url: Optional[str] = None,
@@ -55,12 +53,12 @@ class ClovaOCR:
         # https://api.ncloud-docs.com/docs/ai-application-service-ocr-general
         request_json = {
             "version": "V2",
-            "requestId": str(uuid.uuid4()),   # 매 요청 고유 ID
+            "requestId": str(uuid.uuid4()),  # 매 요청 고유 ID
             "timestamp": int(time.time() * 1000),
             "images": [
                 {
                     "format": image_format,
-                    "name": "document",       # 임의 이름 (개인정보 아님)
+                    "name": "document",  # 임의 이름 (개인정보 아님)
                     "data": base64.b64encode(image_bytes).decode("utf-8"),
                 }
             ],
@@ -92,7 +90,7 @@ class ClovaOCR:
         except requests.exceptions.RequestException as e:
             # ⚠️ 에러 응답 본문에 이미지/개인정보가 포함될 수 있으므로
             #    status code만 로깅합니다.
-            status = getattr(e.response, 'status_code', '?')
+            status = getattr(e.response, "status_code", "?")
             logger.error(f"[ClovaOCR] API 오류: {status}")
             raise RuntimeError("OCR 처리 중 오류가 발생했습니다. 다시 시도해 주세요.")
 
@@ -133,7 +131,6 @@ class ClovaOCR:
                 text = field.get("inferText", "")
                 parts.append(text)
 
-
                 if field.get("lineBreak", False):
                     parts.append("\n")
                 else:
@@ -156,7 +153,6 @@ class ClovaOCR:
 # ════════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-
     import sys
 
     logging.basicConfig(level=logging.INFO)

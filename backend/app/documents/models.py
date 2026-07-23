@@ -56,9 +56,7 @@ class UploadedDocument(BaseModel):
     declared_content_type: str | None = None
     size_bytes: int = Field(gt=0)
     sha256: str = Field(min_length=64, max_length=64)
-    processing_status: DocumentProcessingStatus = (
-        DocumentProcessingStatus.UPLOADED
-    )
+    processing_status: DocumentProcessingStatus = DocumentProcessingStatus.UPLOADED
     extraction_method: str | None = None
     extraction_version: str | None = None
     page_count: int | None = Field(default=None, ge=0)

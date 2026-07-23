@@ -107,9 +107,7 @@ def compare_owner_and_lessor(
         explanation = "계약서 임대인이 등기부 현재 소유자 목록에 포함됩니다."
     elif source_uncertain:
         status = ComparisonStatus.UNCERTAIN
-        explanation = (
-            "OCR 신뢰도가 낮은 이름에서 차이가 보여 불일치를 확정하지 않고 재확인 대상으로 남깁니다."
-        )
+        explanation = "OCR 신뢰도가 낮은 이름에서 차이가 보여 불일치를 확정하지 않고 재확인 대상으로 남깁니다."
     else:
         status = ComparisonStatus.MISMATCH
         explanation = "계약서 임대인이 등기부 현재 소유자 목록과 일치하지 않습니다."
@@ -208,9 +206,7 @@ def compare_addresses(
         )
     else:
         status = ComparisonStatus.UNCERTAIN
-        explanation = (
-            "OCR 주소에서 비교 가능한 핵심 구성요소가 부족해 동일 목적물 여부를 확정하지 않습니다."
-        )
+        explanation = "OCR 주소에서 비교 가능한 핵심 구성요소가 부족해 동일 목적물 여부를 확정하지 않습니다."
     return ComparisonItem(
         key="property_address",
         label="계약서 주소와 등기부 주소",
@@ -251,8 +247,7 @@ def compare_mortgage_clause(
         )
 
     clause_found = any(
-        "mortgage_cancellation" in clause.categories
-        for clause in lease.special_clauses
+        "mortgage_cancellation" in clause.categories for clause in lease.special_clauses
     )
     uncertain_clause = any(
         "mortgage_cancellation" in clause.categories
@@ -321,8 +316,7 @@ def compare_documents(
             triggered.append("q10_trust")
 
     if lease is not None and any(
-        "deposit_return" in clause.categories
-        for clause in lease.special_clauses
+        "deposit_return" in clause.categories for clause in lease.special_clauses
     ):
         triggered.append("q14_special_clause_deposit_return")
 

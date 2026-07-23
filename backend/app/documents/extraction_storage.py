@@ -137,9 +137,7 @@ class DocumentExtractionStorage:
             return None
         if not result.extracted_text_path:
             return None
-        text_path = self.repository.resolve_relative_path(
-            result.extracted_text_path
-        )
+        text_path = self.repository.resolve_relative_path(result.extracted_text_path)
         if not text_path.exists():
             return None
         return result.model_copy(update={"reused": True})

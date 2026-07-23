@@ -7,6 +7,7 @@
 응답 속도/품질을 눈으로 비교해 .env의 OLLAMA_SUMMARY_MODEL, SUMMARY_TRIGGER_TURNS를 정하는 용도.
 프로덕션 코드 경로에는 포함되지 않음.
 """
+
 import asyncio
 import sys
 import time

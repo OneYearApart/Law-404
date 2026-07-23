@@ -1,10 +1,15 @@
 """
 response_assembly 노드 테스트 (DB/네트워크는 monkeypatch로 흉내).
 """
+
 import pytest
 
 from app.graph.parts.d_part.nodes import response_assembly
-from app.graph.parts.d_part.schemas import SlotStatus, VictimJudgment, VictimRequirementSlots
+from app.graph.parts.d_part.schemas import (
+    SlotStatus,
+    VictimJudgment,
+    VictimRequirementSlots,
+)
 from app.rag.retrievers.base import Chunk
 
 
@@ -22,7 +27,9 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
             "statute": [_make_chunk("법령원문", "제3조 요건")],
             "case_law": [_make_chunk("판례", "판례 내용")],
             "cases": [],
-            "guides": [_make_chunk("생활법령", "상황적용 안내")],   # 작업단위 51 상황적용 grounding
+            "guides": [
+                _make_chunk("생활법령", "상황적용 안내")
+            ],  # 작업단위 51 상황적용 grounding
         }
 
     async def _fake_generate_response(context: str, answer_kind: str):
@@ -30,8 +37,14 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
         yield "해설 "
         yield "상황적용"
 
-    monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _fake_search_by_requirement)
-    monkeypatch.setattr(response_assembly.llm_d_part, "generate_response", _fake_generate_response)
+    monkeypatch.setattr(
+        response_assembly._retriever,
+        "search_by_requirement",
+        _fake_search_by_requirement,
+    )
+    monkeypatch.setattr(
+        response_assembly.llm_d_part, "generate_response", _fake_generate_response
+    )
 
     slots = VictimRequirementSlots(
         moved_in_and_fixed_date=SlotStatus.FILLED,
@@ -58,7 +71,9 @@ async def test_assembles_response_when_judgment_just_computed(monkeypatch):
     # 상황적용 grounding(생활법령)이 retrieved_chunks에 합쳐짐 → 근거 카드(46)에도 노출
     assert len(result["retrieved_chunks"]) == 3
     assert any(c.source_type == "생활법령" for c in result["retrieved_chunks"])
-    assert seen["situation_query"] == "임차권등기명령은 어떻게 신청하나요"   # 사용자 발화 전달
+    assert (
+        seen["situation_query"] == "임차권등기명령은 어떻게 신청하나요"
+    )  # 사용자 발화 전달
 
 
 @pytest.mark.asyncio
@@ -98,8 +113,14 @@ async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
         calls["generate"] += 1
         yield "재생성된 응답"
 
-    monkeypatch.setattr(response_assembly._retriever, "search_by_requirement", _counting_search_by_requirement)
-    monkeypatch.setattr(response_assembly.llm_d_part, "generate_response", _counting_generate_response)
+    monkeypatch.setattr(
+        response_assembly._retriever,
+        "search_by_requirement",
+        _counting_search_by_requirement,
+    )
+    monkeypatch.setattr(
+        response_assembly.llm_d_part, "generate_response", _counting_generate_response
+    )
 
     state = {
         "victim_judgment": VictimJudgment.HIGH,
@@ -114,6 +135,7 @@ async def test_no_rag_or_llm_call_on_turns_after_judgment(monkeypatch):
 
 
 # --- 컨텍스트가 내부 필드명을 노출하지 않아야 한다 -------------------------------
+
 
 def test_context_uses_korean_labels_not_internal_field_names():
     """슬롯을 model_dump로 통째로 넘기면 모델이 영문 키를 답변에 그대로 옮겨 적는다
@@ -135,11 +157,15 @@ def test_context_uses_korean_labels_not_internal_field_names():
 
     context = _format_context(state)
 
-    for field_name in ("moved_in_and_fixed_date", "deposit_under_limit", "multiple_victims",
-                       "no_intent_to_return"):
+    for field_name in (
+        "moved_in_and_fixed_date",
+        "deposit_under_limit",
+        "multiple_victims",
+        "no_intent_to_return",
+    ):
         assert field_name not in context
     assert "전입신고·확정일자" in context and "충족" in context
-    assert "미충족" in context                      # no_intent_to_return이 UNFILLED
+    assert "미충족" in context  # no_intent_to_return이 UNFILLED
     assert VictimJudgment.NEEDS_CONFIRMATION.value in context
 
 
@@ -150,7 +176,9 @@ def test_context_hides_control_flags_that_are_not_requirements():
     from app.graph.parts.d_part.nodes.response_assembly import _format_context
 
     state = {
-        "victim_slots": VictimRequirementSlots(has_relief_measure=False, auction_completed=True),
+        "victim_slots": VictimRequirementSlots(
+            has_relief_measure=False, auction_completed=True
+        ),
         "victim_judgment": VictimJudgment.HIGH,
         "retrieved_chunks": [],
     }

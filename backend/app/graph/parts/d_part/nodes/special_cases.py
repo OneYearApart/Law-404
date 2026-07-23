@@ -6,8 +6,9 @@
 지원절차 개요는 이 노드가 붙이지 않는다 — "인정받은 사용자에게 지원절차를 보여줄지"는 상황
 질문이지 "special_cases가 실행됐는지"가 아니다. support_appendix가 상황모델을 보고 정한다(D3).
 """
+
 from app.graph.parts.d_part.nodes._context import build_context
-from app.graph.parts.d_part.schemas import DPartGraphState, SPECIAL_CASE_TOPIC_TAGS
+from app.graph.parts.d_part.schemas import SPECIAL_CASE_TOPIC_TAGS, DPartGraphState
 from app.llm import d_part as llm_d_part
 from app.rag.retrievers.d_part import DPartRetriever
 
@@ -25,11 +26,17 @@ async def match_special_case(state: DPartGraphState) -> DPartGraphState:
 
     query_text = f"{category} {state['user_input']}"
     retrieved = await _retriever.search_by_topic(topic_key, query_text)
-    state["retrieved_chunks"] = (retrieved["statute"] + retrieved["case_law"]
-                                 + retrieved["cases"] + retrieved["guides"])
+    state["retrieved_chunks"] = (
+        retrieved["statute"]
+        + retrieved["case_law"]
+        + retrieved["cases"]
+        + retrieved["guides"]
+    )
 
     context = build_context(
-        state["retrieved_chunks"], header=f"특수상황: {category}", query=state["user_input"]
+        state["retrieved_chunks"],
+        header=f"특수상황: {category}",
+        query=state["user_input"],
     )
     state["answer_kind"] = "special_case"
     state["response_stream"] = llm_d_part.generate_response(context, "special_case")

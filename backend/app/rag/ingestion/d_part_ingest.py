@@ -15,6 +15,7 @@ embedding 컬럼은 NULL로 남긴다 (OpenAI API 키 없이도 검증 가능). 
 OPENAI_API_KEY를 설정하고 embed_enabled=True로 재실행하면 임베딩까지 채워진다.
 재실행 시마다 기존 데이터를 TRUNCATE하므로 멱등적으로 반복 실행 가능하다.
 """
+
 import json
 from pathlib import Path
 
@@ -64,7 +65,9 @@ def _split_text_by_tokens(text_value: str, max_tokens: int) -> list[str]:
     return pieces
 
 
-def _split_oversized_rows(rows: list[dict], max_tokens: int = MAX_EMBED_TOKENS) -> list[dict]:
+def _split_oversized_rows(
+    rows: list[dict], max_tokens: int = MAX_EMBED_TOKENS
+) -> list[dict]:
     """임베딩 입력 한도를 넘는 청크를 여러 서브청크로 분할 (소스 무관, 사후 처리)."""
     result: list[dict] = []
     for row in rows:
@@ -73,11 +76,17 @@ def _split_oversized_rows(rows: list[dict], max_tokens: int = MAX_EMBED_TOKENS) 
             continue
         pieces = _split_text_by_tokens(row["content"], max_tokens)
         for seq, piece in enumerate(pieces, start=1):
-            result.append({
-                **row,
-                "content": piece,
-                "metadata": {**row["metadata"], "chunk_seq": seq, "chunk_total": len(pieces)},
-            })
+            result.append(
+                {
+                    **row,
+                    "content": piece,
+                    "metadata": {
+                        **row["metadata"],
+                        "chunk_seq": seq,
+                        "chunk_total": len(pieces),
+                    },
+                }
+            )
     return result
 
 
@@ -105,7 +114,9 @@ def _bootstrap_schema(conn):
 
 
 def _insert_chunk(conn, chunk: dict) -> int:
-    result = conn.execute(_INSERT_CHUNK_SQL, {**chunk, "metadata": json.dumps(chunk.get("metadata"))})
+    result = conn.execute(
+        _INSERT_CHUNK_SQL, {**chunk, "metadata": json.dumps(chunk.get("metadata"))}
+    )
     return result.scalar_one()
 
 
@@ -114,12 +125,26 @@ async def ingest(embed_enabled: bool = False):
 
     with engine.begin() as conn:
         _bootstrap_schema(conn)
-        conn.execute(text("TRUNCATE d_reference_links, d_part_embeddings RESTART IDENTITY"))
+        conn.execute(
+            text("TRUNCATE d_reference_links, d_part_embeddings RESTART IDENTITY")
+        )
 
-        rows = (load_precedent_chunks() + load_statute_chunks() + load_hug_chunks()
-                + load_gov_chunks() + load_easylaw_chunks())
+        rows = (
+            load_precedent_chunks()
+            + load_statute_chunks()
+            + load_hug_chunks()
+            + load_gov_chunks()
+            + load_easylaw_chunks()
+        )
         rows = _split_oversized_rows(rows)
-        enrich_hug_topic_tags([row for row in rows if row["source_type"] in ("HUG사례집", "HUG규정", "정부자료", "생활법령")])
+        enrich_hug_topic_tags(
+            [
+                row
+                for row in rows
+                if row["source_type"]
+                in ("HUG사례집", "HUG규정", "정부자료", "생활법령")
+            ]
+        )
         for row in rows:
             row["id"] = _insert_chunk(conn, row)
 
@@ -132,8 +157,10 @@ async def ingest(embed_enabled: bool = False):
     hug_n = sum(1 for r in rows if r["source_type"] in ("HUG사례집", "HUG규정"))
     gov_n = sum(1 for r in rows if r["source_type"] == "정부자료")
     easylaw_n = sum(1 for r in rows if r["source_type"] == "생활법령")
-    print(f"청크 {len(rows)}건 적재 (판례 {precedent_n}건, 법령 {statute_n}건, HUG {hug_n}건, "
-          f"정부자료 {gov_n}건, 생활법령 {easylaw_n}건)")
+    print(
+        f"청크 {len(rows)}건 적재 (판례 {precedent_n}건, 법령 {statute_n}건, HUG {hug_n}건, "
+        f"정부자료 {gov_n}건, 생활법령 {easylaw_n}건)"
+    )
     print(f"링크 {len(links)}건 적재")
 
     if embed_enabled:
@@ -142,7 +169,9 @@ async def ingest(embed_enabled: bool = False):
         with engine.begin() as conn:
             for row, vector in zip(rows, embeddings):
                 conn.execute(
-                    text("UPDATE d_part_embeddings SET embedding = CAST(:embedding AS vector) WHERE id = :id"),
+                    text(
+                        "UPDATE d_part_embeddings SET embedding = CAST(:embedding AS vector) WHERE id = :id"
+                    ),
                     {"embedding": _vector_literal(vector), "id": row["id"]},
                 )
         print(f"임베딩 {len(embeddings)}건 적재")
@@ -152,4 +181,5 @@ async def ingest(embed_enabled: bool = False):
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(ingest())

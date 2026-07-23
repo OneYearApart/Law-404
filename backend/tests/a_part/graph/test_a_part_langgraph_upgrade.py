@@ -10,14 +10,19 @@ from app.documents.analysis.models import ConversationDocumentAnalysisResponse
 from app.documents.models import DocumentFormat, DocumentType, UploadedDocument
 from tests.a_part.api.test_a_part_api import build_service
 
-
 REPRESENTATIVE_QUESTIONS = [
     ("q01_owner_proxy", "집주인 아들이 대신 계약하러 왔는데 위임장이 없어요."),
     ("q02_co_owner", "공동명의 집인데 소유자 한 명만 계약하러 왔어요."),
     ("q03_owner_lessor_mismatch", "등기부 소유자와 계약서 임대인 이름이 달라요."),
     ("q04_broker_account_payment", "중개사 명의 계좌로 계약금을 보내라고 해요."),
-    ("q05_account_change_before_contract", "계약 직전에 계약금 계좌가 바뀌었다고 합니다."),
-    ("q06_broker_explanation_mismatch", "중개대상물 확인설명서와 계약서 내용이 달라요."),
+    (
+        "q05_account_change_before_contract",
+        "계약 직전에 계약금 계좌가 바뀌었다고 합니다.",
+    ),
+    (
+        "q06_broker_explanation_mismatch",
+        "중개대상물 확인설명서와 계약서 내용이 달라요.",
+    ),
     ("q07_mortgage", "등기부에 근저당과 채권최고액이 있어요."),
     ("q08_multiunit_priority", "다가구주택인데 선순위 보증금을 확인 못했어요."),
     ("q09_registry_restriction_warning", "등기부에 가압류가 있는데 계약해도 되나요?"),
@@ -78,7 +83,9 @@ def _document(
     document_id: str,
     document_type: DocumentType,
 ) -> UploadedDocument:
-    filename = "lease.pdf" if document_type == DocumentType.LEASE_CONTRACT else "registry.pdf"
+    filename = (
+        "lease.pdf" if document_type == DocumentType.LEASE_CONTRACT else "registry.pdf"
+    )
     return UploadedDocument(
         document_id=document_id,
         conversation_id=conversation_id,
@@ -160,6 +167,7 @@ def test_document_types_use_separate_langgraph_branches(
     assert result.orchestration["document_mode"] == expected_mode
     assert result.document_analysis is not None
 
+
 def test_langchain_route_and_search_plan_use_structured_runnables(monkeypatch):
     from langchain_core.runnables import RunnableLambda
 
@@ -206,4 +214,3 @@ def test_langchain_route_and_search_plan_use_structured_runnables(monkeypatch):
     assert decision.primary_issue_id == "q07_mortgage"
     assert planner_engine == "langchain"
     assert "최신 등기부" in query
-

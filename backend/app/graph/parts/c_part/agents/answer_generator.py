@@ -2,22 +2,22 @@
 【AnswerGeneratorAgent】C파트 답변 생성 - Phase 3 수정판
 """
 
-import re
 import logging
-from typing import Optional
+import re
 from datetime import datetime
+from typing import Optional
 
 from langchain_core.language_models import BaseLanguageModel
 
 from app.llm.c_part.prompts import (
-    format_topic_classifier_prompt,
-    format_situation_prompt,
+    format_action_steps_prompt,
+    format_anticipated_disputes_prompt,
+    format_expected_cost_prompt,
+    format_follow_up_questions_prompt,
     format_legal_basis_prompt,
     format_precedents_prompt,
-    format_action_steps_prompt,
-    format_expected_cost_prompt,
-    format_anticipated_disputes_prompt,
-    format_follow_up_questions_prompt,
+    format_situation_prompt,
+    format_topic_classifier_prompt,
 )
 from app.rag.repositories.cost_repository import CostRepository
 
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # ════════════════════════════════════════════════════════════════════════════════
 # 【헬퍼 1】검색 결과 → 프롬프트 컨텍스트 변환
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 def format_statutes_context(statutes: list[dict]) -> str:
     """
@@ -96,7 +97,10 @@ def format_precedents_context(precedents: list[dict]) -> str:
 # 【헬퍼 2】보증금 액수 추출  ← 신규
 # ════════════════════════════════════════════════════════════════════════════════
 
-def extract_deposit_amount(question: str, chat_history: Optional[list] = None) -> Optional[int]:
+
+def extract_deposit_amount(
+    question: str, chat_history: Optional[list] = None
+) -> Optional[int]:
     """
     【추출】질문에서 보증금 액수를 찾습니다.
     """
@@ -152,6 +156,7 @@ def extract_deposit_amount(question: str, chat_history: Optional[list] = None) -
 # 【헬퍼 3】인용문 추출
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 def extract_citations(text: str) -> list[str]:
     """
     【추출】생성된 텍스트에서 조문·판례 인용 찾기
@@ -179,6 +184,7 @@ def extract_citations(text: str) -> list[str]:
 # 【헬퍼 4】금지 표현 검증  ← 강화
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 def validate_forbidden_phrases(
     text: str,
     allow_amounts: bool = False,
@@ -199,11 +205,13 @@ def validate_forbidden_phrases(
     # 【금액 금지】allow_amounts=False일 때만
     # → action_steps 등에서 금액을 지어내는 것을 막습니다
     if not allow_amounts:
-        patterns.extend([
-            (r"약\s*[\d,]+\s*원", "임의의 금액"),
-            (r"[\d,]+\s*[~-]\s*[\d,]+\s*원", "임의의 금액 범위"),
-            (r"[\d,]+\s*만\s*원\s*(?:정도|가량|내외)", "임의의 금액"),
-        ])
+        patterns.extend(
+            [
+                (r"약\s*[\d,]+\s*원", "임의의 금액"),
+                (r"[\d,]+\s*[~-]\s*[\d,]+\s*원", "임의의 금액 범위"),
+                (r"[\d,]+\s*만\s*원\s*(?:정도|가량|내외)", "임의의 금액"),
+            ]
+        )
 
     for pattern, label in patterns:
         for m in re.finditer(pattern, text):
@@ -215,6 +223,7 @@ def validate_forbidden_phrases(
 # ════════════════════════════════════════════════════════════════════════════════
 # 【AnswerGeneratorAgent】
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 class AnswerGeneratorAgent:
     """
@@ -272,12 +281,13 @@ class AnswerGeneratorAgent:
             intent = "irrelevant"
             is_relevant = False
         else:
-            intent = "consultation"   # 폴백: 애매하면 상담
+            intent = "consultation"  # 폴백: 애매하면 상담
             is_relevant = True
 
-        matched = any(kw in content for kw in
-                      ["DEFINITION", "GUIDE", "DOCUMENT",
-                       "CONSULTATION", "IRRELEVANT"])
+        matched = any(
+            kw in content
+            for kw in ["DEFINITION", "GUIDE", "DOCUMENT", "CONSULTATION", "IRRELEVANT"]
+        )
 
         reason_map = {
             "definition": "용어 정의 질문",
@@ -293,7 +303,7 @@ class AnswerGeneratorAgent:
             "confidence": 0.95 if matched else 0.6,
             "reason": reason_map[intent],
         }
-    
+
     async def answer_definition(self, question: str) -> dict:
         """
         【정의 답변】용어 설명만. LLM 1회.
@@ -310,7 +320,7 @@ class AnswerGeneratorAgent:
             "content": response.content,
             "type": "definition",
         }
-    
+
     async def answer_guide(
         self,
         question: str,
@@ -343,6 +353,7 @@ class AnswerGeneratorAgent:
             "content": response.content,
             "type": "guide",
         }
+
     # ────────────────────────────────────────────────────────────────────────
     # 【Node 1】상황 진단
     # ────────────────────────────────────────────────────────────────────────
@@ -506,9 +517,7 @@ class AnswerGeneratorAgent:
         eligibility_lines = []
         for p in procedures:
             if p.get("eligibility"):
-                eligibility_lines.append(
-                    f"- {p['procedure_name']}: {p['eligibility']}"
-                )
+                eligibility_lines.append(f"- {p['procedure_name']}: {p['eligibility']}")
         procedure_eligibility = "\n".join(eligibility_lines) or "(절차 정보 없음)"
 
         prompt = format_action_steps_prompt(
@@ -716,9 +725,11 @@ class AnswerGeneratorAgent:
         # 【1단계】마크다운 제거
         # ** 볼드, ### 헤더, --- 구분선을 걷어냅니다
         cleaned = content
-        cleaned = re.sub(r"\*\*", "", cleaned)          # 볼드 제거
+        cleaned = re.sub(r"\*\*", "", cleaned)  # 볼드 제거
         cleaned = re.sub(r"^#+\s*", "", cleaned, flags=re.MULTILINE)  # 헤더 제거
-        cleaned = re.sub(r"^\s*-{3,}\s*$", "", cleaned, flags=re.MULTILINE)  # 구분선 제거
+        cleaned = re.sub(
+            r"^\s*-{3,}\s*$", "", cleaned, flags=re.MULTILINE
+        )  # 구분선 제거
 
         # 【2단계】Q/A 쌍 추출
         # Q로 시작 → A가 나올 때까지 = 질문

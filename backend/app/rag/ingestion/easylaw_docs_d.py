@@ -10,6 +10,7 @@ search_by_topic guides·open_qa 쿼터를 전부 손봐야 해 마찰이 크다.
 metadata.항목유형으로 둔다(작업단위 50). topic_tags는 HUG사례집·정부자료와 동일하게
 d_part_ingest가 통제 어휘로 부여한다. 출처(법제처 공공누리)는 metadata에 표기한다(작업단위 26).
 """
+
 import json
 from pathlib import Path
 
@@ -33,31 +34,33 @@ def load_easylaw_chunks() -> list[dict]:
         record = json.loads(path.read_text(encoding="utf-8"))
         출처 = record.get("출처", "")
         이용조건 = record.get("이용조건", "")
-        kind = record.get("항목유형", "책자")          # 수집기가 표기(책자/백문백답)
+        kind = record.get("항목유형", "책자")  # 수집기가 표기(책자/백문백답)
         csm = record.get("csmSeq", "")
         for p in record["페이지"]:
             leaf = _leaf_id(p)
             case_no = f"생활법령-{csm}-{leaf}" if csm else f"생활법령-{leaf}"
-            chunks.append({
-                "source_type": "생활법령",
-                "statute_name": None,
-                "article_no": None,
-                "case_no": case_no,
-                "reference_articles": None,
-                "topic_tags": None,
-                "grade": None,
-                "source_date": None,
-                "unresolved_ownership": False,
-                "content": p["content"],
-                "metadata": {
-                    "원본": path.name,
-                    "항목유형": kind,
-                    "제목": p.get("title", ""),
-                    "url": p.get("url", ""),
-                    "출처": 출처,
-                    "이용조건": 이용조건,
-                },
-            })
+            chunks.append(
+                {
+                    "source_type": "생활법령",
+                    "statute_name": None,
+                    "article_no": None,
+                    "case_no": case_no,
+                    "reference_articles": None,
+                    "topic_tags": None,
+                    "grade": None,
+                    "source_date": None,
+                    "unresolved_ownership": False,
+                    "content": p["content"],
+                    "metadata": {
+                        "원본": path.name,
+                        "항목유형": kind,
+                        "제목": p.get("title", ""),
+                        "url": p.get("url", ""),
+                        "출처": 출처,
+                        "이용조건": 이용조건,
+                    },
+                }
+            )
     return chunks
 
 
@@ -65,4 +68,6 @@ if __name__ == "__main__":
     chunks = load_easylaw_chunks()
     print(f"생활법령 청크 {len(chunks)}건")
     for c in chunks:
-        print(f"  {c['case_no']} | {c['metadata']['항목유형']} | {len(c['content']):5d}자 | {c['metadata']['제목'][:40]}")
+        print(
+            f"  {c['case_no']} | {c['metadata']['항목유형']} | {len(c['content']):5d}자 | {c['metadata']['제목'][:40]}"
+        )

@@ -26,6 +26,7 @@ D파트 LangGraph 서브그래프.
 
 판단 단계(1~7)는 .ainvoke()로 동기 실행하고, 최종 답변 생성부터만 스트리밍합니다.
 """
+
 from langgraph.graph import StateGraph
 
 from app.graph.parts.d_part.nodes.finalize import finalize_response
@@ -34,8 +35,12 @@ from app.graph.parts.d_part.nodes.open_qa import handle_open_qa
 from app.graph.parts.d_part.nodes.recognized_general import handle_recognized_general
 from app.graph.parts.d_part.nodes.response_assembly import assemble_response
 from app.graph.parts.d_part.nodes.special_cases import match_special_case
+from app.graph.parts.d_part.nodes.supervisor import (
+    interview_in_progress,
+    route,
+    run_supervisor,
+)
 from app.graph.parts.d_part.nodes.support_appendix import attach_support_appendix
-from app.graph.parts.d_part.nodes.supervisor import interview_in_progress, route, run_supervisor
 from app.graph.parts.d_part.nodes.victim_check import check_victim_status
 from app.graph.parts.d_part.schemas import DPartGraphState
 

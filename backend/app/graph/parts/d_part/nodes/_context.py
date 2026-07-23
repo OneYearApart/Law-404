@@ -8,6 +8,7 @@ response_assembly)가 공유한다.
 전부 버렸다 → 모델이 조문번호·사건번호를 지어낼 수밖에 없었다(환각). 출처를 함께 넘기고
 prompts/response_common.md의 인용 강제 규칙과 짝지어 근거 기반 인용을 유도한다.
 """
+
 from app.rag.retrievers.base import Chunk
 
 _CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮"
@@ -49,7 +50,9 @@ def _source_label(chunk: Chunk) -> str:
     return chunk.case_no or chunk.statute_name or ""
 
 
-def build_context(chunks: list[Chunk], *, header: str | None = None, query: str | None = None) -> str:
+def build_context(
+    chunks: list[Chunk], *, header: str | None = None, query: str | None = None
+) -> str:
     """근거 청크(+경로별 헤더 +사용자 발화)를 LLM 컨텍스트 한 덩어리로 조립한다.
 
     발화를 넣는 이유: 생성 경로들이 발화를 검색 쿼리로만 쓰고 정작 생성 컨텍스트엔 안 넣고
@@ -61,7 +64,9 @@ def build_context(chunks: list[Chunk], *, header: str | None = None, query: str 
     발화를 안 넣는 경로도 있다(response_assembly) — 판정 확정 턴의 발화는 슬롯 질문에 대한
     답("아니요 없어요")이라 질문이 아니고, 그 내용은 이미 요건 충족 현황으로 컨텍스트에 있다.
     """
-    parts = [part for part in (header, f"사용자 발화: {query}" if query else None) if part]
+    parts = [
+        part for part in (header, f"사용자 발화: {query}" if query else None) if part
+    ]
     parts.append(format_chunks(chunks))
     return "\n\n".join(parts)
 
@@ -71,7 +76,9 @@ def format_chunks(chunks: list[Chunk]) -> str:
     blocks = []
     for chunk in chunks:
         label = _source_label(chunk)
-        header = f"[{chunk.source_type} | {label}]" if label else f"[{chunk.source_type}]"
+        header = (
+            f"[{chunk.source_type} | {label}]" if label else f"[{chunk.source_type}]"
+        )
         # 하나의 조문/판례가 여러 서브청크로 분할된 경우(전문 아님) — 전문으로 오인해 인용하지 않게
         if (chunk.metadata or {}).get("chunk_seq") is not None:
             header += " (발췌 일부)"

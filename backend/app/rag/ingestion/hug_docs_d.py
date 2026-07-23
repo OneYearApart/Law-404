@@ -15,12 +15,15 @@ metadata.unresolved_ownership 플래그로 표시한다 (스키마 컬럼과 별
 topic_tags는 이 단계에서 채우지 않는다 — 판례 tags와 같은 통제 어휘(전-/중-/후-/트리거-)로
 매핑하는 작업은 작업단위9(TOPIC_TAG_KEYWORDS)의 몫이다.
 """
+
 import re
 from pathlib import Path
 
 import pdfplumber
 
-CASE_BOOK_PDF = Path(r"C:\Users\nowne\OneDrive\문서\Proj\AI Mini Project\datasource\2025전세피해지원사례집.pdf")
+CASE_BOOK_PDF = Path(
+    r"C:\Users\nowne\OneDrive\문서\Proj\AI Mini Project\datasource\2025전세피해지원사례집.pdf"
+)
 GUIDE_PDF = Path(
     r"C:\Users\nowne\OneDrive\문서\Proj\AI Mini Project\datasource"
     r"\주택도시보증공사_전세사기피해예방안내.pdf"
@@ -62,7 +65,10 @@ def load_case_book_chunks() -> list[dict]:
     with pdfplumber.open(CASE_BOOK_PDF) as pdf:
         for page in pdf.pages:
             w = page.width
-            for crop in (page.crop((0, 0, w / 2, page.height)), page.crop((w / 2, 0, w, page.height))):
+            for crop in (
+                page.crop((0, 0, w / 2, page.height)),
+                page.crop((w / 2, 0, w, page.height)),
+            ):
                 text = crop.extract_text() or ""
                 lines = text.split("\n")
                 if lines and lines[0].strip() == "주요 피해지원 상담 사례":
@@ -74,7 +80,11 @@ def load_case_book_chunks() -> list[dict]:
                     if m and int(m.group(1)) == expected:
                         if current is not None:
                             chunks.append(_finalize_case(**current))
-                        current = {"case_no": expected, "title": m.group(2).strip(), "lines": []}
+                        current = {
+                            "case_no": expected,
+                            "title": m.group(2).strip(),
+                            "lines": [],
+                        }
                         expected += 1
                     elif current is not None:
                         current["lines"].append(line)
@@ -119,23 +129,28 @@ def _load_qa_chunks(qa_text: str) -> list[dict]:
     for i, m in enumerate(matches):
         no, sub = m.group(1), m.group(2)
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        block = text[m.start():end].strip()
+        block = text[m.start() : end].strip()
         if not block:
             continue
         q_no = f"{no}-{sub}" if sub else no
-        chunks.append({
-            "source_type": "HUG규정",
-            "statute_name": None,
-            "article_no": None,
-            "case_no": f"안내-Q{q_no}",
-            "reference_articles": None,
-            "topic_tags": None,
-            "grade": None,
-            "source_date": None,
-            "unresolved_ownership": False,
-            "content": block,
-            "metadata": {"항목유형": "QA", "원본": "주택도시보증공사_전세사기피해예방안내.pdf"},
-        })
+        chunks.append(
+            {
+                "source_type": "HUG규정",
+                "statute_name": None,
+                "article_no": None,
+                "case_no": f"안내-Q{q_no}",
+                "reference_articles": None,
+                "topic_tags": None,
+                "grade": None,
+                "source_date": None,
+                "unresolved_ownership": False,
+                "content": block,
+                "metadata": {
+                    "항목유형": "QA",
+                    "원본": "주택도시보증공사_전세사기피해예방안내.pdf",
+                },
+            }
+        )
     return chunks
 
 
@@ -168,19 +183,24 @@ def _load_glossary_chunks(glossary_text: str) -> list[dict]:
         content = term if not definition else f"{term}: {definition}"
         if example:
             content += f"\n예: {example}"
-        chunks.append({
-            "source_type": "HUG규정",
-            "statute_name": None,
-            "article_no": None,
-            "case_no": f"안내-용어-{term}",
-            "reference_articles": None,
-            "topic_tags": None,
-            "grade": None,
-            "source_date": None,
-            "unresolved_ownership": False,
-            "content": content,
-            "metadata": {"항목유형": "용어사전", "원본": "주택도시보증공사_전세사기피해예방안내.pdf"},
-        })
+        chunks.append(
+            {
+                "source_type": "HUG규정",
+                "statute_name": None,
+                "article_no": None,
+                "case_no": f"안내-용어-{term}",
+                "reference_articles": None,
+                "topic_tags": None,
+                "grade": None,
+                "source_date": None,
+                "unresolved_ownership": False,
+                "content": content,
+                "metadata": {
+                    "항목유형": "용어사전",
+                    "원본": "주택도시보증공사_전세사기피해예방안내.pdf",
+                },
+            }
+        )
     return chunks
 
 
@@ -195,35 +215,47 @@ def _load_appendix_table_chunks(pdf, page_indices: list[int]) -> list[dict]:
                 content = "\n".join(r for r in rows if r.strip())
                 if not content:
                     continue
-                chunks.append({
-                    "source_type": "HUG규정",
-                    "statute_name": None,
-                    "article_no": None,
-                    "case_no": f"안내-표-{idx}-{ti}",
-                    "reference_articles": None,
-                    "topic_tags": None,
-                    "grade": None,
-                    "source_date": None,
-                    "unresolved_ownership": False,
-                    "content": content,
-                    "metadata": {"항목유형": "부록표", "extraction_mode": "table", "페이지": idx},
-                })
+                chunks.append(
+                    {
+                        "source_type": "HUG규정",
+                        "statute_name": None,
+                        "article_no": None,
+                        "case_no": f"안내-표-{idx}-{ti}",
+                        "reference_articles": None,
+                        "topic_tags": None,
+                        "grade": None,
+                        "source_date": None,
+                        "unresolved_ownership": False,
+                        "content": content,
+                        "metadata": {
+                            "항목유형": "부록표",
+                            "extraction_mode": "table",
+                            "페이지": idx,
+                        },
+                    }
+                )
         else:
             text = (page.extract_text() or "").strip()
             if text:
-                chunks.append({
-                    "source_type": "HUG규정",
-                    "statute_name": None,
-                    "article_no": None,
-                    "case_no": f"안내-부록-{idx}",
-                    "reference_articles": None,
-                    "topic_tags": None,
-                    "grade": None,
-                    "source_date": None,
-                    "unresolved_ownership": False,
-                    "content": text,
-                    "metadata": {"항목유형": "부록", "extraction_mode": "text_fallback", "페이지": idx},
-                })
+                chunks.append(
+                    {
+                        "source_type": "HUG규정",
+                        "statute_name": None,
+                        "article_no": None,
+                        "case_no": f"안내-부록-{idx}",
+                        "reference_articles": None,
+                        "topic_tags": None,
+                        "grade": None,
+                        "source_date": None,
+                        "unresolved_ownership": False,
+                        "content": text,
+                        "metadata": {
+                            "항목유형": "부록",
+                            "extraction_mode": "text_fallback",
+                            "페이지": idx,
+                        },
+                    }
+                )
     return chunks
 
 
@@ -232,8 +264,16 @@ def load_guide_chunks() -> list[dict]:
     with pdfplumber.open(GUIDE_PDF) as pdf:
         sections = _classify_guide_pages(pdf)
 
-        qa_text = "\n".join(pdf.pages[i].extract_text() or "" for i, s in enumerate(sections) if s == "qa")
-        glossary_text = "\n".join(pdf.pages[i].extract_text() or "" for i, s in enumerate(sections) if s == "glossary")
+        qa_text = "\n".join(
+            pdf.pages[i].extract_text() or ""
+            for i, s in enumerate(sections)
+            if s == "qa"
+        )
+        glossary_text = "\n".join(
+            pdf.pages[i].extract_text() or ""
+            for i, s in enumerate(sections)
+            if s == "glossary"
+        )
         appendix_pages = [i for i, s in enumerate(sections) if s == "appendix_tables"]
 
         chunks = _load_qa_chunks(qa_text)
@@ -251,8 +291,12 @@ if __name__ == "__main__":
     case_book = [c for c in chunks if c["source_type"] == "HUG사례집"]
     guide = [c for c in chunks if c["source_type"] == "HUG규정"]
     print(f"HUG 청크 총 {len(chunks)}건")
-    print(f"  사례집: {len(case_book)}건 (unresolved_ownership={sum(1 for c in case_book if c['unresolved_ownership'])}건)")
+    print(
+        f"  사례집: {len(case_book)}건 (unresolved_ownership={sum(1 for c in case_book if c['unresolved_ownership'])}건)"
+    )
     qa = [c for c in guide if c["metadata"].get("항목유형") == "QA"]
     glossary = [c for c in guide if c["metadata"].get("항목유형") == "용어사전"]
     appendix = [c for c in guide if c["metadata"].get("항목유형") in ("부록표", "부록")]
-    print(f"  안내 Q&A: {len(qa)}건, 용어사전: {len(glossary)}건, 부록: {len(appendix)}건")
+    print(
+        f"  안내 Q&A: {len(qa)}건, 용어사전: {len(glossary)}건, 부록: {len(appendix)}건"
+    )

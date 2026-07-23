@@ -1,17 +1,18 @@
 """create users table
 
 Revision ID: e27267f0c06f
-Revises: 
+Revises:
 Create Date: 2026-07-08 20:24:35.560986
 
 """
+
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'e27267f0c06f'
+revision: str = "e27267f0c06f"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -20,18 +21,20 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     op.create_table(
-        'users',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('username', sa.String(length=50), nullable=False),
-        sa.Column('password_hash', sa.String(), nullable=False),
-        sa.Column('nickname', sa.String(length=50), nullable=False),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('username'),
-        sa.UniqueConstraint('nickname'),
+        "users",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("username", sa.String(length=50), nullable=False),
+        sa.Column("password_hash", sa.String(), nullable=False),
+        sa.Column("nickname", sa.String(length=50), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=True
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("username"),
+        sa.UniqueConstraint("nickname"),
     )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table('users')
+    op.drop_table("users")

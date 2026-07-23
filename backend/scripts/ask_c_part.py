@@ -1,8 +1,7 @@
-
 import asyncio
+import logging
 import sys
 import time
-import logging
 from pathlib import Path
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -22,7 +21,6 @@ logging.basicConfig(
 from app.graph.parts.c_part.builder import get_c_part_graph
 from app.rag.retrievers.c_part import CPartRetriever
 
-
 # ════════════════════════════════════════════════════════════════════════════════
 # 【헬퍼】검색 결과 변환
 # ════════════════════════════════════════════════════════════════════════════════
@@ -41,24 +39,28 @@ def convert_search_results(chunks: list) -> dict:
             else:
                 article_num = f"{article_num}조"
 
-            statutes.append({
-                "article_number": article_num,
-                "title": chunk.statute_title or "",
-                "content": chunk.content,
-                "similarity": chunk.similarity,
-            })
+            statutes.append(
+                {
+                    "article_number": article_num,
+                    "title": chunk.statute_title or "",
+                    "content": chunk.content,
+                    "similarity": chunk.similarity,
+                }
+            )
 
         elif chunk.source_type == "precedent":
-            precedents.append({
-                "case_number": chunk.case_number or "",
-                "case_name": chunk.case_name or "",
-                "case_date": str(chunk.case_date) if chunk.case_date else "",
-                "content": chunk.content,
-                "similarity": chunk.similarity,
-                "court_level": 0,
-                "case_year": "",
-                "ruling_type": "",
-            })
+            precedents.append(
+                {
+                    "case_number": chunk.case_number or "",
+                    "case_name": chunk.case_name or "",
+                    "case_date": str(chunk.case_date) if chunk.case_date else "",
+                    "content": chunk.content,
+                    "similarity": chunk.similarity,
+                    "court_level": 0,
+                    "case_year": "",
+                    "ruling_type": "",
+                }
+            )
 
     return {"statutes": statutes, "precedents": precedents}
 
@@ -66,6 +68,7 @@ def convert_search_results(chunks: list) -> dict:
 # ════════════════════════════════════════════════════════════════════════════════
 # 【출력】답변을 보기 좋게 콘솔에 표시
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 def print_divider(title: str = "", char: str = "═", width: int = 78):
     """구분선 출력"""
@@ -167,6 +170,7 @@ def print_answer(answer: dict, elapsed: float):
 # 【실행】질문 하나 처리
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 async def ask(graph, retriever, question: str):
 
     print_divider("❓ 질문", "━")
@@ -190,12 +194,14 @@ async def ask(graph, retriever, question: str):
 
     start = time.time()
 
-    result = await graph.ainvoke({
-        "question": question,
-        "search_results": search_results,
-        "chat_history": None,
-        "user_id": None,
-    })
+    result = await graph.ainvoke(
+        {
+            "question": question,
+            "search_results": search_results,
+            "chat_history": None,
+            "user_id": None,
+        }
+    )
 
     elapsed = time.time() - start
 
@@ -216,6 +222,7 @@ async def ask(graph, retriever, question: str):
 # ════════════════════════════════════════════════════════════════════════════════
 # 【대화형 모드】
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 async def chat_mode(graph, retriever):
 
@@ -244,6 +251,7 @@ async def chat_mode(graph, retriever):
 # 【메인】
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 async def main():
     print_divider("🏠 C파트 답변 생성 - 콘솔 확인")
 
@@ -257,7 +265,6 @@ async def main():
     # 【모드 판단】
     # ────────────────────────────────────────────────────────────────────
     args = sys.argv[1:]
-
 
     if args and args[0] == "--chat":
         await chat_mode(graph, retriever)

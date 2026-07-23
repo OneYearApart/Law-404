@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 DB 기반 멀티턴 대화 기억 테스트 스크립트.
 
 전제:
@@ -20,12 +20,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT_DIR = Path(__file__).resolve().parents[3]
 BACKEND_DIR = ROOT_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+import app.auth.orm  # noqa: E402,F401  # users 테이블 FK 해석을 위해 SQLAlchemy metadata에 등록합니다.
 from app.conversations.errors import ConversationNotFoundError  # noqa: E402
 from app.conversations.repository import (  # noqa: E402
     create_conversation,
@@ -36,7 +36,6 @@ from app.conversations.repository import (  # noqa: E402
     update_session_state,
 )
 from app.core.config import settings  # noqa: E402
-import app.auth.orm  # noqa: E402,F401  # users 테이블 FK 해석을 위해 SQLAlchemy metadata에 등록합니다.
 
 if not hasattr(settings, "openai_api_key") and hasattr(settings, "OPENAI_API_KEY"):
     object.__setattr__(settings, "openai_api_key", settings.OPENAI_API_KEY)
@@ -46,7 +45,6 @@ from app.graph.parts.b_part.memory import (  # noqa: E402
     build_persistable_session_state,
     seed_memory_from_persisted_data,
 )
-
 
 QUESTION_1 = "계약이 곧 끝나는데 집주인이 아무 말도 없습니다. 자동으로 연장되나요?"
 QUESTION_2 = "2026년 10월 10일입니다."
@@ -161,7 +159,9 @@ async def run_test(user_id: int) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="B파트 DB 기반 멀티턴 대화 기억 테스트")
+    parser = argparse.ArgumentParser(
+        description="B파트 DB 기반 멀티턴 대화 기억 테스트"
+    )
     parser.add_argument("--user-id", type=int, default=1)
     parser.add_argument(
         "--output",

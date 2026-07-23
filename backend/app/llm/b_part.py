@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -194,7 +193,11 @@ def format_retrieved_documents(
     law_documents = [
         document
         for document in retrieved_documents
-        if (document.get("source_type") or (document.get("metadata") or {}).get("document_type")) == "law"
+        if (
+            document.get("source_type")
+            or (document.get("metadata") or {}).get("document_type")
+        )
+        == "law"
     ]
     precedent_documents = []
     for document in retrieved_documents:
@@ -216,16 +219,24 @@ def format_retrieved_documents(
     for index, document in enumerate(display_documents, start=1):
         metadata = document.get("metadata") or {}
         title = document.get("title") or metadata.get("title") or "제목 없음"
-        category = document.get("category") or metadata.get("category") or "카테고리 없음"
-        source_type = document.get("source_type") or metadata.get("document_type") or "출처 없음"
-        chunk_type = document.get("chunk_type") or metadata.get("chunk_type") or "청크 유형 없음"
+        category = (
+            document.get("category") or metadata.get("category") or "카테고리 없음"
+        )
+        source_type = (
+            document.get("source_type") or metadata.get("document_type") or "출처 없음"
+        )
+        chunk_type = (
+            document.get("chunk_type") or metadata.get("chunk_type") or "청크 유형 없음"
+        )
         similarity = document.get("similarity")
         content = str(document.get("content", "")).strip()
 
         if len(content) > 1200:
             content = f"{content[:1200]}..."
 
-        similarity_text = f"{similarity:.4f}" if isinstance(similarity, float) else "N/A"
+        similarity_text = (
+            f"{similarity:.4f}" if isinstance(similarity, float) else "N/A"
+        )
         blocks.append(
             "\n".join(
                 [

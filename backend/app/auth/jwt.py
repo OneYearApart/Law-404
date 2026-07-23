@@ -16,6 +16,7 @@ JWT 토큰 발급/검증.
 만료 시간을 짧게(1일) 설정했다. 블랙리스트 방식은 추가 저장소와 매 요청
 조회 오버헤드가 필요해 현재 MVP 범위에서는 과함.
 """
+
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt

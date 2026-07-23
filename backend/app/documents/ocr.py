@@ -42,8 +42,7 @@ class OCRProvider(Protocol):
     language: str
     config: str
 
-    def recognize(self, image: Image.Image) -> OCRTextResult:
-        ...
+    def recognize(self, image: Image.Image) -> OCRTextResult: ...
 
 
 def inspect_tesseract_environment(
@@ -106,17 +105,19 @@ class TesseractOCRProvider:
 
     def ensure_available(self) -> TesseractEnvironment:
         required = tuple(
-            item.strip()
-            for item in self.language.split("+")
-            if item.strip()
+            item.strip() for item in self.language.split("+") if item.strip()
         )
         environment = inspect_tesseract_environment(required)
         if environment.executable is None:
             raise OCRUnavailableError(environment.error or "Tesseract가 없습니다.")
         if environment.missing_languages:
-            raise OCRLanguageMissingError(environment.error or "언어 데이터가 없습니다.")
+            raise OCRLanguageMissingError(
+                environment.error or "언어 데이터가 없습니다."
+            )
         if not environment.available:
-            raise OCRUnavailableError(environment.error or "Tesseract를 실행할 수 없습니다.")
+            raise OCRUnavailableError(
+                environment.error or "Tesseract를 실행할 수 없습니다."
+            )
         return environment
 
     @staticmethod
@@ -155,9 +156,7 @@ class TesseractOCRProvider:
             import pytesseract
             from pytesseract import Output
         except Exception as error:
-            raise OCRUnavailableError(
-                "pytesseract를 불러오지 못했습니다."
-            ) from error
+            raise OCRUnavailableError("pytesseract를 불러오지 못했습니다.") from error
 
         rgb_image = image.convert("RGB")
         started = perf_counter()
@@ -180,11 +179,7 @@ class TesseractOCRProvider:
 
         elapsed = perf_counter() - started
         text, confidences = self._lines_from_data(data)
-        confidence = (
-            sum(confidences) / len(confidences)
-            if confidences
-            else None
-        )
+        confidence = sum(confidences) / len(confidences) if confidences else None
         warnings: list[str] = []
         if not text:
             warnings.append("OCR 결과 텍스트가 비어 있습니다.")
@@ -269,11 +264,7 @@ class AdaptiveTesseractOCRProvider:
         return (
             "전세계약서" in compact
             or "임대차계약서" in compact
-            or (
-                "임대차계약" in compact
-                and "보증금" in compact
-                and "특약" in compact
-            )
+            or ("임대차계약" in compact and "보증금" in compact and "특약" in compact)
         )
 
     @classmethod
@@ -341,7 +332,13 @@ class AdaptiveTesseractOCRProvider:
         )
 
     @staticmethod
-    def _party_name_candidate(tokens: list[dict[str, object]], *, anchor_right: int, center_y: float, image_width: int) -> str | None:
+    def _party_name_candidate(
+        tokens: list[dict[str, object]],
+        *,
+        anchor_right: int,
+        center_y: float,
+        image_width: int,
+    ) -> str | None:
         nearby: list[tuple[int, str]] = []
         max_right = anchor_right + int(image_width * 0.18)
         for token in tokens:
@@ -440,7 +437,13 @@ class AdaptiveTesseractOCRProvider:
                 gap = int(second["left"]) - (int(first["left"]) + int(first["width"]))
                 if abs(first_center - second_center) <= 18 and -8 <= gap <= 50:
                     right = int(second["left"]) + int(second["width"])
-                    anchors.append((min(int(first["top"]), int(second["top"])), right, (first_center + second_center) / 2))
+                    anchors.append(
+                        (
+                            min(int(first["top"]), int(second["top"])),
+                            right,
+                            (first_center + second_center) / 2,
+                        )
+                    )
                     break
 
         party_crop.close()
@@ -548,4 +551,3 @@ class AdaptiveTesseractOCRProvider:
             results,
             extra_warnings=extra_warnings,
         )
-

@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 RAG MVP 답변 생성 테스트 스크립트.
 
 FastAPI 서버를 띄우지 않고 graph.ainvoke()를 직접 호출해서
@@ -34,7 +34,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 if str(BACKEND_DIR) not in sys.path:
@@ -42,11 +41,14 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.graph.parts.b_part.graph import graph  # noqa: E402
 
+DEFAULT_QUESTION = (
+    "집주인이 수리를 계속 안 해줘서 계약을 중도해지하고 싶습니다. 가능한가요?"
+)
 
-DEFAULT_QUESTION = "집주인이 수리를 계속 안 해줘서 계약을 중도해지하고 싶습니다. 가능한가요?"
 
-
-def simplify_retrieved_documents(retrieved: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def simplify_retrieved_documents(
+    retrieved: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     검색 결과 전체를 그대로 출력하면 너무 길기 때문에,
     테스트에서 확인하기 좋은 핵심 필드만 남깁니다.
@@ -91,7 +93,11 @@ async def run_test(question: str, top_k: int) -> None:
 
     print("\n" + "=" * 80)
     print("[추가 확인 질문]")
-    print(json.dumps(final_state.get("missing_questions", []), ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            final_state.get("missing_questions", []), ensure_ascii=False, indent=2
+        )
+    )
 
     print("\n" + "=" * 80)
     print("[검색된 문서 요약]")

@@ -5,6 +5,7 @@ Refresh token 발급/검증/폐기 로직.
 - 매 refresh 요청마다 기존 토큰은 폐기하고 새 토큰을 발급한다 (rotation).
   탈취된 refresh token이 재사용(replay)되는 것을 막기 위함.
 """
+
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -34,12 +35,16 @@ def _delete_dead_tokens(db: Session, user_id: int) -> None:
 def issue_refresh_token(db: Session, user_id: int) -> str:
     _delete_dead_tokens(db, user_id)
     raw_token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
-    db.add(RefreshToken(
-        user_id=user_id,
-        token_hash=_hash_token(raw_token),
-        expires_at=expires_at,
-    ))
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        days=settings.refresh_token_expire_days
+    )
+    db.add(
+        RefreshToken(
+            user_id=user_id,
+            token_hash=_hash_token(raw_token),
+            expires_at=expires_at,
+        )
+    )
     db.commit()
     return raw_token
 

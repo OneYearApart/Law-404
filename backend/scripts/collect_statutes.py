@@ -41,9 +41,9 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+from urllib.request import Request, urlopen
 
 BASE_SEARCH_URL = "http://www.law.go.kr/DRF/lawSearch.do"
 BASE_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
@@ -59,8 +59,16 @@ RETRY_BACKOFF_SEC = 2.0
 EXCERPT_KEYWORDS = {
     "채무자 회생 및 파산에 관한 법률": ["상계", "부인", "환취"],
     "공인중개사법 시행령": [
-        "중개대상물", "확인ㆍ설명", "손해배상", "거래계약서", "계약금등",
-        "보증보험금", "보증의 변경", "교란행위", "중개보수", "중개계약",
+        "중개대상물",
+        "확인ㆍ설명",
+        "손해배상",
+        "거래계약서",
+        "계약금등",
+        "보증보험금",
+        "보증의 변경",
+        "교란행위",
+        "중개보수",
+        "중개계약",
     ],
     # 작업단위 39: 전세보증금 반환 관련 절차 조문만 발췌 (전문은 노이즈 과다)
     "민사소송법": ["지급명령", "독촉"],
@@ -76,9 +84,9 @@ TARGET_LAWS = [
     "주택임대차보호법 시행령",
     "전세사기피해자 지원 및 주거안정에 관한 특별법 시행령",
     "공인중개사법 시행령",
-    "민사소송법",          # 작업단위 39 (독촉절차 발췌)
-    "민사집행법",          # 작업단위 39 (강제경매·배당 발췌)
-    "소액사건심판법",      # 작업단위 39 (전문)
+    "민사소송법",  # 작업단위 39 (독촉절차 발췌)
+    "민사집행법",  # 작업단위 39 (강제경매·배당 발췌)
+    "소액사건심판법",  # 작업단위 39 (전문)
 ]
 
 
@@ -91,7 +99,10 @@ def fetch_xml(url: str) -> ET.Element:
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = Request(url, headers={"User-Agent": "Mozilla/5.0 (jeonse-statute-collector/1.0)"})
+            req = Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (jeonse-statute-collector/1.0)"},
+            )
             with urlopen(req, timeout=15) as resp:
                 raw = resp.read()
 
@@ -114,7 +125,9 @@ def fetch_xml(url: str) -> ET.Element:
                     f"URL: {url}"
                 )
             if result_code and result_code != "00":
-                raise RuntimeError(f"API 오류(resultCode={result_code}): {err_msg}\nURL: {url}")
+                raise RuntimeError(
+                    f"API 오류(resultCode={result_code}): {err_msg}\nURL: {url}"
+                )
 
             return root
         except (URLError, HTTPError) as e:
@@ -143,16 +156,20 @@ def search_law_mst(oc: str, law_name: str) -> dict:
                 "시행일자": law_el.findtext("시행일자"),
                 "소관부처명": law_el.findtext("소관부처명"),
             }
-    raise RuntimeError(f"'{law_name}' 정확히 일치하는 법령을 검색 결과에서 찾지 못함 (검색 URL: {url})")
+    raise RuntimeError(
+        f"'{law_name}' 정확히 일치하는 법령을 검색 결과에서 찾지 못함 (검색 URL: {url})"
+    )
 
 
 def parse_hang_ho(hang_el: ET.Element) -> dict:
     ho_list = []
     for ho_el in hang_el.findall("호"):
-        ho_list.append({
-            "호번호": (ho_el.findtext("호번호") or "").strip(),
-            "호내용": (ho_el.findtext("호내용") or "").strip(),
-        })
+        ho_list.append(
+            {
+                "호번호": (ho_el.findtext("호번호") or "").strip(),
+                "호내용": (ho_el.findtext("호내용") or "").strip(),
+            }
+        )
     return {
         "항번호": (hang_el.findtext("항번호") or "").strip(),
         "항내용": (hang_el.findtext("항내용") or "").strip(),
@@ -169,7 +186,9 @@ def get_law_articles(oc: str, mst: str) -> dict:
     basic = root.find("기본정보")
     meta = {
         "법령ID": basic.findtext("법령ID") if basic is not None else None,
-        "법령명": (basic.findtext("법령명_한글") or "").strip() if basic is not None else None,
+        "법령명": (basic.findtext("법령명_한글") or "").strip()
+        if basic is not None
+        else None,
         "공포일자": basic.findtext("공포일자") if basic is not None else None,
         "시행일자": basic.findtext("시행일자") if basic is not None else None,
         "소관부처": basic.findtext("소관부처") if basic is not None else None,
@@ -182,13 +201,15 @@ def get_law_articles(oc: str, mst: str) -> dict:
             if (jo_el.findtext("조문여부") or "").strip() != "조문":
                 continue  # 장/절 제목 등 비-조문 단위는 제외
             hang_list = [parse_hang_ho(h) for h in jo_el.findall("항")]
-            articles.append({
-                "조문번호": (jo_el.findtext("조문번호") or "").strip(),
-                "조문가지번호": (jo_el.findtext("조문가지번호") or "").strip(),
-                "조문제목": (jo_el.findtext("조문제목") or "").strip(),
-                "조문내용": (jo_el.findtext("조문내용") or "").strip(),
-                "항": hang_list,
-            })
+            articles.append(
+                {
+                    "조문번호": (jo_el.findtext("조문번호") or "").strip(),
+                    "조문가지번호": (jo_el.findtext("조문가지번호") or "").strip(),
+                    "조문제목": (jo_el.findtext("조문제목") or "").strip(),
+                    "조문내용": (jo_el.findtext("조문내용") or "").strip(),
+                    "항": hang_list,
+                }
+            )
 
     return {"meta": meta, "articles": articles}
 
@@ -217,7 +238,9 @@ def run_collection(oc: str, out_dir: Path, only: list[str] | None = None):
         print("  검색 중...")
         search_meta = search_law_mst(oc, law_name)
         mst = search_meta["법령일련번호"]
-        print(f"  -> MST={mst}, 공포일자={search_meta['공포일자']}, 시행일자={search_meta['시행일자']}")
+        print(
+            f"  -> MST={mst}, 공포일자={search_meta['공포일자']}, 시행일자={search_meta['시행일자']}"
+        )
         time.sleep(REQUEST_DELAY_SEC)
 
         print("  조문 전문 조회 중...")
@@ -229,8 +252,12 @@ def run_collection(oc: str, out_dir: Path, only: list[str] | None = None):
         keywords = EXCERPT_KEYWORDS.get(law_name)
 
         if is_excerpt:
-            articles = [a for a in all_articles if article_matches_keywords(a, keywords)]
-            print(f"  -> 전체 {len(all_articles)}개 조문 중 키워드({keywords}) 매칭 {len(articles)}개 발췌")
+            articles = [
+                a for a in all_articles if article_matches_keywords(a, keywords)
+            ]
+            print(
+                f"  -> 전체 {len(all_articles)}개 조문 중 키워드({keywords}) 매칭 {len(articles)}개 발췌"
+            )
         else:
             articles = all_articles
             print(f"  -> 전체 {len(articles)}개 조문 수집")
@@ -252,10 +279,15 @@ def run_collection(oc: str, out_dir: Path, only: list[str] | None = None):
             json.dump(record, f, ensure_ascii=False, indent=2)
         print(f"  저장 완료: {out_path}")
 
-        summary.append({
-            "법령명": record["법령명"], "시행일자": record["시행일자"],
-            "발췌여부": is_excerpt, "조문수": len(articles), "파일": out_path.name,
-        })
+        summary.append(
+            {
+                "법령명": record["법령명"],
+                "시행일자": record["시행일자"],
+                "발췌여부": is_excerpt,
+                "조문수": len(articles),
+                "파일": out_path.name,
+            }
+        )
 
     if not only:  # 부분(--only) 실행은 기존 index.json을 덮어쓰지 않는다
         summary_path = out_dir / "index.json"
@@ -282,13 +314,23 @@ def sanity_check(oc: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="D파트 근거법 조문 원문 수집 (작업단위 1)")
+    parser = argparse.ArgumentParser(
+        description="D파트 근거법 조문 원문 수집 (작업단위 1)"
+    )
     parser.add_argument("--oc", required=True, help="law.go.kr Open API 인증 ID")
-    parser.add_argument("--out", default="./statutes", help="출력 디렉토리 (기본: ./statutes)")
-    parser.add_argument("--check", action="store_true",
-                         help="본 수집 없이 단일 쿼리로 인증/연결 상태만 확인하고 종료")
-    parser.add_argument("--only", default=None,
-                         help="쉼표로 구분한 법령명만 수집(기존 JSON/index.json 유지). 예: --only 민사소송법,민사집행법")
+    parser.add_argument(
+        "--out", default="./statutes", help="출력 디렉토리 (기본: ./statutes)"
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="본 수집 없이 단일 쿼리로 인증/연결 상태만 확인하고 종료",
+    )
+    parser.add_argument(
+        "--only",
+        default=None,
+        help="쉼표로 구분한 법령명만 수집(기존 JSON/index.json 유지). 예: --only 민사소송법,민사집행법",
+    )
     args = parser.parse_args()
 
     if args.check:
