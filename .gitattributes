@@ -1,0 +1,6 @@
+# 텍스트 파일은 저장소·워킹트리 모두 LF로 정규화 (Windows CRLF churn 방지)
+* text=auto eol=lf
+
+# 바이너리는 정규화 대상에서 제외
+*.png binary
+*.dump binary
