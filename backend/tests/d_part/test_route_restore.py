@@ -8,6 +8,7 @@ D는 messages(평문)와 별개로, 완성 답변을 conversations.state의 turn
 
 get_current_user는 override, DB/그래프는 monkeypatch로 흉내(네트워크·DB 접근 없음).
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -32,6 +33,7 @@ async def _one_chunk():
 
 def _stub_route(monkeypatch, final_state: dict, saved_states: list, prior_state=None):
     """update_session_state에 넘어가는 저장 상태(dict)를 saved_states에 캡처한다."""
+
     async def _fake_load_glossary():
         return []
 
@@ -64,13 +66,17 @@ def _post():
 def test_turn_snapshot_is_appended_with_structured_fields(monkeypatch):
     """완성 답변 1턴이 turn_history에 구조 그대로(본문·판정·대응·성격) 쌓인다."""
     saved_states: list[dict] = []
-    _stub_route(monkeypatch, {
-        "victim_judgment": VictimJudgment.HIGH,
-        "needs_response_assembly": True,
-        "answer_kind": "judgment",
-        "appendix_text": "■ 지금 확인·실행하실 점",
-        "disclaimer_text": "본 안내는 일반적인 법률 정보이며",
-    }, saved_states=saved_states)
+    _stub_route(
+        monkeypatch,
+        {
+            "victim_judgment": VictimJudgment.HIGH,
+            "needs_response_assembly": True,
+            "answer_kind": "judgment",
+            "appendix_text": "■ 지금 확인·실행하실 점",
+            "disclaimer_text": "본 안내는 일반적인 법률 정보이며",
+        },
+        saved_states=saved_states,
+    )
 
     _post()
 
@@ -91,11 +97,24 @@ def test_snapshot_appends_to_prior_history(monkeypatch):
     saved_states: list[dict] = []
     prior = {
         "turn_history": [
-            {"user_input": "이전 질문", "text": "이전 답변", "citations": [],
-             "judgment": None, "appendix": "", "disclaimer": "", "terms": [], "answer_kind": None}
+            {
+                "user_input": "이전 질문",
+                "text": "이전 답변",
+                "citations": [],
+                "judgment": None,
+                "appendix": "",
+                "disclaimer": "",
+                "terms": [],
+                "answer_kind": None,
+            }
         ]
     }
-    _stub_route(monkeypatch, {"answer_kind": "open_qa"}, saved_states=saved_states, prior_state=prior)
+    _stub_route(
+        monkeypatch,
+        {"answer_kind": "open_qa"},
+        saved_states=saved_states,
+        prior_state=prior,
+    )
 
     _post()
 
@@ -109,9 +128,16 @@ def test_get_d_conversation_returns_state_with_history(monkeypatch):
     """GET /chat/d/conversations/{id}는 복원용 상태(turn_history 포함)를 돌려준다."""
     stored = {
         "turn_history": [
-            {"user_input": "질문", "text": "본문", "citations": [{"label": "제3조"}],
-             "judgment": "있음", "appendix": "대응", "disclaimer": "면책",
-             "terms": [{"term": "대항력", "description": "설명"}], "answer_kind": "scenario"}
+            {
+                "user_input": "질문",
+                "text": "본문",
+                "citations": [{"label": "제3조"}],
+                "judgment": "있음",
+                "appendix": "대응",
+                "disclaimer": "면책",
+                "terms": [{"term": "대항력", "description": "설명"}],
+                "answer_kind": "scenario",
+            }
         ]
     }
 

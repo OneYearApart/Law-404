@@ -6,12 +6,8 @@ import json
 import os
 from typing import Any
 
-
-
 DEFAULT_DATABASE_URL = (
-    os.getenv("LAW404_DATABASE_URL")
-    or os.getenv("DATABASE_URL")
-    or ""
+    os.getenv("LAW404_DATABASE_URL") or os.getenv("DATABASE_URL") or ""
 )
 
 

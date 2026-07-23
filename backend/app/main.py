@@ -2,17 +2,7 @@
 FastAPI 엔트리포인트.
 각자 자기 파트 router를 include_router()로 등록하는 한 줄만 추가하면 됩니다.
 """
-from app.api.a_part_errors import APartAPIError, APIErrorBody, APIErrorResponse
-from app.api.routes import (
-    a_part,
-    auth,
-    b_part,
-    calendar_connections,
-    c_part,
-    conversations,
-    d_part,
-)
-from app.conversations.errors import ConversationNotFoundError
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import (
     http_exception_handler,
@@ -22,13 +12,30 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.a_part_errors import APartAPIError, APIErrorBody, APIErrorResponse
+from app.api.routes import (
+    a_part,
+    auth,
+    b_part,
+    c_part,
+    calendar_connections,
+    conversations,
+    d_part,
+)
+from app.conversations.errors import ConversationNotFoundError
+
 app = FastAPI(title="주택임대차 법률 챗봇")
 
 
 @app.exception_handler(ConversationNotFoundError)
-async def conversation_not_found_handler(request: Request, exc: ConversationNotFoundError):
+async def conversation_not_found_handler(
+    request: Request, exc: ConversationNotFoundError
+):
     # 미존재/타인 소유를 구분하지 않고 동일하게 404 — 대화방 존재 여부 유출 방지(IDOR)
-    return JSONResponse(status_code=404, content={"detail": "대화방을 찾을 수 없습니다."})
+    return JSONResponse(
+        status_code=404, content={"detail": "대화방을 찾을 수 없습니다."}
+    )
+
 
 # TODO: 프론트엔드 포트 확정되면 실제 값으로 교체
 app.add_middleware(
@@ -89,11 +96,7 @@ async def handle_request_validation_error(
 @app.exception_handler(HTTPException)
 async def handle_http_exception(request: Request, error: HTTPException):
     if request.url.path.startswith("/chat/a"):
-        code = (
-            "AUTHENTICATION_REQUIRED"
-            if error.status_code == 401
-            else "HTTP_ERROR"
-        )
+        code = "AUTHENTICATION_REQUIRED" if error.status_code == 401 else "HTTP_ERROR"
         payload = APIErrorResponse(
             error=APIErrorBody(
                 code=code,

@@ -11,6 +11,7 @@ D파트 법령 조문 청킹 (작업단위 7).
 단, 전세사기피해자법 제3조는 요건 슬롯(victim_check.py)이 항 단위 참조를 전제하므로
 항 개수와 무관하게 강제 분리한다.
 """
+
 import json
 import re
 from datetime import date
@@ -37,26 +38,30 @@ def _parse_시행일자(raw: str | None) -> date | None:
     return date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
 
 
-def _hang_chunks(article_no: str, statute_name: str, 시행일자: date | None, hang_list: list[dict]) -> list[dict]:
+def _hang_chunks(
+    article_no: str, statute_name: str, 시행일자: date | None, hang_list: list[dict]
+) -> list[dict]:
     chunks = []
     for hang in hang_list:
         ho_texts = [ho["호내용"] for ho in hang.get("호", []) if ho.get("호내용")]
         content = hang["항내용"]
         if ho_texts:
             content += "\n" + "\n".join(ho_texts)
-        chunks.append({
-            "source_type": "법령원문",
-            "statute_name": statute_name,
-            "article_no": f"{article_no}-{hang['항번호']}",
-            "case_no": None,
-            "reference_articles": None,
-            "topic_tags": None,
-            "grade": None,
-            "source_date": 시행일자,
-            "unresolved_ownership": False,
-            "content": content,
-            "metadata": {"항목유형": "항"},
-        })
+        chunks.append(
+            {
+                "source_type": "법령원문",
+                "statute_name": statute_name,
+                "article_no": f"{article_no}-{hang['항번호']}",
+                "case_no": None,
+                "reference_articles": None,
+                "topic_tags": None,
+                "grade": None,
+                "source_date": 시행일자,
+                "unresolved_ownership": False,
+                "content": content,
+                "metadata": {"항목유형": "항"},
+            }
+        )
     return chunks
 
 
@@ -82,21 +87,29 @@ def _load_json_statute(path: Path) -> list[dict]:
         content = art["조문내용"]
         for hang in hang_list:
             content += "\n" + hang["항내용"]
-            content += "".join(f"\n{ho['호내용']}" for ho in hang.get("호", []) if ho.get("호내용"))
+            content += "".join(
+                f"\n{ho['호내용']}" for ho in hang.get("호", []) if ho.get("호내용")
+            )
 
-        chunks.append({
-            "source_type": "법령원문",
-            "statute_name": statute_name,
-            "article_no": base_no,
-            "case_no": None,
-            "reference_articles": None,
-            "topic_tags": None,
-            "grade": None,
-            "source_date": 시행일자,
-            "unresolved_ownership": False,
-            "content": content,
-            "metadata": {"항목유형": "조", "조문제목": art.get("조문제목"), "발췌여부": record.get("발췌여부")},
-        })
+        chunks.append(
+            {
+                "source_type": "법령원문",
+                "statute_name": statute_name,
+                "article_no": base_no,
+                "case_no": None,
+                "reference_articles": None,
+                "topic_tags": None,
+                "grade": None,
+                "source_date": 시행일자,
+                "unresolved_ownership": False,
+                "content": content,
+                "metadata": {
+                    "항목유형": "조",
+                    "조문제목": art.get("조문제목"),
+                    "발췌여부": record.get("발췌여부"),
+                },
+            }
+        )
 
     return chunks
 
@@ -127,25 +140,29 @@ def _extract_jeonse_law_text() -> str:
     return text
 
 
-def _split_into_hang(article_no: str, statute_name: str, 시행일자: date, body: str) -> list[dict]:
+def _split_into_hang(
+    article_no: str, statute_name: str, 시행일자: date, body: str
+) -> list[dict]:
     parts = [p.strip() for p in _HANG_SPLIT_RE.split(body) if p.strip()]
     chunks = []
     for part in parts:
         m = re.match(f"^([{_CIRCLED}])", part)
         hang_no = m.group(1) if m else None
-        chunks.append({
-            "source_type": "법령원문",
-            "statute_name": statute_name,
-            "article_no": f"{article_no}-{hang_no}" if hang_no else article_no,
-            "case_no": None,
-            "reference_articles": None,
-            "topic_tags": None,
-            "grade": None,
-            "source_date": 시행일자,
-            "unresolved_ownership": False,
-            "content": part,
-            "metadata": {"항목유형": "항"},
-        })
+        chunks.append(
+            {
+                "source_type": "법령원문",
+                "statute_name": statute_name,
+                "article_no": f"{article_no}-{hang_no}" if hang_no else article_no,
+                "case_no": None,
+                "reference_articles": None,
+                "topic_tags": None,
+                "grade": None,
+                "source_date": 시행일자,
+                "unresolved_ownership": False,
+                "content": part,
+                "metadata": {"항목유형": "항"},
+            }
+        )
     return chunks
 
 
@@ -166,7 +183,7 @@ def load_jeonse_law_chunks() -> list[dict]:
             continue  # 목차 재등장 또는 부칙의 조번호 재사용은 무시 (첫 등장만 채택)
 
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        body = text[m.end():end].strip()
+        body = text[m.end() : end].strip()
         if not body:
             continue  # 목차 항목 (본문 없이 다음 조 제목으로 바로 이어짐)
 
@@ -178,19 +195,21 @@ def load_jeonse_law_chunks() -> list[dict]:
             chunks.extend(_split_into_hang(base_no, statute_name, 시행일자, body))
             continue
 
-        chunks.append({
-            "source_type": "법령원문",
-            "statute_name": statute_name,
-            "article_no": base_no,
-            "case_no": None,
-            "reference_articles": None,
-            "topic_tags": None,
-            "grade": None,
-            "source_date": 시행일자,
-            "unresolved_ownership": False,
-            "content": body,
-            "metadata": {"항목유형": "조", "조문제목": title},
-        })
+        chunks.append(
+            {
+                "source_type": "법령원문",
+                "statute_name": statute_name,
+                "article_no": base_no,
+                "case_no": None,
+                "reference_articles": None,
+                "topic_tags": None,
+                "grade": None,
+                "source_date": 시행일자,
+                "unresolved_ownership": False,
+                "content": body,
+                "metadata": {"항목유형": "조", "조문제목": title},
+            }
+        )
 
     return chunks
 

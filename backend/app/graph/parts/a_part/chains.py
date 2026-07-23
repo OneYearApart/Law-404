@@ -24,7 +24,6 @@ from app.consultation.a_part.state_updater import (
 from app.core.config import settings
 from app.graph.parts.a_part.schemas import APartRouteDecision, APartSearchPlan
 
-
 _ROUTE_SYSTEM_PROMPT = """
 너는 Law 404의 A파트인 주택 임대차 계약 진행·입주 초기 상담 라우터다.
 사용자 질문을 제공된 q01~q20 중 가장 직접적인 이슈 하나와 관련 이슈 최대 두 개로 분류한다.

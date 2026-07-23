@@ -2,11 +2,11 @@
 general_scenario 실행 노드 테스트 (DB/네트워크는 monkeypatch로 흉내).
 항목 분류는 supervisor가 이미 끝낸 것으로 가정하고, RAG 검색+응답 조립만 검증한다.
 """
+
 import pytest
 
 from app.graph.parts.d_part.nodes import general_scenario
-from app.graph.parts.d_part.schemas import SituationState
-from app.graph.parts.d_part.schemas import GENERAL_TOPIC_LABELS
+from app.graph.parts.d_part.schemas import GENERAL_TOPIC_LABELS, SituationState
 from app.rag.retrievers.base import Chunk
 
 
@@ -32,8 +32,12 @@ async def _fake_generate_response(context: str, answer_kind: str):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("topic_key", list(GENERAL_TOPIC_LABELS))
 async def test_each_topic_produces_response(monkeypatch, topic_key):
-    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
-    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+    monkeypatch.setattr(
+        general_scenario._retriever, "search_by_topic", _fake_search_by_topic
+    )
+    monkeypatch.setattr(
+        general_scenario.llm_d_part, "generate_response", _fake_generate_response
+    )
 
     state = {"user_input": "아무 발화", "situation": SituationState(topic=topic_key)}
 
@@ -43,19 +47,27 @@ async def test_each_topic_produces_response(monkeypatch, topic_key):
     chunks = [c async for c in result["response_stream"]]
     assert chunks == ["원문 ", "해설 ", "상황적용"]
     assert result.get("final_answer") is None
-    assert len(result["retrieved_chunks"]) == 3  # statute 1 + case_law 1 + cases 0 + guides 1
+    assert (
+        len(result["retrieved_chunks"]) == 3
+    )  # statute 1 + case_law 1 + cases 0 + guides 1
 
 
 @pytest.mark.asyncio
 async def test_matches_regardless_of_confirmed_stage(monkeypatch):
     """supervisor는 확정된 계약단계와 무관하게 13개 항목 전체를 대상으로 분류하므로,
     이 노드도 계약 단계를 아예 참조하지 않고 situation.topic만으로 동작해야 한다."""
-    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
-    monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _fake_generate_response)
+    monkeypatch.setattr(
+        general_scenario._retriever, "search_by_topic", _fake_search_by_topic
+    )
+    monkeypatch.setattr(
+        general_scenario.llm_d_part, "generate_response", _fake_generate_response
+    )
 
     # stage 필드 자체가 없어도(또는 다른 단계여도) 정상 동작해야 함
-    state = {"user_input": "다가구주택인데 선순위 보증금이 걱정돼요",
-             "situation": SituationState(topic="전-③다가구_선순위보증금")}
+    state = {
+        "user_input": "다가구주택인데 선순위 보증금이 걱정돼요",
+        "situation": SituationState(topic="전-③다가구_선순위보증금"),
+    }
 
     result = await general_scenario.handle_general_scenario(state)
 
@@ -83,14 +95,20 @@ async def test_context_carries_both_topic_and_user_question(monkeypatch):
     seen = {}
 
     async def _fake_search_by_topic(topic_key, query_text):
-        return {"statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")],
-                "case_law": [], "cases": [], "guides": []}
+        return {
+            "statute": [Chunk(id=1, source_type="법령원문", content="관련 조문")],
+            "case_law": [],
+            "cases": [],
+            "guides": [],
+        }
 
     async def _capture(context: str, answer_kind: str):
         seen["context"] = context
         yield "응답"
 
-    monkeypatch.setattr(general_scenario._retriever, "search_by_topic", _fake_search_by_topic)
+    monkeypatch.setattr(
+        general_scenario._retriever, "search_by_topic", _fake_search_by_topic
+    )
     monkeypatch.setattr(general_scenario.llm_d_part, "generate_response", _capture)
 
     state = {
@@ -100,5 +118,5 @@ async def test_context_carries_both_topic_and_user_question(monkeypatch):
     result = await general_scenario.handle_general_scenario(state)
     [c async for c in result["response_stream"]]
 
-    assert "등기부등본 위험 신호 해석" in seen["context"]                   # 항목
-    assert "근저당이 3개나 잡혀 있는데 계약해도 되나요" in seen["context"]   # 발화
+    assert "등기부등본 위험 신호 해석" in seen["context"]  # 항목
+    assert "근저당이 3개나 잡혀 있는데 계약해도 되나요" in seen["context"]  # 발화

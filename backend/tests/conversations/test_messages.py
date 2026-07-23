@@ -2,6 +2,7 @@
 create_conversation / save_message / list_conversations / load_conversation 실제 DB 테스트.
 docker의 law404_db를 그대로 사용 (mock 없음) — 테스트 종료 후 생성한 row는 정리한다.
 """
+
 import pytest
 import pytest_asyncio
 
@@ -20,7 +21,9 @@ from app.core.db import SessionLocal
 @pytest_asyncio.fixture
 async def user_id():
     db = SessionLocal()
-    user = User(username="test_messages_user", password_hash="x", nickname="test_messages_nick")
+    user = User(
+        username="test_messages_user", password_hash="x", nickname="test_messages_nick"
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -30,9 +33,15 @@ async def user_id():
     yield uid
 
     db = SessionLocal()
-    conv_ids = [c.id for c in db.query(Conversation).filter(Conversation.user_id == uid).all()]
-    db.query(Message).filter(Message.conversation_id.in_(conv_ids)).delete(synchronize_session=False)
-    db.query(Conversation).filter(Conversation.user_id == uid).delete(synchronize_session=False)
+    conv_ids = [
+        c.id for c in db.query(Conversation).filter(Conversation.user_id == uid).all()
+    ]
+    db.query(Message).filter(Message.conversation_id.in_(conv_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(Conversation).filter(Conversation.user_id == uid).delete(
+        synchronize_session=False
+    )
     db.query(User).filter(User.id == uid).delete()
     db.commit()
     db.close()
@@ -73,7 +82,9 @@ async def test_save_message_to_non_owned_conversation_raises(user_id):
     conversation = await create_conversation(user_id, "d")
 
     with pytest.raises(ConversationNotFoundError):
-        await save_message(user_id + 12345, "d", "user", "몰래 이어쓰기", conversation.id)
+        await save_message(
+            user_id + 12345, "d", "user", "몰래 이어쓰기", conversation.id
+        )
 
     assert await load_conversation(conversation.id, user_id) == []
 
@@ -114,8 +125,10 @@ async def test_list_conversations_titles_fall_back_to_first_question(user_id):
 
     by_id = {c.id: c for c in await list_conversations(user_id)}
 
-    assert by_id[asked.id].title == "보증금을 못 받고 있어요"   # assistant 발화가 아니라 첫 user 발화
-    assert by_id[untouched.id].title == "새 상담"               # 질문 전이라 폴백 문구
+    assert (
+        by_id[asked.id].title == "보증금을 못 받고 있어요"
+    )  # assistant 발화가 아니라 첫 user 발화
+    assert by_id[untouched.id].title == "새 상담"  # 질문 전이라 폴백 문구
 
 
 @pytest.mark.asyncio

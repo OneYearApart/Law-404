@@ -1,15 +1,19 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
+from app.auth.orm import (  # noqa: F401  # autogenerate에서 인식하려면 import 필요
+    RefreshToken,
+    User,
+)
+from app.calendar_connections.orm import UserCalendarConnection  # noqa: F401
+from app.conversations.orm import (  # noqa: F401  # 위와 동일한 이유
+    Conversation,
+    Message,
+)
 from app.core.config import settings
 from app.core.db import Base
-from app.auth.orm import RefreshToken, User  # noqa: F401  # autogenerate에서 인식하려면 import 필요
-from app.calendar_connections.orm import UserCalendarConnection  # noqa: F401
-from app.conversations.orm import Conversation, Message  # noqa: F401  # 위와 동일한 이유
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -67,9 +71,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

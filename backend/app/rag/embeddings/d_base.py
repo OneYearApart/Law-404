@@ -6,6 +6,7 @@ embeddings/base.py의 embed_batch()는 batch_size(개수)로만 배치를 나누
 한도를 넘을 수 있다(D파트 판례 청크처럼 긴 청크가 섞인 경우). 이 문제를 고친
 버전이지만 아직 팀과 논의되지 않아 공용 base.py는 건드리지 않고 D파트만 사용한다.
 """
+
 import asyncio
 
 import tiktoken
@@ -24,7 +25,9 @@ def _make_batches(texts: list[str], batch_size: int) -> list[list[str]]:
     current_tokens = 0
     for t in texts:
         t_tokens = len(_encoding.encode(t))
-        if current and (len(current) >= batch_size or current_tokens + t_tokens > MAX_BATCH_TOKENS):
+        if current and (
+            len(current) >= batch_size or current_tokens + t_tokens > MAX_BATCH_TOKENS
+        ):
             batches.append(current)
             current, current_tokens = [], 0
         current.append(t)
@@ -45,5 +48,5 @@ async def embed_batch(texts: list[str], batch_size: int = 100) -> list[list[floa
             except (RateLimitError, APIError):
                 if attempt == MAX_RETRIES - 1:
                     raise
-                await asyncio.sleep(2 ** attempt)
+                await asyncio.sleep(2**attempt)
     return embeddings

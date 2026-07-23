@@ -19,7 +19,6 @@ from app.graph.parts.a_part.chains import (
 )
 from app.graph.parts.a_part.schemas import APartGraphState, APartRouteDecision
 
-
 GRAPH_VERSION = "a-part-langgraph-v1"
 
 
@@ -94,9 +93,7 @@ def _ensure_conversation_node(service: Any):
 def _prepare_documents_node(service: Any):
     def node(state: APartGraphState) -> dict[str, Any]:
         request = state["request"]
-        conversation = service.conversation_service.get_state(
-            state["conversation_id"]
-        )
+        conversation = service.conversation_service.get_state(state["conversation_id"])
         document_types = {item.document_type for item in conversation.documents}
 
         if {
@@ -130,7 +127,11 @@ def _prepare_documents_node(service: Any):
 
 
 def _document_branch(state: APartGraphState) -> str:
-    return "analyze_documents" if state.get("should_analyze_documents") else "reuse_documents"
+    return (
+        "analyze_documents"
+        if state.get("should_analyze_documents")
+        else "reuse_documents"
+    )
 
 
 def _analyze_documents_node(service: Any):
@@ -156,9 +157,7 @@ def _analyze_documents_node(service: Any):
 def _reuse_documents_node(service: Any):
     def node(state: APartGraphState) -> dict[str, Any]:
         request = state["request"]
-        conversation = service.conversation_service.get_state(
-            state["conversation_id"]
-        )
+        conversation = service.conversation_service.get_state(state["conversation_id"])
         warnings = list(state.get("warnings") or [])
         response = None
 
@@ -188,9 +187,7 @@ def _plan_query_node(service: Any):
         request = state["request"]
         route_decision = state["route_decision"]
         document_analysis = state.get("document_analysis")
-        conversation = service.conversation_service.get_state(
-            state["conversation_id"]
-        )
+        conversation = service.conversation_service.get_state(state["conversation_id"])
         known_facts = confirmed_fact_sentences(conversation, max_items=10)
 
         document_context = service._document_rag_query(
@@ -246,9 +243,7 @@ def _consultation_node(service: Any):
             state.get("document_analysis"),
         )
         consultation = consultation.model_copy(
-            update={
-                "is_new_conversation": state.get("is_new_conversation", False)
-            }
+            update={"is_new_conversation": state.get("is_new_conversation", False)}
         )
         return {"consultation": consultation}
 
@@ -276,14 +271,10 @@ def _finalize_node(service: Any):
                 "graph_version": GRAPH_VERSION,
                 "framework": "langgraph",
                 "route_engine": state.get("route_engine", "unknown"),
-                "query_planner_engine": state.get(
-                    "query_planner_engine", "unknown"
-                ),
+                "query_planner_engine": state.get("query_planner_engine", "unknown"),
                 "document_mode": state.get("document_mode", "general"),
                 "primary_issue_id": state["route_decision"].primary_issue_id,
-                "related_issue_ids": list(
-                    state["route_decision"].related_issue_ids
-                ),
+                "related_issue_ids": list(state["route_decision"].related_issue_ids),
             },
         )
         return {"result": result}

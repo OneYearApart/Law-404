@@ -7,15 +7,16 @@
 import json
 import os
 import time
-from common import _get, LIST_URL, API_KEY
+
+from common import API_KEY, LIST_URL, _get
 
 ORG_대법원 = "400201"
 
 # 역산표 카테고리 3 — 질문별 검색 키워드
 QUESTION_KEYWORDS = {
-    "Q1_보증금못받음":         "보증금반환",
-    "Q2_임차권등기명령":       "임차권등기명령",
-    "Q3_경매배당":             "배당요구",
+    "Q1_보증금못받음": "보증금반환",
+    "Q2_임차권등기명령": "임차권등기명령",
+    "Q3_경매배당": "배당요구",
     "Q4_소액보증금최우선변제": "소액임차인",
 }
 
@@ -49,15 +50,19 @@ def main():
         for item in items:
             if item.get("사건종류명", "") != "민사":
                 continue  # 세무/형사/일반행정 등 관련 없는 사건 제외
-            candidates.append({
-                "판례일련번호": item.get("판례일련번호", ""),
-                "사건명":       item.get("사건명", ""),
-                "사건번호":     item.get("사건번호", ""),
-                "선고일자":     item.get("선고일자", ""),
-                "법원명":       item.get("법원명", ""),
-                "사건종류명":   item.get("사건종류명", ""),
-            })
-            print(f"   - {item.get('사건명','')[:40]} / {item.get('사건번호','')} / {item.get('선고일자','')}")
+            candidates.append(
+                {
+                    "판례일련번호": item.get("판례일련번호", ""),
+                    "사건명": item.get("사건명", ""),
+                    "사건번호": item.get("사건번호", ""),
+                    "선고일자": item.get("선고일자", ""),
+                    "법원명": item.get("법원명", ""),
+                    "사건종류명": item.get("사건종류명", ""),
+                }
+            )
+            print(
+                f"   - {item.get('사건명', '')[:40]} / {item.get('사건번호', '')} / {item.get('선고일자', '')}"
+            )
 
         all_candidates[qid] = candidates
         time.sleep(0.3)

@@ -13,9 +13,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_MODEL = os.getenv("B_PART_INTENT_MODEL", os.getenv("B_PART_LLM_MODEL", "gpt-4o"))
+DEFAULT_MODEL = os.getenv(
+    "B_PART_INTENT_MODEL", os.getenv("B_PART_LLM_MODEL", "gpt-4o")
+)
 
 B_PART_CATEGORIES = {
     "계약갱신",

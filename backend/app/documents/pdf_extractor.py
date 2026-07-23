@@ -40,15 +40,15 @@ class OpenedPDF:
 def _pymupdf():
     try:
         import pymupdf
+
         return pymupdf
     except ImportError:
         try:
             import fitz as pymupdf
+
             return pymupdf
         except ImportError as error:
-            raise PDFExtractionError(
-                "PyMuPDF를 불러오지 못했습니다."
-            ) from error
+            raise PDFExtractionError("PyMuPDF를 불러오지 못했습니다.") from error
 
 
 def open_pdf(path: Path, *, max_pages: int = 100) -> OpenedPDF:
@@ -87,7 +87,6 @@ def open_pdf(path: Path, *, max_pages: int = 100) -> OpenedPDF:
         raise
 
 
-
 def extract_pdf_page_text(page: Any) -> tuple[str, float]:
     """PyMuPDF 텍스트 레이어에서 페이지 문자열을 직접 추출한다."""
 
@@ -99,6 +98,7 @@ def extract_pdf_page_text(page: Any) -> tuple[str, float]:
             f"PDF {int(page.number) + 1}페이지의 텍스트 레이어를 읽지 못했습니다."
         ) from error
     return text.strip(), perf_counter() - started
+
 
 def render_pdf_page(
     page: Any,

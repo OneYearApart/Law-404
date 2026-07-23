@@ -64,7 +64,9 @@ def build_renewal_calendar_events(rule_result: dict[str, Any]) -> list[dict[str,
     return events
 
 
-def build_calendar_event_candidates(rule_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_calendar_event_candidates(
+    rule_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     Rule Engine 결과 목록을 캘린더 등록 후보 일정 목록으로 변환합니다.
 
@@ -80,7 +82,9 @@ def build_calendar_event_candidates(rule_results: list[dict[str, Any]]) -> list[
     return events
 
 
-def build_calendar_pending_action(calendar_events: list[dict[str, Any]]) -> dict[str, Any] | None:
+def build_calendar_pending_action(
+    calendar_events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     """
     캘린더 후보 일정이 있을 때 다음 턴에서 이어서 처리할 pending_action을 만듭니다.
 

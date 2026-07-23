@@ -2,6 +2,7 @@
 supervisor 노드 테스트 (DB 접근 없는 순수 로직).
 call_supervisor(LLM tool calling)는 monkeypatch로 흉내낸다.
 """
+
 import pytest
 
 from app.graph.parts.d_part.nodes import supervisor
@@ -28,11 +29,17 @@ async def _unreachable_call_supervisor(user_input: str) -> dict:
     "state",
     [
         {"awaiting_relief_confirmation": True},
-        {"victim_slots": VictimRequirementSlots(moved_in_and_fixed_date=SlotStatus.FILLED)},
+        {
+            "victim_slots": VictimRequirementSlots(
+                moved_in_and_fixed_date=SlotStatus.FILLED
+            )
+        },
     ],
 )
 async def test_in_progress_victim_check_skips_llm_call(monkeypatch, state):
-    monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor)
+    monkeypatch.setattr(
+        supervisor.llm_d_part, "call_supervisor", _unreachable_call_supervisor
+    )
     state = {**state, "user_input": "2억이에요"}
 
     await run_supervisor(state)
@@ -69,7 +76,7 @@ async def test_closed_victim_flow_is_reclassified(monkeypatch, closed_state):
 
     result = await run_supervisor(state)
 
-    assert interview_in_progress(result) is False       # 재분류 대상
+    assert interview_in_progress(result) is False  # 재분류 대상
     assert route(result["situation"]) == "open_qa"
 
 
@@ -94,7 +101,9 @@ async def test_special_case_situation_routes_to_special_cases(monkeypatch):
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
-    result = await run_supervisor({"user_input": "신탁 등기가 되어 있고 이미 피해자로 인정받았어요"})
+    result = await run_supervisor(
+        {"user_input": "신탁 등기가 되어 있고 이미 피해자로 인정받았어요"}
+    )
 
     assert route(result["situation"]) == "special_cases"
     assert result["situation"].special_case == "신탁사기"
@@ -103,11 +112,17 @@ async def test_special_case_situation_routes_to_special_cases(monkeypatch):
 @pytest.mark.asyncio
 async def test_general_topic_situation_routes_to_general_scenario(monkeypatch):
     async def _fake(user_input: str) -> dict:
-        return {"recognized": False, "risk_signals": [], "topic": "전-①등기부등본_위험신호"}
+        return {
+            "recognized": False,
+            "risk_signals": [],
+            "topic": "전-①등기부등본_위험신호",
+        }
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
-    result = await run_supervisor({"user_input": "등기부등본에 근저당이 많이 잡혀있어서 불안해요"})
+    result = await run_supervisor(
+        {"user_input": "등기부등본에 근저당이 많이 잡혀있어서 불안해요"}
+    )
 
     assert route(result["situation"]) == "general_scenario"
     assert result["situation"].topic == "전-①등기부등본_위험신호"
@@ -120,7 +135,9 @@ async def test_open_qa_category_routes_to_open_qa(monkeypatch):
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
-    result = await run_supervisor({"user_input": "보증금 반환청구 소송은 어떻게 진행하나요"})
+    result = await run_supervisor(
+        {"user_input": "보증금 반환청구 소송은 어떻게 진행하나요"}
+    )
 
     assert route(result["situation"]) == "open_qa"
 
@@ -140,7 +157,9 @@ async def test_situation_is_filled_per_axis(monkeypatch):
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
-    result = await run_supervisor({"user_input": "피해자로 인정받았고 다가구 선순위가 궁금해요"})
+    result = await run_supervisor(
+        {"user_input": "피해자로 인정받았고 다가구 선순위가 궁금해요"}
+    )
 
     situation = result["situation"]
     assert situation.recognized is True
@@ -158,7 +177,9 @@ async def test_absent_axes_become_none_not_empty_string(monkeypatch):
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
-    situation = (await run_supervisor({"user_input": "전세 계약 갱신은 어떻게 하나요"}))["situation"]
+    situation = (
+        await run_supervisor({"user_input": "전세 계약 갱신은 어떻게 하나요"})
+    )["situation"]
 
     assert situation.topic is None
     assert situation.special_case is None
@@ -169,10 +190,17 @@ async def test_absent_axes_become_none_not_empty_string(monkeypatch):
     "situation, expected",
     [
         # 위험신호 있음 + 미인지 → 요건 인터뷰
-        (SituationState(recognized=False, risk_signals=["보증금미반환"]), "victim_check"),
+        (
+            SituationState(recognized=False, risk_signals=["보증금미반환"]),
+            "victim_check",
+        ),
         # 위험신호 있음 + 인지 + 특수 4종 → 특수상황
         (
-            SituationState(recognized=True, risk_signals=["임대인사망파산"], special_case="임대인 사망/파산"),
+            SituationState(
+                recognized=True,
+                risk_signals=["임대인사망파산"],
+                special_case="임대인 사망/파산",
+            ),
             "special_cases",
         ),
         # 인지 + 특수 4종인데 위험신호가 안 잡힌 경우 → 여전히 특수상황.
@@ -183,12 +211,18 @@ async def test_absent_axes_become_none_not_empty_string(monkeypatch):
             "special_cases",
         ),
         # 위험신호 없음 + topic → 일반 시나리오
-        (SituationState(recognized=False, topic="전-①등기부등본_위험신호"), "general_scenario"),
+        (
+            SituationState(recognized=False, topic="전-①등기부등본_위험신호"),
+            "general_scenario",
+        ),
         # 아무 축도 안 걸림 → 자유질의
         (SituationState(recognized=False), "open_qa"),
         # 인지 + topic → 일반 시나리오 그대로. 인지 여부를 이유로 recognized_general(전체 검색)로
         # 보내면 항목별 topic_tag 정조준 검색을 버리게 된다 — 인지형 톤은 프롬프트가 담당한다.
-        (SituationState(recognized=True, topic="후-②이중계약_배당순위"), "general_scenario"),
+        (
+            SituationState(recognized=True, topic="후-②이중계약_배당순위"),
+            "general_scenario",
+        ),
     ],
 )
 def test_route_preserves_existing_paths(situation, expected):
@@ -202,13 +236,17 @@ def test_route_preserves_existing_paths(situation, expected):
         ("전-③다가구_선순위보증금", "다가구주택"),
         ("전-⑤신탁사기", "신탁사기"),
         ("전-⑥공인중개사_허위고지", "공인중개사 허위고지"),
-        ("전-①등기부등본_위험신호", None),   # 특수 4종과 겹치지 않는 주제는 그대로 둔다
+        ("전-①등기부등본_위험신호", None),  # 특수 4종과 겹치지 않는 주제는 그대로 둔다
     ],
 )
-def test_recognized_user_topic_infers_overlapping_special_case(topic, expected_special_case):
+def test_recognized_user_topic_infers_overlapping_special_case(
+    topic, expected_special_case
+):
     """전-③/⑤/⑥은 특수 4종과 같은 상황의 '인정 전' 판본이라, 인정받은 사용자면 특수상황이다.
     모델이 이 겹침에서 special_case를 채울지 말지 일관되지 않아 규칙으로 정한다(실호출로 확인)."""
-    result = situation_from_supervisor_result({"recognized": True, "risk_signals": [], "topic": topic})
+    result = situation_from_supervisor_result(
+        {"recognized": True, "risk_signals": [], "topic": topic}
+    )
 
     assert result.special_case == expected_special_case
 
@@ -229,10 +267,15 @@ def test_unrecognized_user_topic_does_not_infer_special_case():
         ("다가구주택", "전-③다가구_선순위보증금"),
         ("신탁사기", "전-⑤신탁사기"),
         ("공인중개사 허위고지", "전-⑥공인중개사_허위고지"),
-        ("임대인 사망/파산", None),   # 검색 태그가 topic 키가 아니라 대응되는 13개 항목이 없다
+        (
+            "임대인 사망/파산",
+            None,
+        ),  # 검색 태그가 topic 키가 아니라 대응되는 13개 항목이 없다
     ],
 )
-def test_unrecognized_user_special_case_infers_overlapping_topic(special_case, expected_topic):
+def test_unrecognized_user_special_case_infers_overlapping_topic(
+    special_case, expected_topic
+):
     """겹침 매핑은 양방향이어야 한다. route()는 special_case를 recognized 블록 안에서만 읽으므로,
     미인지형인데 모델이 topic 대신 special_case만 채우면 상황을 정확히 판별하고도 open_qa로
     떨어진다 — "이 집이 신탁사 소유라고 하던데요"에서 실측(골든셋 gen-005). 그러면 topic_tag
@@ -248,7 +291,12 @@ def test_unrecognized_user_special_case_infers_overlapping_topic(special_case, e
 def test_model_supplied_special_case_wins_over_inference():
     """모델이 이미 판단했으면 그 값을 존중한다 — 추론은 빈 자리를 메우는 용도다."""
     result = situation_from_supervisor_result(
-        {"recognized": True, "risk_signals": [], "topic": "전-③다가구_선순위보증금", "special_case": "신탁사기"}
+        {
+            "recognized": True,
+            "risk_signals": [],
+            "topic": "전-③다가구_선순위보증금",
+            "special_case": "신탁사기",
+        }
     )
 
     assert result.special_case == "신탁사기"
@@ -262,7 +310,7 @@ def test_out_of_vocabulary_axis_values_are_dropped():
             "recognized": False,
             "risk_signals": ["보증금미반환", "그런거_없음"],
             "topic": "존재하지_않는_주제",
-            "special_case": "전-①등기부등본_위험신호",   # topic 키가 여기로 새어들어온 실제 사례
+            "special_case": "전-①등기부등본_위험신호",  # topic 키가 여기로 새어들어온 실제 사례
         }
     )
 
@@ -295,7 +343,9 @@ async def test_recognized_general_routes_without_matched_category(monkeypatch):
 
     monkeypatch.setattr(supervisor.llm_d_part, "call_supervisor", _fake)
 
-    result = await run_supervisor({"user_input": "피해자로 인정받았는데 보증금을 아직 못 받았어요"})
+    result = await run_supervisor(
+        {"user_input": "피해자로 인정받았는데 보증금을 아직 못 받았어요"}
+    )
 
     assert route(result["situation"]) == "recognized_general"
     assert result["situation"].special_case is None

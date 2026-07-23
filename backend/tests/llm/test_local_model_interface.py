@@ -2,6 +2,7 @@
 app/local_model/models/common/interface.py::summarize 테스트.
 generate(Ollama 호출)는 monkeypatch로 흉내내고, 마크다운/따옴표 벗겨내는 후처리만 검증한다.
 """
+
 import pytest
 
 from app.local_model.models.common import interface

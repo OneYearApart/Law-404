@@ -2,6 +2,7 @@
 POST /signup, POST /login, POST /logout
 refresh_token은 바디가 아니라 httpOnly 쿠키로만 주고받는다 (XSS로 인한 탈취 방지).
 """
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,11 @@ from app.auth.models import (
     UserPublic,
 )
 from app.auth.orm import User
-from app.auth.refresh import issue_refresh_token, revoke_refresh_token, rotate_refresh_token
+from app.auth.refresh import (
+    issue_refresh_token,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
 from app.auth.signup import (
     NicknameAlreadyExistsError,
     UsernameAlreadyExistsError,
@@ -57,7 +62,9 @@ async def signup(req: SignupRequest, db: Session = Depends(get_db)):
 async def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = authenticate_user(db, req.username, req.password)
     if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다.")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."
+        )
     _set_refresh_cookie(response, issue_refresh_token(db, user.id))
     return TokenResponse(access_token=create_access_token(user.id))
 
@@ -76,7 +83,9 @@ async def refresh(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh token이 없습니다.")
     result = rotate_refresh_token(db, refresh_token)
     if result is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "유효하지 않거나 만료된 refresh token입니다.")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "유효하지 않거나 만료된 refresh token입니다."
+        )
     user_id, new_refresh_token = result
     _set_refresh_cookie(response, new_refresh_token)
     return TokenResponse(access_token=create_access_token(user_id))

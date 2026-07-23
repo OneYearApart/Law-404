@@ -46,7 +46,6 @@ from app.consultation.a_part.store import (
 )
 from app.documents.models import UploadedDocument
 
-
 RAGAnswerer = Callable[..., Any]
 
 
@@ -111,12 +110,14 @@ class APartConversationService:
     def _get_rag_answerer(self) -> RAGAnswerer:
         if self._rag_answerer is None:
             from app.llm.a_part import answer_with_rag_guarded
+
             self._rag_answerer = answer_with_rag_guarded
         return self._rag_answerer
 
     def _build_rag_context(self, known_facts: list[str]) -> Any:
         if self._uses_default_rag:
             from app.llm.a_part import ConsultationContext
+
             return ConsultationContext(known_facts=known_facts)
         return ConversationRAGContext(known_facts=known_facts)
 
@@ -181,8 +182,7 @@ class APartConversationService:
 
         if result.unparsed_text:
             warnings.append(
-                "일부 문장을 현재 슬롯에 연결하지 못했습니다: "
-                f"{result.unparsed_text}"
+                f"일부 문장을 현재 슬롯에 연결하지 못했습니다: {result.unparsed_text}"
             )
         return result.updates
 

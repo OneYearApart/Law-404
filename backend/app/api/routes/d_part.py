@@ -3,19 +3,27 @@ D파트 채팅 엔드포인트.
 StreamingResponse로 응답하며, 인증된 사용자만 이용 가능하고 대화 이력을 항상 저장합니다.
 d파트 담당자만 이 파일을 수정합니다.
 """
+
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.api.events import EventType, StreamEvent
 from app.auth.dependencies import get_current_user
-from app.api.events import StreamEvent, EventType
-from app.core.config import settings
-from app.conversations.repository import get_session_state, save_message, update_session_state
+from app.conversations.repository import (
+    get_session_state,
+    save_message,
+    update_session_state,
+)
 from app.conversations.summarizer import maybe_summarize_conversation
+from app.core.config import settings
 from app.graph.parts.d_part.graph import graph as d_graph
-from app.graph.parts.d_part.nodes._context import build_citation_cards, match_glossary_terms
+from app.graph.parts.d_part.nodes._context import (
+    build_citation_cards,
+    match_glossary_terms,
+)
 from app.graph.parts.d_part.schemas import DPartAnswerSnapshot, DPartSessionState
 from app.rag.retrievers.d_part import DPartRetriever
 
@@ -26,7 +34,9 @@ router = APIRouter(prefix="/chat/d", tags=["d_part"])
 # 용어사전 조회 전용 — 사전은 프로세스당 1회만 읽고 캐시된다(load_glossary 참고).
 _retriever = DPartRetriever()
 
-_ERROR_MESSAGE = "일시적인 오류로 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+_ERROR_MESSAGE = (
+    "일시적인 오류로 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+)
 
 
 class DPartChatRequest(BaseModel):
@@ -36,13 +46,19 @@ class DPartChatRequest(BaseModel):
 
 @router.post("/")
 async def chat_d(
-    request: DPartChatRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)
+    request: DPartChatRequest,
+    background_tasks: BackgroundTasks,
+    user=Depends(get_current_user),
 ):
     # 소유권 검증은 스트리밍 시작 전에. get_session_state가 타인/미존재 대화방이면
     # ConversationNotFoundError를 던지고, StreamingResponse가 만들어지기 전이므로 404가 정상 반환된다.
     conversation_id = request.conversation_id
     raw_state = await get_session_state(conversation_id, user.id)
-    session_state = DPartSessionState.model_validate(raw_state) if raw_state else DPartSessionState()
+    session_state = (
+        DPartSessionState.model_validate(raw_state)
+        if raw_state
+        else DPartSessionState()
+    )
 
     async def event_generator():
         yield f"data: {StreamEvent(type=EventType.LOADING).model_dump_json()}\n\n"
@@ -55,7 +71,9 @@ async def chat_d(
                 if name != "turn_history"
             } | request.model_dump()
 
-            await save_message(user.id, "d", "user", request.user_input, conversation_id)
+            await save_message(
+                user.id, "d", "user", request.user_input, conversation_id
+            )
 
             # 판단 단계(전/중/후, 위험신호 감지 등)는 내부적으로 동기 실행
             final_state = await d_graph.ainvoke(graph_input)
@@ -71,7 +89,9 @@ async def chat_d(
             # 그대로 내보내면 판정 이후 모든 턴에 재부착된다. needs_response_assembly가
             # "이번 턴에 새로 확정했는지" 플래그(support_appendix/response_assembly와 동일 게이트).
             # 지원대상 제외 경로는 victim_judgment가 None이라 자연히 빠진다.
-            if final_state.get("needs_response_assembly") and final_state.get("victim_judgment"):
+            if final_state.get("needs_response_assembly") and final_state.get(
+                "victim_judgment"
+            ):
                 meta["judgment"] = final_state["victim_judgment"].value
 
             # 답변 성격을 함께 알린다. 경로마다 같은 두 단계(해설/상황적용)를 쓰지만 내용이
@@ -111,7 +131,8 @@ async def chat_d(
             # 풀이가 더 필요하다. 등장하지 않은 용어는 match_glossary_terms가 알아서 걸러낸다.
             body_text = "".join(chunks)
             terms = match_glossary_terms(
-                f"{body_text}\n{tail.get('appendix', '')}", await _retriever.load_glossary()
+                f"{body_text}\n{tail.get('appendix', '')}",
+                await _retriever.load_glossary(),
             )
             if terms:
                 tail["terms"] = terms
@@ -124,7 +145,9 @@ async def chat_d(
             # terms는 예외로 저장하지 않는다 — 본문에서 파생된 읽기 보조 정보이지 저자가 쓴
             # 내용이 아니고, 저장된 본문만 있으면 언제든 같은 결과로 재도출된다.
             final_answer = final_state.get("final_answer") or "\n\n".join(
-                part for part in [body_text, tail.get("appendix"), tail.get("disclaimer")] if part
+                part
+                for part in [body_text, tail.get("appendix"), tail.get("disclaimer")]
+                if part
             )
 
             # 사이드바 재열람용 완성 답변 스냅샷 — 스트림으로 내보낸 것과 같은 조각을 그대로 보존해
@@ -151,36 +174,55 @@ async def chat_d(
                 }
             )
             updated_session.turn_history = [*session_state.turn_history, snapshot]
-            await update_session_state(conversation_id, user.id, updated_session.model_dump(mode="json"))
+            await update_session_state(
+                conversation_id, user.id, updated_session.model_dump(mode="json")
+            )
 
             await save_message(user.id, "d", "assistant", final_answer, conversation_id)
             background_tasks.add_task(
-                maybe_summarize_conversation, conversation_id, user.id, settings.summary_trigger_turns
+                maybe_summarize_conversation,
+                conversation_id,
+                user.id,
+                settings.summary_trigger_turns,
             )
 
             yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
         except Exception:
-            logger.exception("d_part chat 처리 실패 (conversation_id=%s, user_id=%s)", conversation_id, user.id)
+            logger.exception(
+                "d_part chat 처리 실패 (conversation_id=%s, user_id=%s)",
+                conversation_id,
+                user.id,
+            )
             # 사용자 발화만 남고 응답이 없는 반쪽 레코드를 막기 위해 assistant 에러 안내를 저장한다.
             # (이 저장마저 실패하면 로그만 남기고 error 이벤트는 그대로 내보낸다)
             try:
-                await save_message(user.id, "d", "assistant", _ERROR_MESSAGE, conversation_id)
+                await save_message(
+                    user.id, "d", "assistant", _ERROR_MESSAGE, conversation_id
+                )
                 # 복원(turn_history)에서도 이 턴이 빠지지 않도록 에러 스냅샷을 남긴다.
                 # 대부분의 예외는 상태 저장 전에 나므로 session_state(직전 이력)에 이어붙인다.
-                error_session = session_state.model_copy(update={
-                    "turn_history": [
-                        *session_state.turn_history,
-                        DPartAnswerSnapshot(user_input=request.user_input, text=_ERROR_MESSAGE),
-                    ]
-                })
+                error_session = session_state.model_copy(
+                    update={
+                        "turn_history": [
+                            *session_state.turn_history,
+                            DPartAnswerSnapshot(
+                                user_input=request.user_input, text=_ERROR_MESSAGE
+                            ),
+                        ]
+                    }
+                )
                 await update_session_state(
                     conversation_id, user.id, error_session.model_dump(mode="json")
                 )
             except Exception:
-                logger.exception("에러 placeholder 저장 실패 (conversation_id=%s)", conversation_id)
+                logger.exception(
+                    "에러 placeholder 저장 실패 (conversation_id=%s)", conversation_id
+                )
             yield f"data: {StreamEvent(type=EventType.ERROR, data=_ERROR_MESSAGE).model_dump_json()}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream", background=background_tasks)
+    return StreamingResponse(
+        event_generator(), media_type="text/event-stream", background=background_tasks
+    )
 
 
 @router.get("/conversations/{conversation_id}")
@@ -188,5 +230,9 @@ async def get_d_conversation(conversation_id: int, user=Depends(get_current_user
     """사이드바에서 저장된 D 대화를 다시 열 때, 복원용 세션 상태(turn_history 포함)를 돌려준다.
     get_session_state가 소유권을 검증한다 — 타인/미존재 대화방이면 ConversationNotFoundError → 404."""
     raw_state = await get_session_state(conversation_id, user.id)
-    session_state = DPartSessionState.model_validate(raw_state) if raw_state else DPartSessionState()
+    session_state = (
+        DPartSessionState.model_validate(raw_state)
+        if raw_state
+        else DPartSessionState()
+    )
     return session_state.model_dump(mode="json")

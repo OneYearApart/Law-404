@@ -15,9 +15,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_MODEL = os.getenv("B_PART_PLANNER_MODEL", os.getenv("B_PART_LLM_MODEL", "gpt-4o"))
+DEFAULT_MODEL = os.getenv(
+    "B_PART_PLANNER_MODEL", os.getenv("B_PART_LLM_MODEL", "gpt-4o")
+)
 
 B_PART_CATEGORIES = {
     "계약갱신",
@@ -32,7 +33,13 @@ B_PART_CATEGORIES = {
 }
 
 SCOPES = {"in_scope", "out_of_scope", "ambiguous"}
-ANSWER_MODES = {"final_answer", "ask_missing_info", "out_of_scope", "ambiguous", "action_confirmation"}
+ANSWER_MODES = {
+    "final_answer",
+    "ask_missing_info",
+    "out_of_scope",
+    "ambiguous",
+    "action_confirmation",
+}
 TOOLS = {"rule_engine", "retriever", "calendar_candidate", "scope_checker"}
 INTENTS = {
     "renewal",
@@ -253,11 +260,19 @@ rule_engine, retriever, calendar_candidate, scope_checker
         "raw_text": raw_text,
         "scope": _normalize_string(parsed.get("scope"), SCOPES, "ambiguous"),
         "intent": _normalize_string(parsed.get("intent"), INTENTS, "ambiguous"),
-        "categories": _normalize_string_list(parsed.get("categories"), B_PART_CATEGORIES),
+        "categories": _normalize_string_list(
+            parsed.get("categories"), B_PART_CATEGORIES
+        ),
         "known_facts": _normalize_dict(parsed.get("known_facts")),
-        "missing_required_facts": _normalize_string_list(parsed.get("missing_required_facts")),
-        "missing_optional_facts": _normalize_string_list(parsed.get("missing_optional_facts")),
+        "missing_required_facts": _normalize_string_list(
+            parsed.get("missing_required_facts")
+        ),
+        "missing_optional_facts": _normalize_string_list(
+            parsed.get("missing_optional_facts")
+        ),
         "tools_to_use": _normalize_string_list(parsed.get("tools_to_use"), TOOLS),
-        "answer_mode": _normalize_string(parsed.get("answer_mode"), ANSWER_MODES, "final_answer"),
+        "answer_mode": _normalize_string(
+            parsed.get("answer_mode"), ANSWER_MODES, "final_answer"
+        ),
         "reason": str(parsed.get("reason") or "").strip(),
     }

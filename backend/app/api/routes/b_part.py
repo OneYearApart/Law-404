@@ -3,12 +3,13 @@ B파트 채팅 엔드포인트.
 StreamingResponse로 응답하며, 인증된 사용자만 이용 가능하고 대화 이력을 항상 저장합니다.
 b파트 담당자만 이 파일을 수정합니다.
 """
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.events import EventType, StreamEvent
 from app.auth.dependencies import get_current_user
-from app.api.events import StreamEvent, EventType
 from app.calendar_connections.models import DEFAULT_CALENDAR_PROVIDER
 from app.calendar_connections.repository import get_calendar_connection
 from app.conversations.repository import (
@@ -17,12 +18,12 @@ from app.conversations.repository import (
     save_message,
     update_session_state,
 )
+from app.core.db import get_db
 from app.graph.parts.b_part.graph import graph as b_graph
 from app.graph.parts.b_part.memory import (
     build_persistable_session_state,
     seed_memory_from_persisted_data,
 )
-from app.core.db import get_db
 
 router = APIRouter(prefix="/chat/b", tags=["b_part"])
 
@@ -49,13 +50,13 @@ def _is_live_smithery_calendar_request(request: dict) -> bool:
         return False
 
     mode = str(request.get("calendar_mode", "dry_run")).strip().lower()
-    provider = str(
-        request.get("calendar_provider", DEFAULT_CALENDAR_PROVIDER)
-    ).strip().lower()
-    return (
-        mode == "live"
-        and provider in {"smithery_googlecalendar", "smithery_google_calendar"}
+    provider = (
+        str(request.get("calendar_provider", DEFAULT_CALENDAR_PROVIDER)).strip().lower()
     )
+    return mode == "live" and provider in {
+        "smithery_googlecalendar",
+        "smithery_google_calendar",
+    }
 
 
 @router.post("/")
@@ -68,9 +69,11 @@ async def chat_b(
     graph_request = dict(request)
 
     if _is_live_smithery_calendar_request(graph_request):
-        provider = str(
-            graph_request.get("calendar_provider", DEFAULT_CALENDAR_PROVIDER)
-        ).strip().lower()
+        provider = (
+            str(graph_request.get("calendar_provider", DEFAULT_CALENDAR_PROVIDER))
+            .strip()
+            .lower()
+        )
         connection = get_calendar_connection(
             db,
             user_id=user.id,

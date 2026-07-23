@@ -1,0 +1,10 @@
+# ruff 설정: 포맷 및 import 정렬 통일 (코드 스타일 일관성)
+target-version = "py312"
+line-length = 88
+
+[lint]
+# import 정렬(I)만 활성화 — 자동 코드 변경 최소화
+select = ["I"]
+
+[format]
+quote-style = "double"

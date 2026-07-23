@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 평가 결과 JSON을 비교해 발표용 Markdown 리포트를 생성합니다.
 
 사용 예시:
@@ -12,7 +12,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
 
 EVALUATION_DIR = Path(__file__).resolve().parent
 DEFAULT_BEFORE_PATH = EVALUATION_DIR / "answer_quality_eval_before_response_refine.json"
@@ -63,7 +62,9 @@ def format_delta(before: Any, after: Any) -> str:
     return f"{sign}{delta:.4f}"
 
 
-def build_metric_table(before_summary: dict[str, Any], after_summary: dict[str, Any]) -> str:
+def build_metric_table(
+    before_summary: dict[str, Any], after_summary: dict[str, Any]
+) -> str:
     lines = [
         "| 지표 | 개선 전 | 개선 후 | 변화 |",
         "|---|---:|---:|---:|",
@@ -102,7 +103,9 @@ def get_metric(item: dict[str, Any] | None, key: str) -> Any:
     return metrics.get(key)
 
 
-def build_case_table(before_report: dict[str, Any], after_report: dict[str, Any]) -> str:
+def build_case_table(
+    before_report: dict[str, Any], after_report: dict[str, Any]
+) -> str:
     before_items = index_items(before_report)
     after_items = index_items(after_report)
     all_ids = sorted(set(before_items) | set(after_items))

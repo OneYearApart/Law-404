@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
 from app.api.a_part_errors import (
     APartAPIError,
     ConversationAccessDeniedError,
@@ -31,16 +35,13 @@ from app.consultation.a_part.models import (
     create_conversation_state,
 )
 from app.consultation.a_part.service import APartConversationService
-from app.consultation.a_part.state_updater import ExtractedSlotUpdate
 from app.consultation.a_part.state_policy import owner_proxy_progress_display
+from app.consultation.a_part.state_updater import ExtractedSlotUpdate
 from app.consultation.a_part.store import SharedConversationStore
 from app.conversations.summarizer import maybe_summarize_conversation
 from app.core.config import settings
 from app.documents.db_storage import DocumentDatabaseRepository
 from app.documents.models import DocumentType
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
-from pydantic import BaseModel, Field
-from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/chat/a", tags=["a_part"])
 
@@ -152,8 +153,6 @@ def _serialize_value(value: Any) -> Any:
     return value
 
 
-
-
 def _progress_value(value: Any, status: Any) -> str:
     status_value = str(getattr(status, "value", status) or "")
     if status_value == "not_applicable":
@@ -172,10 +171,7 @@ def _progress_value(value: Any, status: Any) -> str:
 def _is_answered_but_unresolved(slot: Any) -> bool:
     if slot.status == SlotStatus.CONFIRMED and slot.value is False:
         return True
-    return (
-        slot.status == SlotStatus.UNCERTAIN
-        and slot.source == FactSource.USER
-    )
+    return slot.status == SlotStatus.UNCERTAIN and slot.source == FactSource.USER
 
 
 def _snapshot_question(snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -230,18 +226,22 @@ def _build_answer_history(
         if not user_answer:
             continue
 
-        history.append({
-            "order": len(history) + 1,
-            "issue_id": issue_id,
-            "slot_key": slot_key,
-            "question_key": question.get("question_key"),
-            "label": question.get("label") or slot_key,
-            "question": question.get("question") or question.get("label") or slot_key,
-            "answer_text": user_answer,
-            "status": str(getattr(status, "value", status) or ""),
-            "value": value,
-            "display_value": _progress_value(value, status),
-        })
+        history.append(
+            {
+                "order": len(history) + 1,
+                "issue_id": issue_id,
+                "slot_key": slot_key,
+                "question_key": question.get("question_key"),
+                "label": question.get("label") or slot_key,
+                "question": question.get("question")
+                or question.get("label")
+                or slot_key,
+                "answer_text": user_answer,
+                "status": str(getattr(status, "value", status) or ""),
+                "value": value,
+                "display_value": _progress_value(value, status),
+            }
+        )
 
     return history
 
@@ -277,23 +277,29 @@ def _build_consultation_progress(
                 issue_id == "q01_owner_proxy"
                 and slot.status == SlotStatus.NOT_APPLICABLE
             ):
-                unresolved_items.append({
-                    **item,
-                    "value": None,
-                    "display_value": "확인하지 못함",
-                })
+                unresolved_items.append(
+                    {
+                        **item,
+                        "value": None,
+                        "display_value": "확인하지 못함",
+                    }
+                )
             elif _is_answered_but_unresolved(slot):
-                unresolved_items.append({
-                    **item,
-                    "value": slot.value,
-                    "display_value": display_value,
-                })
+                unresolved_items.append(
+                    {
+                        **item,
+                        "value": slot.value,
+                        "display_value": display_value,
+                    }
+                )
             elif slot.is_confirmed():
-                confirmed_items.append({
-                    **item,
-                    "value": slot.value,
-                    "display_value": display_value,
-                })
+                confirmed_items.append(
+                    {
+                        **item,
+                        "value": slot.value,
+                        "display_value": display_value,
+                    }
+                )
             else:
                 remaining_items.append(item)
 
@@ -370,9 +376,7 @@ def _build_turn_snapshot(
             _serialize_value(item) for item in consultation.follow_up_questions[:1]
         ],
         "risk_assessment": _serialize_value(consultation.risk_assessment),
-        "warnings": _public_warnings(
-            [*result.warnings, *consultation.warnings]
-        ),
+        "warnings": _public_warnings([*result.warnings, *consultation.warnings]),
         "processing_status": _serialize_value(result.processing_status),
         "answer_ready": result.answer_ready,
         "turn_count": consultation.state.turn_count,
@@ -552,11 +556,13 @@ async def handle_a_part_turn(
             if result.consultation.follow_up_questions
             else None
         )
-        result = result.model_copy(update={
-            "consultation_progress": progress,
-            "next_question": next_question,
-            "is_complete": next_question is None,
-        })
+        result = result.model_copy(
+            update={
+                "consultation_progress": progress,
+                "next_question": next_question,
+                "is_complete": next_question is None,
+            }
+        )
 
         turn_count = result.consultation.state.turn_count
         summary_interval = max(1, int(settings.summary_trigger_turns or 4))
@@ -564,12 +570,8 @@ async def handle_a_part_turn(
             summary_conversation_id = int(result.conversation_id)
         except (TypeError, ValueError):
             summary_conversation_id = None
-        if (
-            summary_conversation_id is not None
-            and (
-                result.is_new_conversation
-                or turn_count % summary_interval == 0
-            )
+        if summary_conversation_id is not None and (
+            result.is_new_conversation or turn_count % summary_interval == 0
         ):
             background_tasks.add_task(
                 maybe_summarize_conversation,

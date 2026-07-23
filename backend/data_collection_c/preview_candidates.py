@@ -3,7 +3,7 @@
 판시사항만 미리 확인합니다. (전체 본문은 아직 저장 안 함)
 """
 
-from common import _get, DETAIL_URL, API_KEY
+from common import API_KEY, DETAIL_URL, _get
 
 # 관련성 확인이 필요한 판례일련번호를 여기에 넣으세요
 CHECK_IDS = [
@@ -19,7 +19,7 @@ def preview(prec_id):
     try:
         prec = resp.json().get("PrecService", {})
         return {
-            "사건명":   prec.get("사건명", ""),
+            "사건명": prec.get("사건명", ""),
             "판시사항": prec.get("판시사항", "")[:400],  # 앞부분만
         }
     except Exception:
@@ -29,7 +29,7 @@ def preview(prec_id):
 def main():
     for pid in CHECK_IDS:
         info = preview(pid)
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"판례일련번호: {pid}")
         if info:
             print(f"사건명: {info['사건명']}")

@@ -4,6 +4,7 @@ DPartSessionState는 conversations.state(JSONB)에 그대로 들어갔다 나온
 (저장: model_dump(mode="json") / 로드: model_validate). 중첩 모델이나 enum이
 그 왕복에서 깨지면 다음 턴의 상태가 조용히 비어버리므로 여기서 고정한다.
 """
+
 from app.graph.parts.d_part.schemas import (
     DPartSessionState,
     SituationState,
@@ -37,9 +38,9 @@ def test_situation_survives_json_roundtrip():
 
 def test_json_dump_is_primitives_only():
     """JSONB에 들어갈 dict라 enum 객체가 아니라 문자열이어야 한다."""
-    dumped = DPartSessionState(
-        situation=SituationState(recognized=False)
-    ).model_dump(mode="json")
+    dumped = DPartSessionState(situation=SituationState(recognized=False)).model_dump(
+        mode="json"
+    )
 
     assert dumped["situation"] == {
         "recognized": False,
@@ -54,9 +55,9 @@ def test_legacy_session_state_still_loads():
     반대로 이제 없어진 키(stage/active_query/special_case_matched)가 남아 있는 행도 있다.
     스키마에서 필드를 뺄 때 그 행들이 로드에 실패하면 진행 중인 대화가 통째로 깨진다."""
     legacy_raw = {
-        "stage": "중",                       # D1로 제거된 축
-        "active_query": "예전 질문",           # 게이트가 사라져 제거된 값
-        "special_case_matched": "신탁사기",    # situation으로 흡수돼 제거된 스칼라
+        "stage": "중",  # D1로 제거된 축
+        "active_query": "예전 질문",  # 게이트가 사라져 제거된 값
+        "special_case_matched": "신탁사기",  # situation으로 흡수돼 제거된 스칼라
         "persona": "임차인",
         "victim_check_attempts": 2,
     }

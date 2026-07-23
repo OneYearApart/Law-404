@@ -6,6 +6,7 @@ D파트 판례 청킹 (작업단위 6).
 - Grade A(판시사항/판결요지 존재)와 Grade B(전문만 존재)를 구분해 청크 content를 채우되,
   1건 = 1청크로 유지 (작업단위6 완료기준: 233건 -> 233청크)
 """
+
 import csv
 import json
 import re
@@ -75,7 +76,7 @@ def _split_jeonmun(jeonmun: str) -> tuple[str, str | None]:
     if not m:
         return text.strip(), "이유_헤더_미발견"
     fact = text[: m.start()].strip()
-    judgment = text[m.end():].strip()
+    judgment = text[m.end() :].strip()
     return f"[사실관계]\n{fact}\n\n[판단]\n{judgment}", None
 
 
@@ -84,7 +85,9 @@ def _build_content(detail: dict, grade: str) -> tuple[str, str | None]:
     if detail.get("판결요지"):
         return detail["판결요지"].replace("<br/>", "\n").strip(), None
     if detail.get("판시사항"):
-        return detail["판시사항"].replace("<br/>", "\n").strip(), "판결요지_없음_판시사항_대체"
+        return detail["판시사항"].replace(
+            "<br/>", "\n"
+        ).strip(), "판결요지_없음_판시사항_대체"
     jeonmun = detail.get("전문") or ""
     if not jeonmun:
         return "", "본문_없음"
@@ -112,7 +115,14 @@ def load_precedent_chunks() -> list[dict]:
             continue
         detail = record["detail"]
         tags = [t for t in record.get("tags", []) if not t.startswith("근거법-")]
-        근거법_tag = next((t.split("-", 1)[1] for t in record.get("tags", []) if t.startswith("근거법-")), None)
+        근거법_tag = next(
+            (
+                t.split("-", 1)[1]
+                for t in record.get("tags", [])
+                if t.startswith("근거법-")
+            ),
+            None,
+        )
         근거법 = row["근거법"].strip() or 근거법_tag
 
         content, parse_note = _build_content(detail, record["grade"])
@@ -128,19 +138,21 @@ def load_precedent_chunks() -> list[dict]:
         if parse_note:
             metadata["parse_note"] = parse_note
 
-        chunks.append({
-            "source_type": "판례",
-            "statute_name": None,
-            "article_no": None,
-            "case_no": detail.get("사건번호"),
-            "reference_articles": _parse_reference_articles(detail.get("참조조문")),
-            "topic_tags": tags,
-            "grade": record["grade"],
-            "source_date": _parse_source_date(detail.get("선고일자")),
-            "unresolved_ownership": False,
-            "content": content,
-            "metadata": metadata,
-        })
+        chunks.append(
+            {
+                "source_type": "판례",
+                "statute_name": None,
+                "article_no": None,
+                "case_no": detail.get("사건번호"),
+                "reference_articles": _parse_reference_articles(detail.get("참조조문")),
+                "topic_tags": tags,
+                "grade": record["grade"],
+                "source_date": _parse_source_date(detail.get("선고일자")),
+                "unresolved_ownership": False,
+                "content": content,
+                "metadata": metadata,
+            }
+        )
 
     return chunks
 

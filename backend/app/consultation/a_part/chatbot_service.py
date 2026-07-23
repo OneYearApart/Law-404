@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from enum import Enum
 import re
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -27,7 +27,6 @@ from app.documents.analysis.models import (
     ConversationDocumentAnalysisResponse,
 )
 from app.documents.analysis.normalization import repair_address_ocr
-
 
 
 def _analysis_field(analysis: Any, key: str) -> Any | None:
@@ -89,15 +88,36 @@ def _summarize_special_clause(value: Any) -> str | None:
     cleaned = _compact_korean(value)
     compact = re.sub(r"[^0-9가-힣]", "", cleaned)
     rules = [
-        (("현시설물", "등기사항증명서"), "현 시설 상태와 등기사항증명서·현장 확인을 전제로 계약합니다."),
-        (("근저당권설정", "권리관계"), "계약 당시 근저당권 설정이 없고 임차 기간 중 권리관계 변동을 두지 않기로 정했습니다."),
+        (
+            ("현시설물", "등기사항증명서"),
+            "현 시설 상태와 등기사항증명서·현장 확인을 전제로 계약합니다.",
+        ),
+        (
+            ("근저당권설정", "권리관계"),
+            "계약 당시 근저당권 설정이 없고 임차 기간 중 권리관계 변동을 두지 않기로 정했습니다.",
+        ),
         (("전입신고", "확정일자"), "임차인의 전입신고와 확정일자 부여를 허용합니다."),
-        (("전세권설정", "말소"), "임대인은 전세권 설정에 협조하고 설정·말소 비용은 임차인이 부담하며, 보증금 반환과 말소를 동시 이행하도록 정했습니다."),
+        (
+            ("전세권설정", "말소"),
+            "임대인은 전세권 설정에 협조하고 설정·말소 비용은 임차인이 부담하며, 보증금 반환과 말소를 동시 이행하도록 정했습니다.",
+        ),
         (("반려동물", "실내흡연"), "반려동물 사육과 실내 흡연을 금지합니다."),
-        (("계약기간중퇴거", "중개보수"), "임차인이 계약기간 중 퇴거하면 다음 임차인 모집 중개보수를 부담하도록 정했습니다."),
-        (("원상복구", "하자보수"), "임차인 과실로 시설물이 훼손되면 원상복구하고 하자보수에 협조하도록 정했습니다."),
-        (("체크리스트", "퇴거"), "입주 시 체크리스트를 작성하고 퇴거 시 이상 없이 인도하도록 정했습니다."),
-        (("주택임대차보호법",), "기타 사항은 주택임대차보호법과 일반 관례를 따르도록 정했습니다."),
+        (
+            ("계약기간중퇴거", "중개보수"),
+            "임차인이 계약기간 중 퇴거하면 다음 임차인 모집 중개보수를 부담하도록 정했습니다.",
+        ),
+        (
+            ("원상복구", "하자보수"),
+            "임차인 과실로 시설물이 훼손되면 원상복구하고 하자보수에 협조하도록 정했습니다.",
+        ),
+        (
+            ("체크리스트", "퇴거"),
+            "입주 시 체크리스트를 작성하고 퇴거 시 이상 없이 인도하도록 정했습니다.",
+        ),
+        (
+            ("주택임대차보호법",),
+            "기타 사항은 주택임대차보호법과 일반 관례를 따르도록 정했습니다.",
+        ),
     ]
     for keywords, summary in rules:
         if all(keyword in compact for keyword in keywords):
@@ -267,20 +287,14 @@ class APartChatbotService:
         conversation_service: APartConversationService | None = None,
         document_service: APartDocumentUploadService | None = None,
     ) -> None:
-        self.conversation_service = (
-            conversation_service or APartConversationService()
-        )
+        self.conversation_service = conversation_service or APartConversationService()
         self.document_service = document_service or APartDocumentUploadService(
             conversation_service=self.conversation_service
         )
 
-    def _ensure_conversation(
-        self, request: ChatbotTurnRequest
-    ) -> tuple[str, bool]:
+    def _ensure_conversation(self, request: ChatbotTurnRequest) -> tuple[str, bool]:
         if request.conversation_id:
-            state = self.conversation_service.get_state(
-                request.conversation_id
-            )
+            state = self.conversation_service.get_state(request.conversation_id)
             changed = False
             explicit_issue_ids = [
                 request.issue_id,
@@ -373,9 +387,21 @@ class APartChatbotService:
                 facts.append(f"등기부 현재 소유자 {owner_text}")
 
             risk_fields = (
-                ("mortgage_exists", "근저당", ["근저당", "채권최고액", "선순위 권리", "계약·송금 보류 기준"]),
-                ("active_restriction_exists", "압류·가압류 등 권리 제한", ["압류", "가압류", "말소 여부", "계약·송금 보류 기준"]),
-                ("trust_registration_exists", "신탁등기", ["신탁원부", "수탁자", "임대 권한", "수탁자 동의"]),
+                (
+                    "mortgage_exists",
+                    "근저당",
+                    ["근저당", "채권최고액", "선순위 권리", "계약·송금 보류 기준"],
+                ),
+                (
+                    "active_restriction_exists",
+                    "압류·가압류 등 권리 제한",
+                    ["압류", "가압류", "말소 여부", "계약·송금 보류 기준"],
+                ),
+                (
+                    "trust_registration_exists",
+                    "신탁등기",
+                    ["신탁원부", "수탁자", "임대 권한", "수탁자 동의"],
+                ),
             )
             for key, label, risk_topics in risk_fields:
                 value = _analysis_field_value(registry, key)
@@ -406,8 +432,12 @@ class APartChatbotService:
                     elif item.key == "property_address":
                         facts.append("계약서와 등기부 목적물 주소 일치")
                 elif status == ComparisonStatus.MISMATCH.value:
-                    facts.append("문서 불일치: " + _short_text(item.explanation, max_chars=120))
-                    active_risk_topics.append("문서 불일치 확인 및 정정 전 계약·송금 보류")
+                    facts.append(
+                        "문서 불일치: " + _short_text(item.explanation, max_chars=120)
+                    )
+                    active_risk_topics.append(
+                        "문서 불일치 확인 및 정정 전 계약·송금 보류"
+                    )
                 elif status not in {ComparisonStatus.NOT_APPLICABLE.value}:
                     topics.append("계약서와 등기부 대조 불확실 항목 원본 확인")
 
@@ -508,7 +538,10 @@ class APartChatbotService:
                 )
             if clause_review["favorable"]:
                 sections.append(
-                    {"title": "임차인에게 유리한 내용", "items": clause_review["favorable"]}
+                    {
+                        "title": "임차인에게 유리한 내용",
+                        "items": clause_review["favorable"],
+                    }
                 )
             sections.append(
                 {
@@ -552,9 +585,13 @@ class APartChatbotService:
                 value = _analysis_field_value(registry, key)
                 status = _analysis_field_status(registry, key)
                 if value is True:
-                    return f"{label}: 있음" + ("" if status == "confirmed" else f" ({status})")
+                    return f"{label}: 있음" + (
+                        "" if status == "confirmed" else f" ({status})"
+                    )
                 if value is False:
-                    return f"{label}: 현재 유효한 기록 확인되지 않음" + ("" if status == "confirmed" else f" ({status})")
+                    return f"{label}: 현재 유효한 기록 확인되지 않음" + (
+                        "" if status == "confirmed" else f" ({status})"
+                    )
                 warnings.append(f"등기부의 {label} 여부를 확정하지 못했습니다.")
                 follow_up_questions.append(
                     f"최신 등기부 원본에서 {label} 여부를 다시 확인해 주시겠어요?"
@@ -581,7 +618,9 @@ class APartChatbotService:
                 for item in registry.warnings
                 if _is_user_facing_warning(item)
             )
-            reasons.append("등기부의 현재 유효한 권리와 말소된 과거 기록을 구분했습니다.")
+            reasons.append(
+                "등기부의 현재 유효한 권리와 말소된 과거 기록을 구분했습니다."
+            )
 
         comparison = document_analysis.comparison
         if comparison is not None:
@@ -594,7 +633,9 @@ class APartChatbotService:
                 if status in {"mismatch", "uncertain", "conflict"}:
                     warnings.append(_short_text(item.explanation))
             if comparison_items:
-                sections.append({"title": "계약서·등기부 대조", "items": comparison_items})
+                sections.append(
+                    {"title": "계약서·등기부 대조", "items": comparison_items}
+                )
                 reasons.append("계약서와 등기부의 소유자·주소·권리관계를 대조했습니다.")
 
         warnings.extend(
@@ -717,16 +758,19 @@ class APartChatbotService:
             )
 
         lease = document_analysis.lease_analyses[-1] if has_lease else None
-        clause_review = _review_lease_special_clauses(lease) if lease is not None else {
-            "attention": [],
-            "favorable": [],
-            "revisions": [],
-            "other": [],
-        }
-        signed_contract = (
-            slot_status("signed_contract_original_kept") == "confirmed"
-            and bool(slot_value("signed_contract_original_kept"))
+        clause_review = (
+            _review_lease_special_clauses(lease)
+            if lease is not None
+            else {
+                "attention": [],
+                "favorable": [],
+                "revisions": [],
+                "other": [],
+            }
         )
+        signed_contract = slot_status(
+            "signed_contract_original_kept"
+        ) == "confirmed" and bool(slot_value("signed_contract_original_kept"))
 
         if not has_lease and not has_registry:
             answer["core_judgment"] = (
@@ -814,7 +858,9 @@ class APartChatbotService:
             if slot_needs_action("signed_contract_original_kept"):
                 document_actions.append("서명·날인된 계약서 원본을 보관합니다.")
             if slot_needs_action("payment_record_kept"):
-                document_actions.append("계약금 이체 내역이나 영수증을 계약서와 함께 보관합니다.")
+                document_actions.append(
+                    "계약금 이체 내역이나 영수증을 계약서와 함께 보관합니다."
+                )
         else:
             document_actions.append(
                 "임대차계약서를 첨부해 임대인·목적물·보증금·일정·특약을 등기부와 대조합니다."
@@ -899,9 +945,7 @@ class APartChatbotService:
         )
         state_questions = list(consultation.follow_up_questions[:1])
         if state_questions:
-            answer["follow_up_questions"] = [
-                item.question for item in state_questions
-            ]
+            answer["follow_up_questions"] = [item.question for item in state_questions]
         else:
             answer["follow_up_questions"] = document_questions[:1]
 
@@ -920,10 +964,9 @@ class APartChatbotService:
         for reference in answer.get("references") or []:
             title = str(reference.get("title") or "")
             source_type = str(reference.get("source_type") or "").lower()
-            if (
-                any(keyword in title for keyword in official_reference_keywords)
-                or source_type in {"law", "statute", "guide", "manual", "official"}
-            ):
+            if any(
+                keyword in title for keyword in official_reference_keywords
+            ) or source_type in {"law", "statute", "guide", "manual", "official"}:
                 document_references.append(reference)
         answer["references"] = document_references[:4]
         data["answer"] = answer
@@ -1020,7 +1063,9 @@ class APartChatbotService:
             return ChatbotProcessingStatus.NEEDS_FOLLOW_UP
         return ChatbotProcessingStatus.COMPLETED
 
-    def _handle_without_langgraph(self, request: ChatbotTurnRequest) -> ChatbotTurnResult:
+    def _handle_without_langgraph(
+        self, request: ChatbotTurnRequest
+    ) -> ChatbotTurnResult:
         conversation_id, is_new = self._ensure_conversation(request)
         warnings: list[str] = []
         document_analysis: ConversationDocumentAnalysisResponse | None = None
@@ -1085,9 +1130,7 @@ class APartChatbotService:
             consultation,
             document_analysis,
         )
-        consultation = consultation.model_copy(
-            update={"is_new_conversation": is_new}
-        )
+        consultation = consultation.model_copy(update={"is_new_conversation": is_new})
         status = self._processing_status(consultation)
         return ChatbotTurnResult(
             conversation_id=conversation_id,
@@ -1115,4 +1158,3 @@ class APartChatbotService:
                 }
             )
         return run_a_part_graph(self, request)
-

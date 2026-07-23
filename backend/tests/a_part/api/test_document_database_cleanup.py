@@ -54,9 +54,7 @@ def test_delete_conversation_artifacts_deletes_all_document_tables(monkeypatch):
     cursor = FakeCursor()
     monkeypatch.setattr(repository, "connect", lambda: FakeConnection(cursor))
 
-    result = repository.delete_conversation_artifacts(
-        conversation_id="conversation-1"
-    )
+    result = repository.delete_conversation_artifacts(conversation_id="conversation-1")
 
     assert result == {
         "documents": 4,

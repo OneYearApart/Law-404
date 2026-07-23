@@ -12,7 +12,6 @@ from app.consultation.a_part.models import (
     SlotStatus,
 )
 
-
 TRUE_REQUIRED_SUFFIXES = (
     "_confirmed",
     "_checked",
@@ -56,8 +55,6 @@ class FollowUpQuestion(BaseModel):
     placeholder: str | None = None
 
 
-
-
 def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str | None]:
     """질문 문장과 슬롯 특성으로 프론트 입력 방식을 결정한다."""
 
@@ -68,8 +65,13 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
         return (
             "single_choice",
             [
-                QuestionOption(label="신고를 완료했어요", answer_text="임대차신고를 완료했습니다."),
-                QuestionOption(label="신고 대상이 아니에요", answer_text="임대차신고 대상이 아닌 것으로 확인했습니다."),
+                QuestionOption(
+                    label="신고를 완료했어요", answer_text="임대차신고를 완료했습니다."
+                ),
+                QuestionOption(
+                    label="신고 대상이 아니에요",
+                    answer_text="임대차신고 대상이 아닌 것으로 확인했습니다.",
+                ),
                 QuestionOption(
                     label="아직 확인하지 못했어요",
                     answer_text="임대차신고 대상 여부와 신고 여부를 아직 확인하지 못했습니다.",
@@ -84,18 +86,20 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
         for marker in ("누구", "언제", "얼마", "무엇", "어디", "어떤", "어떻게")
     )
     boolean_question = not asks_for_value and (
-        slot.key.endswith((
-            "_confirmed",
-            "_checked",
-            "_completed",
-            "_received",
-            "_kept",
-            "_planned",
-            "_available",
-            "_effective",
-            "_agreed",
-            "_exists",
-        ))
+        slot.key.endswith(
+            (
+                "_confirmed",
+                "_checked",
+                "_completed",
+                "_received",
+                "_kept",
+                "_planned",
+                "_available",
+                "_effective",
+                "_agreed",
+                "_exists",
+            )
+        )
         or slot.question.endswith(("나요?", "있나요?", "했나요?", "인가요?"))
     )
 
@@ -104,7 +108,10 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
             "single_choice",
             [
                 QuestionOption(label="네, 확인했어요", answer_text="네, 확인했습니다."),
-                QuestionOption(label="아니요, 아직이에요", answer_text="아니요, 아직 확인하지 못했습니다."),
+                QuestionOption(
+                    label="아니요, 아직이에요",
+                    answer_text="아니요, 아직 확인하지 못했습니다.",
+                ),
                 QuestionOption(label="잘 모르겠어요", answer_text="잘 모르겠습니다."),
             ],
             True,
@@ -115,11 +122,18 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
         return (
             "single_choice",
             [
-                QuestionOption(label="소유자 본인", answer_text="소유자 본인 명의입니다."),
+                QuestionOption(
+                    label="소유자 본인", answer_text="소유자 본인 명의입니다."
+                ),
                 QuestionOption(label="대리인", answer_text="대리인 명의입니다."),
-                QuestionOption(label="중개사무소", answer_text="중개사무소 명의입니다."),
+                QuestionOption(
+                    label="중개사무소", answer_text="중개사무소 명의입니다."
+                ),
                 QuestionOption(label="제3자", answer_text="제3자 명의입니다."),
-                QuestionOption(label="잘 모르겠어요", answer_text="예금주를 아직 확인하지 못했습니다."),
+                QuestionOption(
+                    label="잘 모르겠어요",
+                    answer_text="예금주를 아직 확인하지 못했습니다.",
+                ),
             ],
             True,
             "예금주 이름을 직접 입력해 주세요.",
@@ -131,7 +145,10 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
             [
                 QuestionOption(label="신규 계약", answer_text="신규 계약입니다."),
                 QuestionOption(label="갱신 계약", answer_text="갱신 계약입니다."),
-                QuestionOption(label="잘 모르겠어요", answer_text="신규 계약인지 갱신 계약인지 잘 모르겠습니다."),
+                QuestionOption(
+                    label="잘 모르겠어요",
+                    answer_text="신규 계약인지 갱신 계약인지 잘 모르겠습니다.",
+                ),
             ],
             False,
             None,
@@ -142,10 +159,15 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
             "single_choice",
             [
                 QuestionOption(label="아파트", answer_text="아파트입니다."),
-                QuestionOption(label="연립·다세대", answer_text="연립 또는 다세대주택입니다."),
+                QuestionOption(
+                    label="연립·다세대", answer_text="연립 또는 다세대주택입니다."
+                ),
                 QuestionOption(label="다가구", answer_text="다가구주택입니다."),
                 QuestionOption(label="오피스텔", answer_text="오피스텔입니다."),
-                QuestionOption(label="잘 모르겠어요", answer_text="주택 유형을 아직 확인하지 못했습니다."),
+                QuestionOption(
+                    label="잘 모르겠어요",
+                    answer_text="주택 유형을 아직 확인하지 못했습니다.",
+                ),
             ],
             True,
             "다른 주택 유형을 직접 입력해 주세요.",
@@ -155,10 +177,18 @@ def _question_ui(slot: SlotState) -> tuple[str, list[QuestionOption], bool, str 
         return (
             "single_choice",
             [
-                QuestionOption(label="HUG", answer_text="HUG 반환보증을 검토하고 있습니다."),
-                QuestionOption(label="HF", answer_text="HF 반환보증을 검토하고 있습니다."),
-                QuestionOption(label="SGI", answer_text="SGI 반환보증을 검토하고 있습니다."),
-                QuestionOption(label="아직 미정", answer_text="보증기관은 아직 정하지 않았습니다."),
+                QuestionOption(
+                    label="HUG", answer_text="HUG 반환보증을 검토하고 있습니다."
+                ),
+                QuestionOption(
+                    label="HF", answer_text="HF 반환보증을 검토하고 있습니다."
+                ),
+                QuestionOption(
+                    label="SGI", answer_text="SGI 반환보증을 검토하고 있습니다."
+                ),
+                QuestionOption(
+                    label="아직 미정", answer_text="보증기관은 아직 정하지 않았습니다."
+                ),
             ],
             True,
             "다른 기관을 직접 입력해 주세요.",
@@ -184,8 +214,7 @@ def _confirmed_false_needs_follow_up(slot: SlotState) -> bool:
         slot.status == SlotStatus.CONFIRMED
         and slot.value is False
         and (
-            slot.key in TRUE_REQUIRED_KEYS
-            or slot.key.endswith(TRUE_REQUIRED_SUFFIXES)
+            slot.key in TRUE_REQUIRED_KEYS or slot.key.endswith(TRUE_REQUIRED_SUFFIXES)
         )
     )
 
@@ -195,10 +224,7 @@ def _slot_needs_question(slot: SlotState) -> bool:
     # 해당 질문에는 응답한 것으로 본다. 같은 질문을 반복하지 않고 최종
     # 위험 판단의 미확인 사유로 남긴다. 문서 분석에서 생긴 uncertain은
     # 사용자의 직접 확인이 필요하므로 계속 질문 후보로 유지한다.
-    if (
-        slot.status == SlotStatus.UNCERTAIN
-        and slot.source == FactSource.USER
-    ):
+    if slot.status == SlotStatus.UNCERTAIN and slot.source == FactSource.USER:
         return False
 
     # 부정 답변도 사용자가 확인해 준 사실이다. 같은 질문을 반복하지 않고
@@ -214,16 +240,10 @@ def _slot_question_text(slot: SlotState) -> str:
         )
 
     if slot.status == SlotStatus.UNCERTAIN:
-        return (
-            f"‘{slot.label}’이 아직 명확하지 않습니다. "
-            f"{slot.question}"
-        )
+        return f"‘{slot.label}’이 아직 명확하지 않습니다. {slot.question}"
 
     if _confirmed_false_needs_follow_up(slot):
-        return (
-            f"‘{slot.label}’이 아직 충족되지 않았습니다. "
-            f"{slot.question}"
-        )
+        return f"‘{slot.label}’이 아직 충족되지 않았습니다. {slot.question}"
 
     return slot.question
 
@@ -317,18 +337,13 @@ def confirmed_fact_sentences(
         for slot in state.issue_slots.get(issue_id, {}).values():
             if slot.status == SlotStatus.CONFIRMED:
                 display_value = _display_value(slot.value)
-            elif (
-                slot.status == SlotStatus.UNCERTAIN
-                and slot.source == FactSource.USER
-            ):
+            elif slot.status == SlotStatus.UNCERTAIN and slot.source == FactSource.USER:
                 display_value = "확인하지 못함"
             elif slot.status == SlotStatus.NOT_APPLICABLE:
                 display_value = "현재 상황에 적용되지 않음"
             else:
                 continue
-            sentence = (
-                f"[{issue.name}] {slot.label}: {display_value}"
-            )
+            sentence = f"[{issue.name}] {slot.label}: {display_value}"
             sort_key = (
                 not slot.risk_critical,
                 slot.priority,
@@ -356,8 +371,7 @@ def conflict_fact_labels(state: ConversationState) -> list[str]:
         for slot in state.issue_slots.get(issue_id, {}).values():
             if slot.status == SlotStatus.CONFLICT:
                 values = ", ".join(
-                    _display_value(value)
-                    for value in slot.conflicting_values
+                    _display_value(value) for value in slot.conflicting_values
                 )
                 result.append(
                     f"[{issue.name}] {slot.label}: {values or '서로 다른 답변'}"

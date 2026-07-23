@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 RAGAS 평가 스크립트.
 
 이 스크립트는 B파트 graph를 실제로 실행한 뒤 RAGAS 평가 입력을 구성합니다.
@@ -32,9 +32,10 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_QUESTIONS_PATH = Path(__file__).resolve().parent / "ragas_reference_questions.json"
+DEFAULT_QUESTIONS_PATH = (
+    Path(__file__).resolve().parent / "ragas_reference_questions.json"
+)
 DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent / "ragas_eval_results.json"
 DEFAULT_METRICS = [
     "faithfulness",
@@ -292,7 +293,9 @@ def build_lightweight_eval_prompt(
 """.strip()
 
 
-def normalize_lightweight_scores(payload: Any, metric_names: list[str]) -> dict[str, Any]:
+def normalize_lightweight_scores(
+    payload: Any, metric_names: list[str]
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {
             name: {
@@ -334,7 +337,9 @@ async def score_with_openai_lightweight(
 ) -> dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY가 없어 OpenAI fallback 평가를 실행할 수 없습니다.")
+        raise RuntimeError(
+            "OPENAI_API_KEY가 없어 OpenAI fallback 평가를 실행할 수 없습니다."
+        )
 
     from openai import AsyncOpenAI
 
@@ -438,7 +443,9 @@ async def run_case(
     }
 
 
-def build_summary(items: list[dict[str, Any]], metric_names: list[str]) -> dict[str, Any]:
+def build_summary(
+    items: list[dict[str, Any]], metric_names: list[str]
+) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "total_questions": len(items),
         "error_count": sum(1 for item in items if item.get("error")),
@@ -446,10 +453,11 @@ def build_summary(items: list[dict[str, Any]], metric_names: list[str]) -> dict[
 
     for metric_name in metric_names:
         values = [
-            item.get("scores", {}).get(metric_name, {}).get("score")
-            for item in items
+            item.get("scores", {}).get(metric_name, {}).get("score") for item in items
         ]
-        numeric_values = [float(value) for value in values if isinstance(value, (int, float))]
+        numeric_values = [
+            float(value) for value in values if isinstance(value, (int, float))
+        ]
         summary[f"average_{metric_name}"] = (
             round(mean(numeric_values), 4) if numeric_values else None
         )
@@ -478,7 +486,9 @@ async def run_evaluation(
             if evaluator == "ragas":
                 raise
             ragas_error = str(exc)
-            print("[알림] RAGAS 로딩 실패. OpenAI lightweight 평가자로 자동 전환합니다.")
+            print(
+                "[알림] RAGAS 로딩 실패. OpenAI lightweight 평가자로 자동 전환합니다."
+            )
             print(f"[RAGAS 오류] {ragas_error}")
             metric_api = "openai-lightweight"
             enabled_metric_names = metric_names
@@ -486,7 +496,9 @@ async def run_evaluation(
     items: list[dict[str, Any]] = []
 
     for question_item in questions:
-        print(f"RAGAS 평가 중: {question_item.get('id')} - {question_item.get('question')}")
+        print(
+            f"RAGAS 평가 중: {question_item.get('id')} - {question_item.get('question')}"
+        )
         items.append(
             await run_case(
                 question_item,

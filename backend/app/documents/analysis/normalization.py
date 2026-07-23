@@ -7,7 +7,6 @@ import unicodedata
 from datetime import date
 from typing import Any
 
-
 _KOREAN_DIGITS = {
     "영": 0,
     "공": 0,
@@ -113,9 +112,7 @@ def repair_address_ocr(value: str) -> str:
     )
     compact = re.sub(r"(?:외|의)\d+필지", "", compact)
     region_positions = [
-        compact.find(marker)
-        for marker in _REGION_MARKERS
-        if marker in compact
+        compact.find(marker) for marker in _REGION_MARKERS if marker in compact
     ]
     if region_positions:
         compact = compact[min(region_positions) :]

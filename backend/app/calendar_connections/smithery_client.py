@@ -9,7 +9,6 @@ import httpx
 
 from app.core.config import settings
 
-
 SMITHERY_API_BASE_URL = "https://api.smithery.ai"
 
 
@@ -20,7 +19,9 @@ class SmitheryConfigError(RuntimeError):
 class SmitheryApiError(RuntimeError):
     """Raised when Smithery API returns an error response."""
 
-    def __init__(self, message: str, *, status_code: int | None = None, payload: Any = None):
+    def __init__(
+        self, message: str, *, status_code: int | None = None, payload: Any = None
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.payload = payload
@@ -83,7 +84,9 @@ def _extract_status(payload: dict[str, Any]) -> tuple[str, str | None]:
 
 def _parse_connection(payload: dict[str, Any]) -> SmitheryConnectionResult:
     status, authorization_url = _extract_status(payload)
-    connection_id = str(payload.get("connectionId") or payload.get("connection_id") or "")
+    connection_id = str(
+        payload.get("connectionId") or payload.get("connection_id") or ""
+    )
     return SmitheryConnectionResult(
         connection_id=connection_id,
         name=payload.get("name"),

@@ -63,9 +63,7 @@ FIELD_LABELS: dict[str, str] = {
     "latest_registry_checked": "등기부 기준일 확인",
 }
 
-_ADDRESS_EXPLICIT = re.compile(
-    r"(?:소재지|건물의표시|부동산의표시)[:：]?(.+)$"
-)
+_ADDRESS_EXPLICIT = re.compile(r"(?:소재지|건물의표시|부동산의표시)[:：]?(.+)$")
 _ISSUE_DATE = re.compile(r"(?:발급일|열람일|발행일|열람일시)[:：]?(.+)$")
 _OWNER_EXPLICIT = re.compile(
     r"(?:현재)?(?:소유자|공유자)[:：]?([가-힣A-Za-z]{2,30}?)(?=지분|\d{6}|$)"
@@ -117,11 +115,9 @@ def _has_trust_cancellation_marker(value: str) -> bool:
     return bool(
         "신탁등기말소" in compact
         or "별도등기말소" in compact
-        or (
-            _has_trust_marker(compact)
-            and "말소" in compact
-        )
+        or (_has_trust_marker(compact) and "말소" in compact)
     )
+
 
 _REGION_MARKERS = (
     "서울특별시",
@@ -151,8 +147,6 @@ _REGION_MARKERS = (
     "세종",
     "제주",
 )
-
-
 
 
 def _looks_like_registry_address(value: str) -> bool:
@@ -197,8 +191,7 @@ def _best_address_candidates(items: list[FieldCandidate]) -> list[FieldCandidate
         return []
     best_score = max(address_signal_score(item.raw_value) for item in usable)
     selected = [
-        item for item in usable
-        if address_signal_score(item.raw_value) == best_score
+        item for item in usable if address_signal_score(item.raw_value) == best_score
     ]
     # 같은 주소가 OCR 중복 스캔으로 반복된 경우 첫 근거만 남긴다.
     unique: list[FieldCandidate] = []
@@ -321,8 +314,7 @@ def _find_current_document_line(lines: list[_Line]) -> _Line | None:
         (
             line
             for line in lines
-            if "현재유효사항" in line.compact
-            or "등기사항전부증명서" in line.compact
+            if "현재유효사항" in line.compact or "등기사항전부증명서" in line.compact
         ),
         lines[0] if lines else None,
     )
@@ -335,9 +327,7 @@ def analyze_registry(
 ) -> RegistryAnalysisResult:
     started_at = utc_now()
     lines = _page_lines(extraction)
-    candidates: dict[str, list[FieldCandidate]] = {
-        key: [] for key in FIELD_LABELS
-    }
+    candidates: dict[str, list[FieldCandidate]] = {key: [] for key in FIELD_LABELS}
     mortgages: list[RegistryRight] = []
     restrictions: list[RegistryRight] = []
     trusts: list[RegistryRight] = []
@@ -392,9 +382,13 @@ def analyze_registry(
                 is_recent = 0 <= age_days <= 7
                 latest_warnings = list(item.warnings)
                 if age_days < 0:
-                    latest_warnings.append("등기부 발급·열람일이 분석일보다 미래입니다.")
+                    latest_warnings.append(
+                        "등기부 발급·열람일이 분석일보다 미래입니다."
+                    )
                 elif age_days > 7:
-                    latest_warnings.append("등기부 발급·열람일이 분석일 기준 7일을 초과했습니다.")
+                    latest_warnings.append(
+                        "등기부 발급·열람일이 분석일 기준 7일을 초과했습니다."
+                    )
                 candidates["latest_registry_checked"].append(
                     FieldCandidate(
                         raw_value=raw_date,
@@ -421,8 +415,7 @@ def analyze_registry(
             owner_source = owner_context
         owner_match = _OWNER_EXPLICIT.search(owner_source)
         if owner_match and not any(
-            marker in owner_source
-            for marker in ("수탁자", "채권자", "근저당권자")
+            marker in owner_source for marker in ("수탁자", "채권자", "근저당권자")
         ):
             raw_owner = owner_match.group(1)
             if raw_owner not in {"이외", "관한사항", "기록사항"}:
@@ -493,14 +486,10 @@ def analyze_registry(
                     else None
                 ),
                 amount=(
-                    normalize_amount(amount_match.group(1))
-                    if amount_match
-                    else None
+                    normalize_amount(amount_match.group(1)) if amount_match else None
                 ),
                 registration_date=(
-                    normalize_date(date_match.group(0))
-                    if date_match
-                    else None
+                    normalize_date(date_match.group(0)) if date_match else None
                 ),
                 active=active,
                 cancellation_status=cancellation,
@@ -534,9 +523,7 @@ def analyze_registry(
             right = RegistryRight(
                 right_type=restriction_type,
                 registration_date=(
-                    normalize_date(date_match.group(0))
-                    if date_match
-                    else None
+                    normalize_date(date_match.group(0)) if date_match else None
                 ),
                 active=active,
                 cancellation_status=cancellation,
@@ -582,9 +569,7 @@ def analyze_registry(
                     else None
                 ),
                 registration_date=(
-                    normalize_date(date_match.group(0))
-                    if date_match
-                    else None
+                    normalize_date(date_match.group(0)) if date_match else None
                 ),
                 active=active,
                 cancellation_status=cancellation,
@@ -623,12 +608,9 @@ def analyze_registry(
     for current_line in lines:
         lines_by_page.setdefault(current_line.page.page_number, []).append(current_line)
     for page_number, page_lines in lines_by_page.items():
-        page_has_trust = any(
-            _has_trust_marker(item.compact) for item in page_lines
-        )
+        page_has_trust = any(_has_trust_marker(item.compact) for item in page_lines)
         page_has_separate_cancellation = any(
-            _has_trust_cancellation_marker(item.compact)
-            for item in page_lines
+            _has_trust_cancellation_marker(item.compact) for item in page_lines
         )
         if page_has_trust and page_has_separate_cancellation:
             cancelled_trust_pages.add(page_number)
@@ -654,9 +636,7 @@ def analyze_registry(
             RegistryRight(
                 right_type="trust",
                 registration_date=(
-                    normalize_date(date_match.group(0))
-                    if date_match
-                    else None
+                    normalize_date(date_match.group(0)) if date_match else None
                 ),
                 active=False,
                 cancellation_status="cancelled",
@@ -688,9 +668,7 @@ def analyze_registry(
     candidates["registry_address"] = _best_address_candidates(
         candidates["registry_address"]
     )
-    candidates["current_owners"] = _best_owner_candidates(
-        candidates["current_owners"]
-    )
+    candidates["current_owners"] = _best_owner_candidates(candidates["current_owners"])
     owner_field = build_field(
         key="current_owners",
         label=FIELD_LABELS["current_owners"],
@@ -698,9 +676,7 @@ def analyze_registry(
         multi_value=True,
     )
     owner_count = (
-        len(owner_field.value or [])
-        if isinstance(owner_field.value, list)
-        else 0
+        len(owner_field.value or []) if isinstance(owner_field.value, list) else 0
     )
     co_owner_marker = any(
         "공유자" in _compact_registry_text(item.evidence.text)
@@ -745,7 +721,8 @@ def analyze_registry(
     )
     eul_line = next(
         (
-            line for line in lines
+            line
+            for line in lines
             if any(marker in line.compact for marker in eul_markers)
         ),
         None,
@@ -761,12 +738,10 @@ def analyze_registry(
                 break
     no_records_line = next(
         (
-            line for line in lines
+            line
+            for line in lines
             if "기록사항없음" in line.compact
-            and (
-                eul_page_number is None
-                or line.page.page_number == eul_page_number
-            )
+            and (eul_page_number is None or line.page.page_number == eul_page_number)
         ),
         None,
     )
@@ -777,8 +752,7 @@ def analyze_registry(
     }
     expected_pages = set(range(1, extraction.page_count + 1))
     current_document_marker = any(
-        "현재유효사항" in line.compact
-        or "등기사항전부증명서" in line.compact
+        "현재유효사항" in line.compact or "등기사항전부증명서" in line.compact
         for line in lines
     )
     ownership_structure_marker = bool(owner_field.value) and any(
@@ -948,9 +922,7 @@ def analyze_registry(
         for page_number in completed_pages
     ):
         source = next(
-            line
-            for line in lines
-            if _has_trust_cancellation_marker(line.compact)
+            line for line in lines if _has_trust_cancellation_marker(line.compact)
         )
         fields["trust_registration_exists"] = _boolean_field(
             key="trust_registration_exists",

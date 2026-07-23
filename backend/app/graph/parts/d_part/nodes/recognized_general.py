@@ -11,6 +11,7 @@
 시점이므로 예방이 아니라 대응·회복 관점으로 답한다는 것뿐이다(response_recognized_general.md).
 지원절차 개요는 이 노드가 아니라 support_appendix가 상황을 보고 붙인다(D3).
 """
+
 from app.graph.parts.d_part.nodes._open_search import retrieve_open_context
 from app.graph.parts.d_part.schemas import DPartGraphState
 from app.llm import d_part as llm_d_part
@@ -19,9 +20,11 @@ from app.llm import d_part as llm_d_part
 async def handle_recognized_general(state: DPartGraphState) -> DPartGraphState:
     """전체 검색 + 인지형 관점 응답 스트림을 세팅한다."""
     context = await retrieve_open_context(state)
-    if context is None:      # 근거 없음 — final_answer는 _open_search가 이미 확정했다
+    if context is None:  # 근거 없음 — final_answer는 _open_search가 이미 확정했다
         return state
 
     state["answer_kind"] = "recognized_general"
-    state["response_stream"] = llm_d_part.generate_response(context, "recognized_general")
+    state["response_stream"] = llm_d_part.generate_response(
+        context, "recognized_general"
+    )
     return state

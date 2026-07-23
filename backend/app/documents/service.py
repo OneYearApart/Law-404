@@ -23,9 +23,7 @@ class DocumentUploadService:
         max_size_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
     ) -> None:
         if repository is not None and storage_root is not None:
-            raise ValueError(
-                "repository와 storage_root를 동시에 지정할 수 없습니다."
-            )
+            raise ValueError("repository와 storage_root를 동시에 지정할 수 없습니다.")
         if max_size_bytes <= 0:
             raise ValueError("max_size_bytes는 1 이상이어야 합니다.")
 

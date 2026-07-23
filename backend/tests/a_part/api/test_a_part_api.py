@@ -4,9 +4,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user
-from app.main import app
 from app.api.routes.a_part import get_a_part_chatbot_service
+from app.auth.dependencies import get_current_user
 from app.consultation.a_part.chatbot_service import APartChatbotService
 from app.consultation.a_part.document_service import APartDocumentUploadService
 from app.consultation.a_part.service import APartConversationService
@@ -20,6 +19,7 @@ from app.llm.a_part import (
     EvidenceStatus,
     RAGGenerationStatus,
 )
+from app.main import app
 
 
 class EmptySlotExtractor:
@@ -177,11 +177,12 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
                 files={"file": ("lease.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")},
             )
             assert uploaded.status_code == 201
-            assert uploaded.json()["data"]["upload"]["document"]["document_type"] == "lease_contract"
-
-            listed = client.get(
-                f"/chat/a/conversations/{conversation_id}/documents"
+            assert (
+                uploaded.json()["data"]["upload"]["document"]["document_type"]
+                == "lease_contract"
             )
+
+            listed = client.get(f"/chat/a/conversations/{conversation_id}/documents")
             assert listed.status_code == 200
             assert len(listed.json()["data"]) == 1
             document_id = listed.json()["data"][0]["document_id"]
@@ -200,7 +201,9 @@ def test_a_part_api_normal_and_exception_flows(tmp_path):
 
             missing_question = client.post("/chat/a/turn", json={})
             assert missing_question.status_code == 422
-            assert missing_question.json()["error"]["code"] == "REQUEST_VALIDATION_ERROR"
+            assert (
+                missing_question.json()["error"]["code"] == "REQUEST_VALIDATION_ERROR"
+            )
 
             current_user["id"] = 2
             denied = client.get(f"/chat/a/conversations/{conversation_id}")
@@ -290,9 +293,7 @@ def test_delete_conversation_removes_files_state_and_database_artifacts(tmp_path
             assert len(database_repository.documents) == 2
             assert service.conversation_service.get_state(conversation_id)
 
-            deleted = client.delete(
-                f"/chat/a/conversations/{conversation_id}"
-            )
+            deleted = client.delete(f"/chat/a/conversations/{conversation_id}")
             assert deleted.status_code == 200
 
             payload = deleted.json()["data"]
@@ -311,13 +312,8 @@ def test_delete_conversation_removes_files_state_and_database_artifacts(tmp_path
             assert conversation_id not in database_repository.analyses
             assert conversation_id not in database_repository.comparisons
 
-            missing = client.get(
-                f"/chat/a/conversations/{conversation_id}"
-            )
+            missing = client.get(f"/chat/a/conversations/{conversation_id}")
             assert missing.status_code == 404
-            assert (
-                missing.json()["error"]["code"]
-                == "CONVERSATION_NOT_FOUND"
-            )
+            assert missing.json()["error"]["code"] == "CONVERSATION_NOT_FOUND"
     finally:
         app.dependency_overrides.clear()

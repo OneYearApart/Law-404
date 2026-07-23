@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 Intent Planner 평가 스크립트.
 
 키워드 기반 카테고리 분류와 LLM Planner 카테고리 분류를 같은 질문 세트로 비교합니다.
@@ -23,7 +23,6 @@ from datetime import datetime
 from pathlib import Path
 from statistics import mean
 from typing import Any
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_QUESTIONS_PATH = Path(__file__).resolve().parent / "test_questions.json"

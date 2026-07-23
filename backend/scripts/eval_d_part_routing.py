@@ -20,6 +20,7 @@ D파트 라우팅 골든셋 평가.
     python -X utf8 scripts/eval_d_part_routing.py --run
     python -X utf8 scripts/eval_d_part_routing.py --run --only hrd,neg
 """
+
 import argparse
 import asyncio
 import json
@@ -54,7 +55,9 @@ from app.graph.parts.d_part.schemas import (
 GOLDEN_PATH = BACKEND_ROOT / "docs" / "d_part" / "eval" / "routing_golden.jsonl"
 RESULTS_DIR = BACKEND_ROOT / "docs" / "d_part" / "eval" / "results"
 
-MAX_CONCURRENCY = 5  # supervisor는 턴당 1회 호출이라 가벼우나 RateLimitError 재시도를 피하려 조인다
+MAX_CONCURRENCY = (
+    5  # supervisor는 턴당 1회 호출이라 가벼우나 RateLimitError 재시도를 피하려 조인다
+)
 
 
 def load_golden() -> list[dict]:
@@ -94,19 +97,43 @@ def validate(cases: list[dict]) -> int:
             errors.append(f"{cid}: id 중복")
         seen_ids.add(cid)
 
-        for field in ("utterance", "recognized", "risk_signals", "topic", "special_case", "route", "note"):
+        for field in (
+            "utterance",
+            "recognized",
+            "risk_signals",
+            "topic",
+            "special_case",
+            "route",
+            "note",
+        ):
             if field not in case:
                 errors.append(f"{cid}: 필드 '{field}' 누락")
         if len(case) != 7:  # 위 7개 외 오타 필드가 섞이면 조용히 무시되므로 막는다
-            extra = set(case) - {"utterance", "recognized", "risk_signals", "topic", "special_case", "route", "note", "id"}
+            extra = set(case) - {
+                "utterance",
+                "recognized",
+                "risk_signals",
+                "topic",
+                "special_case",
+                "route",
+                "note",
+                "id",
+            }
             if extra:
                 errors.append(f"{cid}: 알 수 없는 필드 {sorted(extra)}")
 
         # 어휘 검사 — SituationState의 validator가 조용히 None으로 만들어버리기 전에 잡는다
         if case.get("topic") is not None and case["topic"] not in GENERAL_TOPIC_LABELS:
-            errors.append(f"{cid}: topic '{case['topic']}'은 GENERAL_TOPIC_LABELS에 없음")
-        if case.get("special_case") is not None and case["special_case"] not in SPECIAL_CASE_CATEGORIES:
-            errors.append(f"{cid}: special_case '{case['special_case']}'는 SPECIAL_CASE_CATEGORIES에 없음")
+            errors.append(
+                f"{cid}: topic '{case['topic']}'은 GENERAL_TOPIC_LABELS에 없음"
+            )
+        if (
+            case.get("special_case") is not None
+            and case["special_case"] not in SPECIAL_CASE_CATEGORIES
+        ):
+            errors.append(
+                f"{cid}: special_case '{case['special_case']}'는 SPECIAL_CASE_CATEGORIES에 없음"
+            )
         for signal in case.get("risk_signals") or []:
             if signal not in RISK_SIGNALS:
                 errors.append(f"{cid}: risk_signal '{signal}'은 RISK_SIGNALS에 없음")
@@ -114,7 +141,9 @@ def validate(cases: list[dict]) -> int:
         # 핵심 검사 — 라벨한 축에서 route()를 돌리면 라벨한 경로가 나와야 한다
         derived = route(_situation_of(case))
         if derived != case.get("route"):
-            errors.append(f"{cid}: route 라벨이 '{case.get('route')}'인데 축에서 파생되는 값은 '{derived}'")
+            errors.append(
+                f"{cid}: route 라벨이 '{case.get('route')}'인데 축에서 파생되는 값은 '{derived}'"
+            )
 
     for error in errors:
         print(f"  ✗ {error}")
@@ -143,7 +172,10 @@ async def _predict(case: dict, semaphore: asyncio.Semaphore) -> dict:
         "utterance": case["utterance"],
         "error": error,
         "latency_s": round(elapsed, 3),
-        "expected": {k: case[k] for k in ("recognized", "risk_signals", "topic", "special_case", "route")},
+        "expected": {
+            k: case[k]
+            for k in ("recognized", "risk_signals", "topic", "special_case", "route")
+        },
         "predicted": None
         if situation is None
         else {
@@ -169,14 +201,19 @@ def _score(results: list[dict]) -> dict:
         return {"error": "채점 가능한 결과 없음"}
 
     route_hits = sum(r["expected"]["route"] == r["predicted"]["route"] for r in scored)
-    recognized_hits = sum(r["expected"]["recognized"] == r["predicted"]["recognized"] for r in scored)
+    recognized_hits = sum(
+        r["expected"]["recognized"] == r["predicted"]["recognized"] for r in scored
+    )
     topic_hits = sum(r["expected"]["topic"] == r["predicted"]["topic"] for r in scored)
 
     # special_case는 인지형에서만 채점한다. 미인지형에선 route()가 이 축을 읽지 않고(recognized
     # 블록 안에서만 읽힌다) 모델이 채울지도 비결정적이라, 전체를 채점하면 행동에 아무 영향이 없는
     # 차이에 감점이 붙어 지표가 노이즈를 잰다.
     special_scored = [r for r in scored if r["expected"]["recognized"]]
-    special_hits = sum(r["expected"]["special_case"] == r["predicted"]["special_case"] for r in special_scored)
+    special_hits = sum(
+        r["expected"]["special_case"] == r["predicted"]["special_case"]
+        for r in special_scored
+    )
 
     tp = fp = fn = 0
     for r in scored:
@@ -190,7 +227,9 @@ def _score(results: list[dict]) -> dict:
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
     confusion = Counter(
-        (r["expected"]["route"], r["predicted"]["route"]) for r in scored if r["expected"]["route"] != r["predicted"]["route"]
+        (r["expected"]["route"], r["predicted"]["route"])
+        for r in scored
+        if r["expected"]["route"] != r["predicted"]["route"]
     )
 
     # id 접두어별 경로 정확도. gen-(교과서적 발화)과 col-(구어 발화)을 갈라 봐야 어휘 간극이
@@ -209,7 +248,9 @@ def _score(results: list[dict]) -> dict:
         "route_accuracy": round(route_hits / total, 4),
         "recognized_accuracy": round(recognized_hits / total, 4),
         "topic_exact_match": round(topic_hits / total, 4),
-        "special_case_exact_match_recognized_only": round(special_hits / len(special_scored), 4)
+        "special_case_exact_match_recognized_only": round(
+            special_hits / len(special_scored), 4
+        )
         if special_scored
         else None,
         "special_case_n_scored": len(special_scored),
@@ -225,7 +266,9 @@ def _score(results: list[dict]) -> dict:
             "p50": latencies[len(latencies) // 2],
             "p95": latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))],
         },
-        "route_confusion": {f"{exp} → {pred}": n for (exp, pred), n in confusion.most_common()},
+        "route_confusion": {
+            f"{exp} → {pred}": n for (exp, pred), n in confusion.most_common()
+        },
         "route_accuracy_by_group": {
             group: {"n": b["n"], "accuracy": round(b["hits"] / b["n"], 4)}
             for group, b in sorted(by_group.items())
@@ -262,7 +305,9 @@ async def run(cases: list[dict]) -> None:
     metrics = _score(results)
 
     print(f"\n{'=' * 70}")
-    print(f"D파트 라우팅 평가 — {metrics['n']}건 채점 (실패 {metrics['n_errored']}건), 총 {wall:.1f}초")
+    print(
+        f"D파트 라우팅 평가 — {metrics['n']}건 채점 (실패 {metrics['n_errored']}건), 총 {wall:.1f}초"
+    )
     print(f"{'=' * 70}")
     print(f"  경로 정확도            {metrics['route_accuracy']:.1%}   ← 주지표")
     print(f"  recognized 정확도      {metrics['recognized_accuracy']:.1%}")
@@ -270,10 +315,16 @@ async def run(cases: list[dict]) -> None:
     # --only로 인지형 케이스가 하나도 안 걸리면 채점 대상이 없어 None이 된다
     special = metrics["special_case_exact_match_recognized_only"]
     special_text = f"{special:.1%}" if special is not None else "해당 없음"
-    print(f"  special_case 정확일치  {special_text}  (인지형 {metrics['special_case_n_scored']}건만)")
+    print(
+        f"  special_case 정확일치  {special_text}  (인지형 {metrics['special_case_n_scored']}건만)"
+    )
     rs = metrics["risk_signals_micro"]
-    print(f"  risk_signals micro-F1  {rs['f1']:.3f}  (P {rs['precision']:.3f} / R {rs['recall']:.3f}, TP{rs['tp']} FP{rs['fp']} FN{rs['fn']})")
-    print(f"  지연 p50/p95           {metrics['latency_s']['p50']:.2f}s / {metrics['latency_s']['p95']:.2f}s")
+    print(
+        f"  risk_signals micro-F1  {rs['f1']:.3f}  (P {rs['precision']:.3f} / R {rs['recall']:.3f}, TP{rs['tp']} FP{rs['fp']} FN{rs['fn']})"
+    )
+    print(
+        f"  지연 p50/p95           {metrics['latency_s']['p50']:.2f}s / {metrics['latency_s']['p95']:.2f}s"
+    )
 
     print("\n  그룹별 경로 정확도:")
     for group, b in metrics["route_accuracy_by_group"].items():
@@ -284,12 +335,18 @@ async def run(cases: list[dict]) -> None:
         for pair, n in metrics["route_confusion"].items():
             print(f"    {pair}  ×{n}")
 
-    misses = [r for r in results if r["predicted"] and r["expected"]["route"] != r["predicted"]["route"]]
+    misses = [
+        r
+        for r in results
+        if r["predicted"] and r["expected"]["route"] != r["predicted"]["route"]
+    ]
     if misses:
         print(f"\n  틀린 케이스 {len(misses)}건:")
         for r in misses:
             print(f"    [{r['id']}] {r['utterance']}")
-            print(f"       기대 {r['expected']['route']} / 실제 {r['predicted']['route']}")
+            print(
+                f"       기대 {r['expected']['route']} / 실제 {r['predicted']['route']}"
+            )
             print(f"       기대축 {r['expected']} \n       실제축 {r['predicted']}")
 
     errored = [r for r in results if r["error"]]
@@ -302,7 +359,9 @@ async def run(cases: list[dict]) -> None:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_path = RESULTS_DIR / f"routing-{stamp}.json"
     out_path.write_text(
-        json.dumps({"metrics": metrics, "results": results}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {"metrics": metrics, "results": results}, ensure_ascii=False, indent=2
+        ),
         encoding="utf-8",
     )
     print(f"\n결과 저장: {out_path.relative_to(BACKEND_ROOT)}")
@@ -310,9 +369,15 @@ async def run(cases: list[dict]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="D파트 라우팅 골든셋 평가")
-    parser.add_argument("--validate", action="store_true", help="API 호출 없이 라벨 무결성만 검사")
-    parser.add_argument("--run", action="store_true", help="supervisor를 실제 호출해 정확도 측정(과금)")
-    parser.add_argument("--only", help="id 접두어 쉼표 목록으로 케이스를 거른다 (예: hrd,neg)")
+    parser.add_argument(
+        "--validate", action="store_true", help="API 호출 없이 라벨 무결성만 검사"
+    )
+    parser.add_argument(
+        "--run", action="store_true", help="supervisor를 실제 호출해 정확도 측정(과금)"
+    )
+    parser.add_argument(
+        "--only", help="id 접두어 쉼표 목록으로 케이스를 거른다 (예: hrd,neg)"
+    )
     args = parser.parse_args()
 
     if not (args.validate or args.run):

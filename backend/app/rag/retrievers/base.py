@@ -2,6 +2,7 @@
 pgvector 검색 공통 인터페이스.
 파트별 retriever(a_part.py ~ d_part.py)가 이 클래스를 상속해서 사용합니다.
 """
+
 from datetime import date
 from typing import Optional
 
@@ -49,5 +50,11 @@ class BaseRetriever:
             LIMIT :top_k
         """)
         with get_engine().connect() as conn:
-            rows = conn.execute(sql, {"query_vector": _vector_literal(query_vector), "top_k": top_k}).mappings().all()
+            rows = (
+                conn.execute(
+                    sql, {"query_vector": _vector_literal(query_vector), "top_k": top_k}
+                )
+                .mappings()
+                .all()
+            )
         return [Chunk(**dict(row)) for row in rows]

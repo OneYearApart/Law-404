@@ -5,7 +5,8 @@
 import json
 import os
 import time
-from common import _get, DETAIL_URL, API_KEY
+
+from common import API_KEY, DETAIL_URL, _get
 
 SELECTED_CASES = {
     "Q1_보증금못받음": [
@@ -35,15 +36,15 @@ def fetch_case_detail(prec_id):
         prec = resp.json().get("PrecService", {})
         return {
             "판례일련번호": prec_id,
-            "사건명":       prec.get("사건명", ""),
-            "사건번호":     prec.get("사건번호", ""),
-            "선고일자":     prec.get("선고일자", ""),
-            "법원명":       prec.get("법원명", ""),
-            "판시사항":     prec.get("판시사항", ""),
-            "판결요지":     prec.get("판결요지", ""),
-            "판례내용":     prec.get("판례내용", ""),
-            "참조조문":     prec.get("참조조문", ""),
-            "참조판례":     prec.get("참조판례", ""),
+            "사건명": prec.get("사건명", ""),
+            "사건번호": prec.get("사건번호", ""),
+            "선고일자": prec.get("선고일자", ""),
+            "법원명": prec.get("법원명", ""),
+            "판시사항": prec.get("판시사항", ""),
+            "판결요지": prec.get("판결요지", ""),
+            "판례내용": prec.get("판례내용", ""),
+            "참조조문": prec.get("참조조문", ""),
+            "참조판례": prec.get("참조판례", ""),
         }
     except Exception:
         return None

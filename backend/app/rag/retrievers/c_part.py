@@ -6,19 +6,18 @@
 
 import logging
 import os
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
 import psycopg2
-from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from openai import OpenAI
+from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -33,12 +32,13 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 # 검색 결과를 표현하는 데이터 구조
 # ========================================================================
 
+
 @dataclass
 class RetrievedChunk:
     id: int
     content: str
     similarity: float
-    source_type: str          # "statute" | "precedent"
+    source_type: str  # "statute" | "precedent"
     category_tag: int
     statute_number: Optional[str] = None
     statute_branch: Optional[str] = None
@@ -55,10 +55,11 @@ class RetrievedPrecedent:
     판례 하나를 판시사항/판결요지/판례내용이 합쳐진 형태로 표현.
     (검색 결과를 사용자에게 보여줄 때는 쪼개진 3개보다 이게 더 자연스러움)
     """
+
     case_number: str
     case_name: str
     case_date: Optional[str]
-    max_similarity: float                    # 3개 청크 중 가장 높은 유사도
+    max_similarity: float  # 3개 청크 중 가장 높은 유사도
     판시사항: Optional[str] = None
     판결요지: Optional[str] = None
     판례내용: Optional[str] = None
@@ -67,6 +68,7 @@ class RetrievedPrecedent:
 # ========================================================================
 # Retriever 본체
 # ========================================================================
+
 
 class CPartRetriever:
     """
@@ -79,7 +81,9 @@ class CPartRetriever:
             print(r.content[:50], r.similarity)
     """
 
-    def __init__(self, database_url: str = DATABASE_URL, openai_api_key: str = OPENAI_API_KEY):
+    def __init__(
+        self, database_url: str = DATABASE_URL, openai_api_key: str = OPENAI_API_KEY
+    ):
         self.database_url = database_url
         self.client = OpenAI(api_key=openai_api_key)
         self.embedding_model = EMBEDDING_MODEL
@@ -175,7 +179,9 @@ class CPartRetriever:
     # 3) 판례 청크 재조립 (판시사항+판결요지+판례내용 -> 판례 1건)
     # --------------------------------------------------------------
     @staticmethod
-    def _merge_precedent_chunks(chunks: List[RetrievedChunk]) -> List[RetrievedPrecedent]:
+    def _merge_precedent_chunks(
+        chunks: List[RetrievedChunk],
+    ) -> List[RetrievedPrecedent]:
         merged: Dict[str, RetrievedPrecedent] = {}
 
         for chunk in chunks:
@@ -233,7 +239,9 @@ if __name__ == "__main__":
 
     print("[관련 조문]")
     for s in result["statutes"]:
-        title = f"제{s.statute_number}조" + (f"의{s.statute_branch}" if s.statute_branch else "")
+        title = f"제{s.statute_number}조" + (
+            f"의{s.statute_branch}" if s.statute_branch else ""
+        )
         print(f"  - {title} ({s.statute_title}) | 유사도 {s.similarity:.3f}")
 
     print("\n[관련 판례]")

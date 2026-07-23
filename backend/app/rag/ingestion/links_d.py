@@ -14,6 +14,7 @@ D파트 조문-판례-사례집 링크 구조 (작업단위9).
 입력 rows는 d_part_embeddings에 이미 적재되어 실제 id를 가진 dict 목록을 전제한다
 (적재/오케스트레이션은 작업단위19의 d_part_ingest.py 몫).
 """
+
 import re
 
 STATUTE_NAME_ALIASES = {
@@ -37,14 +38,23 @@ TOPIC_TAG_KEYWORDS: dict[str, list[str]] = {
     "중-④갱신시점_위험": ["갱신료", "갱신 거절", "갱신 시점"],
     "중-⑤다가구_타세입자_피해": ["다른 세입자", "타 세입자", "이웃 세입자"],
     "트리거-임대인사망파산": ["임대인 사망", "임대인이 사망", "회생", "파산"],
-    "후-①대항력_우선변제권_상실": ["대항력", "우선변제권", "최우선변제", "소액임차인"],  # 뒤 2개: HUG규정 최우선변제액 기준표 태깅용(작업단위 48)
+    "후-①대항력_우선변제권_상실": [
+        "대항력",
+        "우선변제권",
+        "최우선변제",
+        "소액임차인",
+    ],  # 뒤 2개: HUG규정 최우선변제액 기준표 태깅용(작업단위 48)
     "후-②이중계약_배당순위": ["배당금", "배당 순위", "배당순위", "이중계약"],
 }
 
 
 def tag_hug_case(content: str) -> list[str]:
     """HUG사례집 청크 본문에 TOPIC_TAG_KEYWORDS 키워드가 있으면 해당 태그를 부여."""
-    return [tag for tag, keywords in TOPIC_TAG_KEYWORDS.items() if any(kw in content for kw in keywords)]
+    return [
+        tag
+        for tag, keywords in TOPIC_TAG_KEYWORDS.items()
+        if any(kw in content for kw in keywords)
+    ]
 
 
 def enrich_hug_topic_tags(hug_rows: list[dict]) -> None:
@@ -59,7 +69,7 @@ def _base_article_no(article_no: str) -> str:
 
 
 def _extract_article_key(citation: str) -> tuple[str, str] | None:
-    """"법령명 제N조(의M)(...)" 형태 인용에서 (법령명, base_article_no)를 추출.
+    """ "법령명 제N조(의M)(...)" 형태 인용에서 (법령명, base_article_no)를 추출.
 
     조번호가 없는 인용(법령명 단독, 항/호만 승계된 조각 등)은 정밀 매칭 대상이 아니므로 None.
     """
@@ -79,7 +89,9 @@ def _build_statute_index(statute_rows: list[dict]) -> dict[tuple[str, str], list
     return index
 
 
-def _tier1_links(precedent_row: dict, statute_index: dict[tuple[str, str], list[int]]) -> list[dict]:
+def _tier1_links(
+    precedent_row: dict, statute_index: dict[tuple[str, str], list[int]]
+) -> list[dict]:
     links = []
     seen_ids: set[int] = set()
     for citation in precedent_row.get("reference_articles") or []:
@@ -90,14 +102,16 @@ def _tier1_links(precedent_row: dict, statute_index: dict[tuple[str, str], list[
             if linked_id in seen_ids:
                 continue
             seen_ids.add(linked_id)
-            links.append({
-                "source_id": precedent_row["id"],
-                "source_type": "판례",
-                "linked_id": linked_id,
-                "linked_type": "법령원문",
-                "linked_statute_name": None,
-                "match_basis": "참조조문_정밀",
-            })
+            links.append(
+                {
+                    "source_id": precedent_row["id"],
+                    "source_type": "판례",
+                    "linked_id": linked_id,
+                    "linked_type": "법령원문",
+                    "linked_statute_name": None,
+                    "match_basis": "참조조문_정밀",
+                }
+            )
     return links
 
 
@@ -110,14 +124,16 @@ def _tier2_links(precedent_row: dict, known_statute_names: set[str]) -> list[dic
         name = STATUTE_NAME_ALIASES.get(name.strip(), name.strip())
         if name not in known_statute_names:
             continue
-        links.append({
-            "source_id": precedent_row["id"],
-            "source_type": "판례",
-            "linked_id": None,
-            "linked_type": "법령원문",
-            "linked_statute_name": name,
-            "match_basis": "근거법_법령단위",
-        })
+        links.append(
+            {
+                "source_id": precedent_row["id"],
+                "source_type": "판례",
+                "linked_id": None,
+                "linked_type": "법령원문",
+                "linked_statute_name": name,
+                "match_basis": "근거법_법령단위",
+            }
+        )
     return links
 
 
@@ -129,14 +145,16 @@ def _tier3_links(precedents: list[dict], hug_cases: list[dict]) -> list[dict]:
             continue
         for hug in hug_cases:
             if prec_tags & set(hug.get("topic_tags") or []):
-                links.append({
-                    "source_id": prec["id"],
-                    "source_type": "판례",
-                    "linked_id": hug["id"],
-                    "linked_type": "HUG사례집",
-                    "linked_statute_name": None,
-                    "match_basis": "주제태그_유사",
-                })
+                links.append(
+                    {
+                        "source_id": prec["id"],
+                        "source_type": "판례",
+                        "linked_id": hug["id"],
+                        "linked_type": "HUG사례집",
+                        "linked_statute_name": None,
+                        "match_basis": "주제태그_유사",
+                    }
+                )
     return links
 
 
@@ -163,9 +181,9 @@ def build_links(rows: list[dict]) -> list[dict]:
 
 
 if __name__ == "__main__":
+    from hug_docs_d import load_hug_chunks
     from precedents_d import load_precedent_chunks
     from statutes_d import load_statute_chunks
-    from hug_docs_d import load_hug_chunks
 
     rows = load_precedent_chunks() + load_statute_chunks() + load_hug_chunks()
     for i, row in enumerate(rows, start=1):

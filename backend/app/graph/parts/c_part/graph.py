@@ -4,12 +4,12 @@
 """
 
 import logging
-from functools import partial
-from typing import TypedDict, Optional
 from datetime import datetime
+from functools import partial
+from typing import Optional, TypedDict
 
-from langgraph.graph import StateGraph, START, END
 from langchain_core.language_models import BaseLanguageModel
+from langgraph.graph import END, START, StateGraph
 
 from app.graph.parts.c_part.agents.answer_generator import (
     AnswerGeneratorAgent,
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # 【State】
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 class CPartState(TypedDict):
     """
     【그래프 State】
@@ -31,14 +32,14 @@ class CPartState(TypedDict):
 
     # 【입력】
     question: str
-    search_results: dict               # {"statutes": [...], "precedents": [...]}
+    search_results: dict  # {"statutes": [...], "precedents": [...]}
     chat_history: Optional[list]
     user_id: Optional[int]
 
     # 【Classifier가 채움】
     classifier_result: Optional[dict]
-    deposit_amount: Optional[int]      # 보증금 액수 (비용 계산용)
-    suggest_document: Optional[bool]   # 내용증명 작성 제안 노출 여부
+    deposit_amount: Optional[int]  # 보증금 액수 (비용 계산용)
+    suggest_document: Optional[bool]  # 내용증명 작성 제안 노출 여부
 
     # 【각 노드가 채우는 섹션】
     situation_section: Optional[dict]
@@ -57,6 +58,7 @@ class CPartState(TypedDict):
 # ════════════════════════════════════════════════════════════════════════════════
 # 【Node 0】Classifier + 보증금 추출  — 순차
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 async def node_topic_classifier(
     state: CPartState,
@@ -187,10 +189,12 @@ async def node_topic_classifier(
     except Exception as e:
         logger.error(f"[Classifier] 실패: {e}")
         return {"error": f"[Classifier] 실패: {e}"}
-    
+
+
 # ════════════════════════════════════════════════════════════════════════════════
 # 【Node 1】상황 진단  — 순차 (모든 노드의 전제)
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 async def node_situation_generator(
     state: CPartState,
@@ -230,6 +234,7 @@ async def node_situation_generator(
 # 병렬: max(20초, 15초)                      = 20초
 # → 15초 절약
 
+
 async def node_legal_basis_generator(
     state: CPartState,
     agent: AnswerGeneratorAgent,
@@ -249,7 +254,7 @@ async def node_legal_basis_generator(
             statutes=state["search_results"].get("statutes", []),
             situation_content=situation.get("content", ""),
         )
-        return {"legal_basis_section": section}   # ← 자기 필드만!
+        return {"legal_basis_section": section}  # ← 자기 필드만!
 
     except Exception as e:
         logger.error(f"[Node 2] 법 조문 실패: {e}")
@@ -269,7 +274,7 @@ async def node_precedents_generator(
             precedents=state["search_results"].get("precedents", []),
             situation_content=situation.get("content", ""),
         )
-        return {"precedents_section": section}   # ← 자기 필드만!
+        return {"precedents_section": section}  # ← 자기 필드만!
 
     except Exception as e:
         logger.error(f"[Node 3] 판례 실패: {e}")
@@ -279,6 +284,7 @@ async def node_precedents_generator(
 # ════════════════════════════════════════════════════════════════════════════════
 # 【Node 4】행동 절차  — 순차 (합류 지점)
 # ════════════════════════════════════════════════════════════════════════════════
+
 
 async def node_action_steps_generator(
     state: CPartState,
@@ -374,6 +380,7 @@ async def node_follow_up_questions_generator(
 # 【Node 8】최종 조립  — 순차 (합류 지점)
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 async def node_answer_assembler(
     state: CPartState,
     agent: AnswerGeneratorAgent,
@@ -411,6 +418,7 @@ async def node_answer_assembler(
 # 【그래프 빌드】
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 def build_c_part_graph(llm: BaseLanguageModel):
     """
     【빌드】C파트 답변 생성 그래프 (병렬화 버전)
@@ -431,8 +439,13 @@ def build_c_part_graph(llm: BaseLanguageModel):
     graph.add_node("precedents", partial(node_precedents_generator, agent=agent))
     graph.add_node("action_steps", partial(node_action_steps_generator, agent=agent))
     graph.add_node("expected_cost", partial(node_expected_cost_generator, agent=agent))
-    graph.add_node("anticipated_disputes", partial(node_anticipated_disputes_generator, agent=agent))
-    graph.add_node("follow_up_questions", partial(node_follow_up_questions_generator, agent=agent))
+    graph.add_node(
+        "anticipated_disputes",
+        partial(node_anticipated_disputes_generator, agent=agent),
+    )
+    graph.add_node(
+        "follow_up_questions", partial(node_follow_up_questions_generator, agent=agent)
+    )
     graph.add_node("assemble", partial(node_answer_assembler, agent=agent))
 
     # ────────────────────────────────────────────────────────────────────
@@ -457,8 +470,8 @@ def build_c_part_graph(llm: BaseLanguageModel):
         "classifier",
         route_after_classification,
         {
-            "continue": "situation",   # 키 → 노드명 (문자열)
-            "stop": END,               # 키 → END 상수 (따옴표 X!)
+            "continue": "situation",  # 키 → 노드명 (문자열)
+            "stop": END,  # 키 → END 상수 (따옴표 X!)
         },
     )
 

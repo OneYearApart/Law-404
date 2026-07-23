@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 답변 품질 평가 스크립트.
 
 최종 답변의 품질을 발표용으로 비교할 수 있도록 휴리스틱 지표를 계산합니다.
@@ -23,16 +23,16 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_QUESTIONS_PATH = Path(__file__).resolve().parent / "answer_quality_questions.json"
+DEFAULT_QUESTIONS_PATH = (
+    Path(__file__).resolve().parent / "answer_quality_questions.json"
+)
 DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent / "answer_quality_eval.json"
 
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.graph.parts.b_part.graph import graph  # noqa: E402
-
 
 REQUIRED_SECTIONS = [
     "① 결론",
@@ -70,7 +70,9 @@ def count_additional_questions(answer: str) -> int:
         return 0
 
     question_marks = body.count("?")
-    bullet_questions = len(re.findall(r"^\s*[-\d.]+\s+.*(?:\?|나요|세요|까요)", body, re.MULTILINE))
+    bullet_questions = len(
+        re.findall(r"^\s*[-\d.]+\s+.*(?:\?|나요|세요|까요)", body, re.MULTILINE)
+    )
     return max(question_marks, bullet_questions)
 
 
@@ -78,11 +80,17 @@ def has_law_basis(answer: str, retrieved: list[dict[str, Any]]) -> bool:
     has_law_doc = any(document.get("source_type") == "law" for document in retrieved)
     if not has_law_doc:
         return True
-    return "제" in answer and any(keyword in answer for keyword in ["법", "민법", "주택임대차보호법", "시행령"])
+    return "제" in answer and any(
+        keyword in answer for keyword in ["법", "민법", "주택임대차보호법", "시행령"]
+    )
 
 
-def has_unrelated_precedent_exposure(answer: str, retrieved: list[dict[str, Any]]) -> bool:
-    precedent_docs = [document for document in retrieved if document.get("source_type") == "precedent"]
+def has_unrelated_precedent_exposure(
+    answer: str, retrieved: list[dict[str, Any]]
+) -> bool:
+    precedent_docs = [
+        document for document in retrieved if document.get("source_type") == "precedent"
+    ]
     if not precedent_docs:
         return False
 
@@ -107,7 +115,9 @@ def has_calendar_format(answer: str, calendar_events: list[dict[str, Any]]) -> b
     return "캘린더 등록 가능 일정" in answer and "실제 등록 전" in answer
 
 
-def evaluate_answer(final_state: dict[str, Any], question_item: dict[str, Any]) -> dict[str, Any]:
+def evaluate_answer(
+    final_state: dict[str, Any], question_item: dict[str, Any]
+) -> dict[str, Any]:
     answer = str(final_state.get("final_answer", ""))
     retrieved = final_state.get("retrieved", [])
     if not isinstance(retrieved, list):
@@ -123,7 +133,9 @@ def evaluate_answer(final_state: dict[str, Any], question_item: dict[str, Any]) 
         planner_validation = {}
 
     expected_rule_min_count = int(question_item.get("expected_rule_min_count") or 0)
-    expected_planner_decision = question_item.get("expected_planner_validation_decision")
+    expected_planner_decision = question_item.get(
+        "expected_planner_validation_decision"
+    )
     should_answer = bool(question_item.get("should_answer", True))
 
     additional_question_count = count_additional_questions(answer)
@@ -143,7 +155,11 @@ def evaluate_answer(final_state: dict[str, Any], question_item: dict[str, Any]) 
         else True
     )
     answered_without_early_stop = len(retrieved) > 0 or len(rule_results) > 0
-    answer_flow_hit = answered_without_early_stop if should_answer else not answered_without_early_stop
+    answer_flow_hit = (
+        answered_without_early_stop
+        if should_answer
+        else not answered_without_early_stop
+    )
 
     return {
         "id": question_item.get("id"),
@@ -165,8 +181,14 @@ def evaluate_answer(final_state: dict[str, Any], question_item: dict[str, Any]) 
             "should_answer": should_answer,
             "answer_flow_hit": answer_flow_hit,
             "retrieved_count": len(retrieved),
-            "law_doc_count": sum(1 for document in retrieved if document.get("source_type") == "law"),
-            "precedent_doc_count": sum(1 for document in retrieved if document.get("source_type") == "precedent"),
+            "law_doc_count": sum(
+                1 for document in retrieved if document.get("source_type") == "law"
+            ),
+            "precedent_doc_count": sum(
+                1
+                for document in retrieved
+                if document.get("source_type") == "precedent"
+            ),
         },
         "state": {
             "categories": final_state.get("categories"),
@@ -202,7 +224,9 @@ async def run_case(question_item: dict[str, Any], top_k: int) -> dict[str, Any]:
                 "calendar_format_ok": False,
                 "rule_result_hit": False,
                 "rule_result_count": 0,
-                "expected_rule_min_count": int(question_item.get("expected_rule_min_count") or 0),
+                "expected_rule_min_count": int(
+                    question_item.get("expected_rule_min_count") or 0
+                ),
                 "planner_validation_decision": None,
                 "expected_planner_validation_decision": question_item.get(
                     "expected_planner_validation_decision"
@@ -225,8 +249,7 @@ def build_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
         return round(mean(values), 4) if values else 0.0
 
     additional_question_counts = [
-        int(metric.get("additional_question_count") or 0)
-        for metric in metrics
+        int(metric.get("additional_question_count") or 0) for metric in metrics
     ]
 
     return {
@@ -246,7 +269,9 @@ def build_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-async def evaluate_questions(questions: list[dict[str, Any]], top_k: int) -> dict[str, Any]:
+async def evaluate_questions(
+    questions: list[dict[str, Any]], top_k: int
+) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for question_item in questions:
         print(f"평가 중: {question_item.get('id')} - {question_item.get('question')}")

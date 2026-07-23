@@ -117,8 +117,6 @@ class MemoryConversationStore:
 DEFAULT_CONVERSATION_STORE = MemoryConversationStore()
 
 
-
-
 class SharedConversationStore:
     """팀 공통 conversations/messages 테이블에 A파트 상태를 저장한다.
 
@@ -287,9 +285,9 @@ class SharedConversationStore:
             )
             if row is None:
                 return False
-            db.query(Message).filter(
-                Message.conversation_id == conversation_pk
-            ).delete(synchronize_session=False)
+            db.query(Message).filter(Message.conversation_id == conversation_pk).delete(
+                synchronize_session=False
+            )
             db.delete(row)
             db.commit()
             return True
@@ -325,9 +323,7 @@ class SharedConversationStore:
         db = SessionLocal()
         try:
             return int(
-                db.query(Conversation)
-                .filter(Conversation.part == self.part)
-                .count()
+                db.query(Conversation).filter(Conversation.part == self.part).count()
             )
         finally:
             db.close()
@@ -375,8 +371,12 @@ class SharedConversationStore:
                         "title": row.title or state.initial_query or "새 계약 전 상담",
                         "risk_level": state.last_risk_level,
                         "turn_count": state.turn_count,
-                        "created_at": state.created_at.isoformat() if state.created_at else None,
-                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                        "created_at": state.created_at.isoformat()
+                        if state.created_at
+                        else None,
+                        "updated_at": row.updated_at.isoformat()
+                        if row.updated_at
+                        else None,
                     }
                 )
             return summaries

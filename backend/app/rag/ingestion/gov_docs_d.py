@@ -13,6 +13,7 @@ d_part_ingest가 links_d.enrich_hug_topic_tags(통제 어휘 TOPIC_TAG_KEYWORDS)
 같은 트리의 국회 국토교통위 보고 요약본(250627(조간) ... 국회 국토교통위 보고 ...pdf)은
 위 실태조사 보고서의 보도자료 요약본(2p, 1p는 담당자 연락처)이라 중복으로 판단해 적재 제외.
 """
+
 import re
 from pathlib import Path
 
@@ -94,7 +95,11 @@ def load_kkangtong_chunks() -> list[dict]:
             cur = {
                 "case_no": f"깡통전세-예방법-계약{label}",
                 "lines": [s],
-                "metadata": {"원본": KKANGTONG_PDF.name, "섹션": f"피해 예방법 - 계약 {label} 할일", "구분": "예방법"},
+                "metadata": {
+                    "원본": KKANGTONG_PDF.name,
+                    "섹션": f"피해 예방법 - 계약 {label} 할일",
+                    "구분": "예방법",
+                },
             }
             continue
         if cur is not None:

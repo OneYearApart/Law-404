@@ -2,6 +2,7 @@
 get_session_state / update_session_state 실제 DB round-trip 테스트.
 docker의 law404_db를 그대로 사용 (mock 없음) — 테스트 종료 후 생성한 row는 정리한다.
 """
+
 import pytest
 import pytest_asyncio
 
@@ -16,7 +17,11 @@ from app.core.db import SessionLocal
 async def owned():
     """(conversation_id, user_id) 튜플. 소유권 필터에 user_id가 필요해 함께 노출한다."""
     db = SessionLocal()
-    user = User(username="test_session_state_user", password_hash="x", nickname="test_session_state_nick")
+    user = User(
+        username="test_session_state_user",
+        password_hash="x",
+        nickname="test_session_state_nick",
+    )
     db.add(user)
     db.flush()
     conversation = Conversation(user_id=user.id, part="d")
@@ -73,4 +78,6 @@ async def test_get_session_state_wrong_owner_raises(owned):
 async def test_update_session_state_wrong_owner_raises(owned):
     conversation_id, owner_id = owned
     with pytest.raises(ConversationNotFoundError):
-        await update_session_state(conversation_id, owner_id + 12345, {"stage": "leaked"})
+        await update_session_state(
+            conversation_id, owner_id + 12345, {"stage": "leaked"}
+        )

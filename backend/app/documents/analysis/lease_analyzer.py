@@ -89,7 +89,9 @@ _AMOUNT_LABEL_PATTERNS = {
 _SIGNATURE_PATTERNS = {
     "lessor_signature_marker": re.compile(r"임대인.{0,40}(?:서명|날인|\(인\)|印)"),
     "lessee_signature_marker": re.compile(r"임차인.{0,40}(?:서명|날인|\(인\)|印)"),
-    "broker_signature_marker": re.compile(r"(?:공인중개사|중개업자).{0,40}(?:서명|날인|\(인\)|印)"),
+    "broker_signature_marker": re.compile(
+        r"(?:공인중개사|중개업자).{0,40}(?:서명|날인|\(인\)|印)"
+    ),
 }
 _CLAUSE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "mortgage_cancellation": ("근저당", "말소"),
@@ -277,17 +279,12 @@ _INVALID_PARTY_NAMES = {
 }
 
 
-_INVALID_PARTY_LOCATION_NAMES = {
-    normalize_name(marker)
-    for marker in _REGION_MARKERS
-}
+_INVALID_PARTY_LOCATION_NAMES = {normalize_name(marker) for marker in _REGION_MARKERS}
 
 
 def _is_invalid_party_name(value: str | None) -> bool:
     normalized = normalize_name(value or "")
-    date_marker_count = sum(
-        marker in normalized for marker in ("년", "월", "일")
-    )
+    date_marker_count = sum(marker in normalized for marker in ("년", "월", "일"))
     return (
         not normalized
         or normalized in _INVALID_PARTY_NAMES
@@ -385,10 +382,7 @@ def _party_table_names(lines: list[_Line]) -> list[tuple[_Line, str]]:
 
         for name_line, raw_name in names:
             normalized = normalize_name(raw_name)
-            if (
-                _is_invalid_party_name(normalized)
-                or normalized in seen
-            ):
+            if _is_invalid_party_name(normalized) or normalized in seen:
                 continue
             seen.add(normalized)
             result.append((name_line, raw_name))
@@ -468,7 +462,20 @@ def _role_nearby_name(
             normalized = normalize_name(raw_name)
             if normalized in excluded or _is_invalid_party_name(normalized):
                 continue
-            if normalized.endswith(("특별시", "광역시", "자치시", "자치도", "시", "군", "구", "읍", "면", "리")):
+            if normalized.endswith(
+                (
+                    "특별시",
+                    "광역시",
+                    "자치시",
+                    "자치도",
+                    "시",
+                    "군",
+                    "구",
+                    "읍",
+                    "면",
+                    "리",
+                )
+            ):
                 continue
 
             score = 0
@@ -488,7 +495,9 @@ def _role_nearby_name(
                 score += 5
             if any(
                 "성명" in lines[nearby].compact
-                for nearby in range(max(start_index, index - 2), min(len(lines), index + 3))
+                for nearby in range(
+                    max(start_index, index - 2), min(len(lines), index + 3)
+                )
             ):
                 score += 3
             if role_marker in context:
@@ -556,9 +565,7 @@ def _add_name_candidates(
         if item:
             candidates["lessor_name"].append(item)
 
-    lessor_values = {
-        str(item.normalized_value) for item in candidates["lessor_name"]
-    }
+    lessor_values = {str(item.normalized_value) for item in candidates["lessor_name"]}
     if not candidates["lessor_name"]:
         fallback_lessor = _role_nearby_name(
             lines,
@@ -846,7 +853,9 @@ def _add_date_candidates(
             if contract_date:
                 candidates["contract_date"].append(contract_date)
         elif (
-            any(marker in compact for marker in ("본계약을증명", "기명날인", "서명또는"))
+            any(
+                marker in compact for marker in ("본계약을증명", "기명날인", "서명또는")
+            )
             and dates
         ):
             contract_date = _text_candidate(
@@ -864,8 +873,7 @@ def _add_date_candidates(
             if not dates:
                 continue
             nearby = "".join(
-                item.compact
-                for item in lines[max(0, index - 8) : index + 1]
+                item.compact for item in lines[max(0, index - 8) : index + 1]
             )
             attestation_context = (
                 "본계약을증명" in nearby
@@ -889,7 +897,6 @@ def _add_date_candidates(
         candidates["contract_start_date"].append(candidates["move_in_date"][0])
 
 
-
 def analyze_lease_contract(
     *,
     document: UploadedDocument,
@@ -897,9 +904,7 @@ def analyze_lease_contract(
 ) -> LeaseAnalysisResult:
     started_at = utc_now()
     lines = _page_lines(extraction)
-    candidates: dict[str, list[FieldCandidate]] = {
-        key: [] for key in FIELD_LABELS
-    }
+    candidates: dict[str, list[FieldCandidate]] = {key: [] for key in FIELD_LABELS}
 
     _add_name_candidates(
         document_id=document.document_id,

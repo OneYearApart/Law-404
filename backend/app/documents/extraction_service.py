@@ -12,9 +12,9 @@ from app.documents.extraction_models import (
     EXTRACTION_VERSION,
     DocumentExtractionResult,
     ExtractionMethod,
-    PDFExtractionStrategy,
     PageExtractionResult,
     PageExtractionStatus,
+    PDFExtractionStrategy,
 )
 from app.documents.extraction_storage import DocumentExtractionStorage
 from app.documents.models import (
@@ -71,9 +71,7 @@ class DocumentExtractionService:
 
         self.repository = repository
         self.ocr_provider = ocr_provider or AdaptiveTesseractOCRProvider()
-        self.result_storage = result_storage or DocumentExtractionStorage(
-            repository
-        )
+        self.result_storage = result_storage or DocumentExtractionStorage(repository)
         self.render_dpi = render_dpi
         self.max_pages = max_pages
         self.max_pixels = max_pixels
@@ -116,8 +114,7 @@ class DocumentExtractionService:
         sections = [
             f"--- 페이지 {page.page_number} ---\n{page.text.strip()}"
             for page in pages
-            if page.status == PageExtractionStatus.COMPLETED
-            and page.text.strip()
+            if page.status == PageExtractionStatus.COMPLETED and page.text.strip()
         ]
         return "\n\n".join(sections).strip()
 
@@ -308,9 +305,7 @@ class DocumentExtractionService:
                         direct_text, direct_text_seconds = extract_pdf_page_text(page)
                         quality = evaluate_direct_text_quality(
                             direct_text,
-                            minimum_compact_characters=(
-                                self.minimum_direct_characters
-                            ),
+                            minimum_compact_characters=(self.minimum_direct_characters),
                             minimum_score=self.minimum_direct_quality_score,
                         )
                         quality_score = quality.score
@@ -371,8 +366,7 @@ class DocumentExtractionService:
                         direct_quality_reasons=quality_reasons,
                         render_seconds=render_seconds,
                         fallback_to_ocr=(
-                            self.pdf_strategy
-                            == PDFExtractionStrategy.DIRECT_TEXT_FIRST
+                            self.pdf_strategy == PDFExtractionStrategy.DIRECT_TEXT_FIRST
                         ),
                     )
                 )
@@ -433,9 +427,7 @@ class DocumentExtractionService:
                 "ocr_page_count": result.ocr_page_count,
                 "text_character_count": result.text_character_count,
                 "average_ocr_confidence": result.average_ocr_confidence,
-                "average_direct_text_quality": (
-                    result.average_direct_text_quality
-                ),
+                "average_direct_text_quality": (result.average_direct_text_quality),
                 "extraction_total_seconds": result.total_seconds,
                 "extraction_result_path": result.extraction_result_path,
                 "extracted_text_path": result.extracted_text_path,
@@ -494,13 +486,9 @@ class DocumentExtractionService:
             pages, open_seconds, page_count, warnings = self._extract_pdf(path)
 
             successful = sum(
-                page.status == PageExtractionStatus.COMPLETED
-                for page in pages
+                page.status == PageExtractionStatus.COMPLETED for page in pages
             )
-            failed = sum(
-                page.status == PageExtractionStatus.FAILED
-                for page in pages
-            )
+            failed = sum(page.status == PageExtractionStatus.FAILED for page in pages)
             combined_text = self._combine_pages(pages)
             page_errors = [
                 f"{page.page_number}페이지: {page.error_message}"
@@ -537,13 +525,9 @@ class DocumentExtractionService:
                 ),
                 text_character_count=len(combined_text),
                 average_ocr_confidence=self._average_confidence(pages),
-                average_direct_text_quality=(
-                    self._average_direct_quality(pages)
-                ),
+                average_direct_text_quality=(self._average_direct_quality(pages)),
                 open_seconds=open_seconds,
-                direct_text_seconds=sum(
-                    page.direct_text_seconds for page in pages
-                ),
+                direct_text_seconds=sum(page.direct_text_seconds for page in pages),
                 render_seconds=sum(page.render_seconds for page in pages),
                 ocr_seconds=sum(page.ocr_seconds for page in pages),
                 total_seconds=perf_counter() - started_counter,

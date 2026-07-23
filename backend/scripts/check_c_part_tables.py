@@ -1,8 +1,7 @@
-
+import json
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import json
 
 DB_URL = "postgresql://edu:1234@localhost:5435/edudb"
 
@@ -14,12 +13,15 @@ def show_table(cur, table_name: str, limit: int = 100):
     print("=" * 78)
 
     # 【1】테이블 존재 확인
-    cur.execute("""
+    cur.execute(
+        """
         SELECT EXISTS (
             SELECT FROM information_schema.tables
             WHERE table_name = %s
         )
-    """, (table_name,))
+    """,
+        (table_name,),
+    )
 
     exists = cur.fetchone()["exists"]
 
@@ -30,12 +32,15 @@ def show_table(cur, table_name: str, limit: int = 100):
 
     # 【2】컬럼 정보 조회
     # information_schema에서 컬럼명 + 타입을 가져옴
-    cur.execute("""
+    cur.execute(
+        """
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE table_name = %s
         ORDER BY ordinal_position
-    """, (table_name,))
+    """,
+        (table_name,),
+    )
 
     columns = cur.fetchall()
 

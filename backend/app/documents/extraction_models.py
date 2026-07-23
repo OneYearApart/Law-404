@@ -14,7 +14,6 @@ from app.documents.models import (
     utc_now,
 )
 
-
 EXTRACTION_VERSION = "document-extraction-v5-lease-registry-local-ocr"
 ALL_OCR_BENCHMARK_VERSION = "document-ocr-v1-all-pages-benchmark"
 

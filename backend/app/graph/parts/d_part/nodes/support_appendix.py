@@ -11,6 +11,7 @@ _SPECIAL_CASE_GUIDANCE를 inline으로 세팅했고, action_plan은 needs_respon
 결정은 그래프 안에서 끝내고 결과만 appendix_text 슬롯으로 넘긴다 — 실제 조립부
 (routes/d_part.py)가 상황모델을 다시 해석하면 진실원천이 둘이 된다.
 """
+
 from typing import Optional
 
 from app.graph.parts.d_part.nodes import support_data as data
@@ -30,7 +31,11 @@ def build_action_plan(judgment: VictimJudgment, slots: VictimRequirementSlots) -
 
     if judgment == VictimJudgment.NEEDS_CONFIRMATION:
         gap_lines = data.unfilled_slot_lines(slots)
-        body = "\n".join(gap_lines) if gap_lines else "- 추가로 확인이 필요한 요건이 있습니다."
+        body = (
+            "\n".join(gap_lines)
+            if gap_lines
+            else "- 추가로 확인이 필요한 요건이 있습니다."
+        )
         sections.append(f"{data._CONFIRM_HEADER}\n{body}")
     else:  # 높음(또는 향후 있음)
         measures = (
@@ -40,8 +45,8 @@ def build_action_plan(judgment: VictimJudgment, slots: VictimRequirementSlots) -
         )
         sections.append(f"{data._APPLY_STEP}\n{measures}")
 
-    sections.append(data._PROTECTIVE_STEPS)   # 공통 보호조치
-    sections.append(data._CONTACTS)           # 공통 상담 안내
+    sections.append(data._PROTECTIVE_STEPS)  # 공통 보호조치
+    sections.append(data._CONTACTS)  # 공통 상담 안내
     return "\n\n".join(sections)
 
 

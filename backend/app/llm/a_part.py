@@ -10,9 +10,11 @@ from typing import Any, Literal
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+
 def search_documents(**kwargs: Any):
     """RAG 의존성을 실제 검색 시점까지 지연 로드한다."""
     from app.rag.retrievers.a_part import search_documents as _search
+
     return _search(**kwargs)
 
 
@@ -370,9 +372,7 @@ def _require_openai_settings() -> tuple[str, str]:
     chat_model = os.getenv("OPENAI_CHAT_MODEL", DEFAULT_CHAT_MODEL).strip()
 
     if not api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY가 없습니다. backend/.env를 확인하세요."
-        )
+        raise RuntimeError("OPENAI_API_KEY가 없습니다. backend/.env를 확인하세요.")
 
     if not chat_model:
         chat_model = DEFAULT_CHAT_MODEL
@@ -448,9 +448,7 @@ def _collect_route_keywords(
 def _source_group_key(result: dict[str, Any]) -> str:
     metadata = _safe_metadata(result)
 
-    parent_document_id = _normalize_text(
-        metadata.get("parent_document_id")
-    )
+    parent_document_id = _normalize_text(metadata.get("parent_document_id"))
     source_id = _normalize_text(result.get("source_id"))
     document_id = _normalize_text(result.get("document_id"))
 
@@ -478,11 +476,7 @@ def _count_keyword_hits(
 ) -> int:
     combined_text = _evidence_text(result)
 
-    return sum(
-        1
-        for keyword in keywords
-        if keyword.lower() in combined_text
-    )
+    return sum(1 for keyword in keywords if keyword.lower() in combined_text)
 
 
 def _has_target_issue(result: dict[str, Any]) -> bool:
@@ -502,7 +496,6 @@ def _is_summary_chunk(result: dict[str, Any]) -> bool:
     text = _normalize_text(result.get("text"))
 
     return chunk_index == 1 or text.startswith("[쟁점]")
-
 
 
 def _matched_route_ids(
@@ -600,26 +593,23 @@ def _question_evidence_profile(
     ):
         return "co_owner"
 
-    if (
-        any(
-            keyword in normalized_query
-            for keyword in [
-                "소유자랑",
-                "소유자와",
-                "등기부등본 소유자",
-                "등기부 소유자",
-            ]
-        )
-        and any(
-            keyword in normalized_query
-            for keyword in [
-                "임대인",
-                "계약서",
-                "이름이 다",
-                "다른데",
-                "불일치",
-            ]
-        )
+    if any(
+        keyword in normalized_query
+        for keyword in [
+            "소유자랑",
+            "소유자와",
+            "등기부등본 소유자",
+            "등기부 소유자",
+        ]
+    ) and any(
+        keyword in normalized_query
+        for keyword in [
+            "임대인",
+            "계약서",
+            "이름이 다",
+            "다른데",
+            "불일치",
+        ]
     ):
         return "owner_lessor_mismatch"
 
@@ -686,16 +676,28 @@ def _question_evidence_profile(
 
     if (
         "주소" in normalized_query
-        and any(keyword in normalized_query for keyword in ["등기부등본", "등기부", "등기사항"])
-        and any(keyword in normalized_query for keyword in ["다른", "다르면", "차이", "불일치"])
+        and any(
+            keyword in normalized_query
+            for keyword in ["등기부등본", "등기부", "등기사항"]
+        )
+        and any(
+            keyword in normalized_query
+            for keyword in ["다른", "다르면", "차이", "불일치"]
+        )
     ):
         return "address_mismatch"
 
     if (
         "계약서" in normalized_query
         and "보증금" in normalized_query
-        and any(keyword in normalized_query for keyword in ["이체 내역", "이체내역", "송금 내역", "입금내역"])
-        and any(keyword in normalized_query for keyword in ["다르", "차액", "불일치", "합계"])
+        and any(
+            keyword in normalized_query
+            for keyword in ["이체 내역", "이체내역", "송금 내역", "입금내역"]
+        )
+        and any(
+            keyword in normalized_query
+            for keyword in ["다르", "차액", "불일치", "합계"]
+        )
     ):
         return "deposit_transfer_mismatch"
 
@@ -850,9 +852,7 @@ def _substantive_evidence_text(
     result: dict[str, Any],
 ) -> str:
     body = _normalize_text(result.get("text")).lower()
-    source_type = _normalize_text(
-        result.get("source_type")
-    ).lower()
+    source_type = _normalize_text(result.get("source_type")).lower()
 
     if source_type == "law" and "[본문]" in body:
         return body.split("[본문]", 1)[1]
@@ -865,6 +865,7 @@ def _substantive_evidence_text(
 
     return body
 
+
 def _profile_body_hits(
     result: dict[str, Any],
     profile: str,
@@ -872,9 +873,7 @@ def _profile_body_hits(
 ) -> list[str]:
     body = _normalize_text(result.get("text")).lower()
     title = _normalize_text(result.get("title")).lower()
-    source_type = _normalize_text(
-        result.get("source_type")
-    ).lower()
+    source_type = _normalize_text(result.get("source_type")).lower()
     substantive = _substantive_evidence_text(result)
     combined = f"{title} {body}"
 
@@ -889,11 +888,7 @@ def _profile_body_hits(
             "무권대리",
             "표현대리",
         ]
-        return [
-            keyword
-            for keyword in keywords
-            if keyword in substantive
-        ]
+        return [keyword for keyword in keywords if keyword in substantive]
 
     if profile == "co_owner":
         keywords = [
@@ -907,11 +902,7 @@ def _profile_body_hits(
             "지분의 과반수",
             "공동으로 건물을 임대",
         ]
-        return [
-            keyword
-            for keyword in keywords
-            if keyword in substantive
-        ]
+        return [keyword for keyword in keywords if keyword in substantive]
 
     if profile == "owner_lessor_mismatch":
         keywords = [
@@ -924,15 +915,12 @@ def _profile_body_hits(
             "임대 권한",
             "대리권",
         ]
-        return [
-            keyword
-            for keyword in keywords
-            if keyword in substantive
-        ]
+        return [keyword for keyword in keywords if keyword in substantive]
 
     if profile == "address_mismatch":
         contract_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "소재지",
                 "도로명주소",
                 "임차할부분",
@@ -942,7 +930,8 @@ def _profile_body_hits(
             if keyword in substantive
         ]
         public_record_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "등기부등본상",
                 "등기부",
                 "건축물관리대장",
@@ -958,7 +947,8 @@ def _profile_body_hits(
 
     if profile == "deposit_transfer_mismatch":
         contract_amount_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "보증금과 차임 및 관리비",
                 "보 증 금",
                 "계 약 금",
@@ -970,7 +960,8 @@ def _profile_body_hits(
             if keyword in substantive
         ]
         payment_proof_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "전세보증금 지급서류",
                 "영수증이나 이체내역",
                 "이체내역",
@@ -996,15 +987,12 @@ def _profile_body_hits(
             "포기하지 않고",
             "임대차계약을 해제",
         ]
-        return [
-            keyword
-            for keyword in keywords
-            if keyword in substantive
-        ]
+        return [keyword for keyword in keywords if keyword in substantive]
 
     if profile == "household_certificate":
         certificate_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "전입세대확인서",
                 "전입세대 열람",
                 "전입세대열람",
@@ -1015,7 +1003,8 @@ def _profile_body_hits(
             if keyword in substantive
         ]
         timing_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "계약 전",
                 "계약체결 전",
                 "잔금 전",
@@ -1025,7 +1014,8 @@ def _profile_body_hits(
             if keyword in substantive
         ]
         priority_hits = [
-            keyword for keyword in [
+            keyword
+            for keyword in [
                 "선순위",
                 "기존 전입",
                 "점유",
@@ -1053,11 +1043,7 @@ def _profile_body_hits(
             "변제받을 권한없는 자",
             "채권자가 이익을 받은 한도",
         ]
-        return [
-            keyword
-            for keyword in keywords
-            if keyword in substantive
-        ]
+        return [keyword for keyword in keywords if keyword in substantive]
 
     if profile == "mortgage":
         mortgage_keywords = [
@@ -1082,23 +1068,17 @@ def _profile_body_hits(
         ]
 
         mortgage_hits = [
-            keyword for keyword in mortgage_keywords
-            if keyword in substantive
+            keyword for keyword in mortgage_keywords if keyword in substantive
         ]
         deposit_hits = [
-            keyword for keyword in deposit_keywords
-            if keyword in substantive
+            keyword for keyword in deposit_keywords if keyword in substantive
         ]
-        value_hits = [
-            keyword for keyword in value_keywords
-            if keyword in substantive
-        ]
+        value_hits = [keyword for keyword in value_keywords if keyword in substantive]
 
         # 한 문서가 근저당+보증금 또는 보증금+주택가액처럼
         # 최소 두 역할을 직접 설명해야 선택 후보로 인정한다.
         group_count = sum(
-            bool(values)
-            for values in [mortgage_hits, deposit_hits, value_hits]
+            bool(values) for values in [mortgage_hits, deposit_hits, value_hits]
         )
         if not deposit_hits or group_count < 2:
             return []
@@ -1125,16 +1105,11 @@ def _profile_body_hits(
         ]
 
         multiunit_hits = [
-            keyword for keyword in multiunit_keywords
-            if keyword in substantive
+            keyword for keyword in multiunit_keywords if keyword in substantive
         ]
-        senior_hits = [
-            keyword for keyword in senior_keywords
-            if keyword in substantive
-        ]
+        senior_hits = [keyword for keyword in senior_keywords if keyword in substantive]
         value_or_rights_hits = [
-            keyword for keyword in value_or_rights_keywords
-            if keyword in substantive
+            keyword for keyword in value_or_rights_keywords if keyword in substantive
         ]
 
         if not multiunit_hits or not senior_hits:
@@ -1172,22 +1147,16 @@ def _profile_body_hits(
             "제시하고",
         ]
 
-        broker_hits = [
-            keyword
-            for keyword in broker_keywords
-            if keyword in combined
-        ]
+        broker_hits = [keyword for keyword in broker_keywords if keyword in combined]
         rights_hits = [
             keyword
             for keyword in rights_keywords
-            if keyword in substantive
-            or keyword in combined
+            if keyword in substantive or keyword in combined
         ]
         verification_hits = [
             keyword
             for keyword in verification_keywords
-            if keyword in substantive
-            or keyword in combined
+            if keyword in substantive or keyword in combined
         ]
 
         if not broker_hits or not rights_hits:
@@ -1220,15 +1189,9 @@ def _profile_body_hits(
             "경매",
         ]
 
-        risk_hits = [
-            keyword
-            for keyword in risk_keywords
-            if keyword in substantive
-        ]
+        risk_hits = [keyword for keyword in risk_keywords if keyword in substantive]
         real_estate_hits = [
-            keyword
-            for keyword in real_estate_keywords
-            if keyword in substantive
+            keyword for keyword in real_estate_keywords if keyword in substantive
         ]
 
         if not risk_hits or not real_estate_hits:
@@ -1250,16 +1213,9 @@ def _profile_body_hits(
             "등기",
         ]
 
-        if (
-            any(
-                keyword in substantive
-                for keyword in unrelated_execution_terms
-            )
-            and not any(
-                keyword in substantive
-                for keyword in strong_real_estate_terms
-            )
-        ):
+        if any(
+            keyword in substantive for keyword in unrelated_execution_terms
+        ) and not any(keyword in substantive for keyword in strong_real_estate_terms):
             return []
 
         # 일반적인 가압류 신청·압류 절차 조문은
@@ -1289,8 +1245,7 @@ def _profile_body_hits(
         ]
 
         if any(
-            keyword in f"{title} {substantive}"
-            for keyword in excluded_registry_topics
+            keyword in f"{title} {substantive}" for keyword in excluded_registry_topics
         ):
             return []
 
@@ -1317,17 +1272,10 @@ def _profile_body_hits(
             "임대차계약 체결에 동의",
         ]
 
-        trust_hits = [
-            keyword for keyword in trust_keywords
-            if keyword in substantive
-        ]
-        party_hits = [
-            keyword for keyword in party_keywords
-            if keyword in substantive
-        ]
+        trust_hits = [keyword for keyword in trust_keywords if keyword in substantive]
+        party_hits = [keyword for keyword in party_keywords if keyword in substantive]
         authority_hits = [
-            keyword for keyword in authority_keywords
-            if keyword in substantive
+            keyword for keyword in authority_keywords if keyword in substantive
         ]
 
         if not trust_hits or not authority_hits:
@@ -1351,28 +1299,24 @@ def _profile_body_hits(
         ]
 
         delivery_hits = [
-            keyword for keyword in delivery_keywords
-            if keyword in substantive
+            keyword for keyword in delivery_keywords if keyword in substantive
         ]
         registration_hits = [
-            keyword for keyword in registration_keywords
-            if keyword in substantive
+            keyword for keyword in registration_keywords if keyword in substantive
         ]
         next_day_hits = [
-            keyword for keyword in next_day_keywords
-            if keyword in substantive
+            keyword for keyword in next_day_keywords if keyword in substantive
         ]
-        effect_hits = [
-            keyword for keyword in effect_keywords
-            if keyword in substantive
-        ]
+        effect_hits = [keyword for keyword in effect_keywords if keyword in substantive]
 
-        if not all([
-            delivery_hits,
-            registration_hits,
-            next_day_hits,
-            effect_hits,
-        ]):
+        if not all(
+            [
+                delivery_hits,
+                registration_hits,
+                next_day_hits,
+                effect_hits,
+            ]
+        ):
             return []
 
         return [
@@ -1384,12 +1328,10 @@ def _profile_body_hits(
 
     if profile == "fixed_date_priority":
         fixed_date_hits = [
-            keyword for keyword in ["확정일자"]
-            if keyword in substantive
+            keyword for keyword in ["확정일자"] if keyword in substantive
         ]
         priority_hits = [
-            keyword for keyword in ["우선변제권", "우선변제"]
-            if keyword in substantive
+            keyword for keyword in ["우선변제권", "우선변제"] if keyword in substantive
         ]
         requirement_hits = [
             keyword
@@ -1425,11 +1367,7 @@ def _profile_body_hits(
             "대항력",
             "우선변제권",
         ]
-        return [
-            keyword
-            for keyword in keywords
-            if keyword in substantive
-        ]
+        return [keyword for keyword in keywords if keyword in substantive]
 
     if profile == "guarantee_precheck":
         guarantee_keywords = [
@@ -1452,14 +1390,10 @@ def _profile_body_hits(
         ]
 
         guarantee_hits = [
-            keyword
-            for keyword in guarantee_keywords
-            if keyword in combined
+            keyword for keyword in guarantee_keywords if keyword in combined
         ]
         application_hits = [
-            keyword
-            for keyword in application_keywords
-            if keyword in combined
+            keyword for keyword in application_keywords if keyword in combined
         ]
 
         if not guarantee_hits or not application_hits:
@@ -1487,6 +1421,7 @@ def _profile_body_hits(
         return [*guarantee_hits, *application_hits]
 
     return _direct_body_hits(result, route_ids)
+
 
 def _profile_coverage_groups(
     result: dict[str, Any],
@@ -1575,23 +1510,54 @@ def _profile_coverage_groups(
             groups.add("owner_mismatch")
 
     elif profile == "address_mismatch":
-        if any(keyword in combined for keyword in [
-            "소재지", "도로명주소", "임차할부분", "동‧층‧호 정확히 기재", "동·층·호 정확히 기재"
-        ]):
+        if any(
+            keyword in combined
+            for keyword in [
+                "소재지",
+                "도로명주소",
+                "임차할부분",
+                "동‧층‧호 정확히 기재",
+                "동·층·호 정확히 기재",
+            ]
+        ):
             groups.add("contract_property_identifier")
-        if any(keyword in combined for keyword in [
-            "등기부등본상", "등기부", "건축물관리대장", "지번을 정확히 기재", "호수를 잘못 기재", "임대차계약서상"
-        ]):
+        if any(
+            keyword in combined
+            for keyword in [
+                "등기부등본상",
+                "등기부",
+                "건축물관리대장",
+                "지번을 정확히 기재",
+                "호수를 잘못 기재",
+                "임대차계약서상",
+            ]
+        ):
             groups.add("official_record_identifier")
 
     elif profile == "deposit_transfer_mismatch":
-        if any(keyword in combined for keyword in [
-            "보증금과 차임 및 관리비", "보 증 금", "계 약 금", "중 도 금", "잔 금", "지불하고 영수함", "영수자"
-        ]):
+        if any(
+            keyword in combined
+            for keyword in [
+                "보증금과 차임 및 관리비",
+                "보 증 금",
+                "계 약 금",
+                "중 도 금",
+                "잔 금",
+                "지불하고 영수함",
+                "영수자",
+            ]
+        ):
             groups.add("contract_amount_schedule")
-        if any(keyword in combined for keyword in [
-            "전세보증금 지급서류", "영수증이나 이체내역", "이체내역", "무통장 입금증", "입금내역"
-        ]):
+        if any(
+            keyword in combined
+            for keyword in [
+                "전세보증금 지급서류",
+                "영수증이나 이체내역",
+                "이체내역",
+                "무통장 입금증",
+                "입금내역",
+            ]
+        ):
             groups.add("payment_proof")
 
     elif profile == "special_clause_return":
@@ -1694,9 +1660,7 @@ def _profile_coverage_groups(
     elif profile == "mortgage":
         if any(
             keyword in combined
-            for keyword in [
-                "근저당", "근저당권", "저당권", "채권최고액", "담보물권"
-            ]
+            for keyword in ["근저당", "근저당권", "저당권", "채권최고액", "담보물권"]
         ):
             groups.add("mortgage")
         if any(
@@ -1727,7 +1691,13 @@ def _profile_coverage_groups(
         if any(
             keyword in combined
             for keyword in [
-                "주택가액", "시세", "감정가", "감정", "권리관계", "근저당", "채권최고액"
+                "주택가액",
+                "시세",
+                "감정가",
+                "감정",
+                "권리관계",
+                "근저당",
+                "채권최고액",
             ]
         ):
             groups.add("value_or_rights")
@@ -1775,14 +1745,10 @@ def _profile_coverage_groups(
             groups.add("verification_duty")
 
     elif profile == "registry_restriction":
-        if any(
-            keyword in combined
-            for keyword in ["등기부", "등기", "권리관계"]
-        ):
+        if any(keyword in combined for keyword in ["등기부", "등기", "권리관계"]):
             groups.add("registry")
         if any(
-            keyword in combined
-            for keyword in ["압류", "가압류", "가처분", "가등기"]
+            keyword in combined for keyword in ["압류", "가압류", "가처분", "가등기"]
         ):
             groups.add("restriction")
         if any(
@@ -1822,10 +1788,7 @@ def _profile_coverage_groups(
             groups.add("authority_or_consent")
 
     elif profile == "opposability":
-        if any(
-            keyword in combined
-            for keyword in ["주택의 인도", "주택 인도", "인도"]
-        ):
+        if any(keyword in combined for keyword in ["주택의 인도", "주택 인도", "인도"]):
             groups.add("delivery")
         if any(keyword in combined for keyword in ["주민등록", "전입신고"]):
             groups.add("registration")
@@ -1873,15 +1836,9 @@ def _profile_coverage_groups(
             ]
         ):
             groups.add("records")
-        if any(
-            keyword in combined
-            for keyword in ["등기부등본", "권리관계", "잔금"]
-        ):
+        if any(keyword in combined for keyword in ["등기부등본", "권리관계", "잔금"]):
             groups.add("pre_balance")
-        if any(
-            keyword in combined
-            for keyword in ["임대차신고", "주택 임대차신고"]
-        ):
+        if any(keyword in combined for keyword in ["임대차신고", "주택 임대차신고"]):
             groups.add("lease_report")
         if any(
             keyword in combined
@@ -1896,8 +1853,7 @@ def _profile_coverage_groups(
 
     elif profile == "guarantee_precheck":
         if any(
-            keyword in combined
-            for keyword in ["가입대상", "가입 조건", "가입조건"]
+            keyword in combined for keyword in ["가입대상", "가입 조건", "가입조건"]
         ):
             groups.add("eligibility")
         if any(
@@ -1910,15 +1866,9 @@ def _profile_coverage_groups(
             ]
         ):
             groups.add("application")
-        if any(
-            keyword in combined
-            for keyword in ["심사", "심사 후", "심사사항"]
-        ):
+        if any(keyword in combined for keyword in ["심사", "심사 후", "심사사항"]):
             groups.add("review")
-        if any(
-            keyword in combined
-            for keyword in ["보증료", "보증서 발급"]
-        ):
+        if any(keyword in combined for keyword in ["보증료", "보증서 발급"]):
             groups.add("issuance")
 
     return groups
@@ -1956,9 +1906,7 @@ def _answer_evidence_score(
 
     title = _normalize_text(result.get("title")).lower()
     body = _normalize_text(result.get("text")).lower()
-    source_type = _normalize_text(
-        result.get("source_type")
-    ).lower()
+    source_type = _normalize_text(result.get("source_type")).lower()
     profile_bonus = 0.0
     profile_penalty = 0.0
 
@@ -2075,10 +2023,7 @@ def _answer_evidence_score(
     elif profile == "registry_restriction":
         if "등기부 위험 신호" in body:
             profile_bonus += 0.25
-        if any(
-            keyword in body
-            for keyword in ["유체동산", "채권가압류", "채권양도"]
-        ):
+        if any(keyword in body for keyword in ["유체동산", "채권가압류", "채권양도"]):
             profile_penalty += 0.20
 
     elif profile == "trust_registry":
@@ -2189,9 +2134,7 @@ def select_answer_evidence(
             profile=profile,
             route_ids=route_ids,
         )
-        coverage_groups = sorted(
-            _profile_coverage_groups(copied, profile)
-        )
+        coverage_groups = sorted(_profile_coverage_groups(copied, profile))
 
         copied["answer_evidence_profile"] = profile
         copied["answer_direct_body_hits"] = direct_hits
@@ -2210,9 +2153,7 @@ def select_answer_evidence(
             copied,
             keywords,
         )
-        copied["answer_target_issue_match"] = _has_target_issue(
-            copied
-        )
+        copied["answer_target_issue_match"] = _has_target_issue(copied)
 
         if direct_hits:
             candidates.append(copied)
@@ -2283,10 +2224,7 @@ def select_answer_evidence(
         while remaining and len(selected) < item_limit:
             remaining.sort(
                 key=lambda item: (
-                    len(
-                        set(item.get("answer_coverage_groups") or [])
-                        - covered_groups
-                    ),
+                    len(set(item.get("answer_coverage_groups") or []) - covered_groups),
                     float(item.get("answer_evidence_score") or 0.0),
                 ),
                 reverse=True,
@@ -2305,9 +2243,7 @@ def select_answer_evidence(
 
             selected.append(picked)
             selected_source_keys.add(_source_group_key(picked))
-            covered_groups.update(
-                picked.get("answer_coverage_groups") or []
-            )
+            covered_groups.update(picked.get("answer_coverage_groups") or [])
             remaining.remove(picked)
 
     else:
@@ -2345,20 +2281,18 @@ def determine_evidence_status(
     ]
 
     if profile == "owner_proxy":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         if (
             direct_items
             and "authority_check" in coverage
-            and (
-                "scope_or_identity" in coverage
-                or "legal_effect" in coverage
-            )
+            and ("scope_or_identity" in coverage or "legal_effect" in coverage)
         ):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
@@ -2366,12 +2300,13 @@ def determine_evidence_status(
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "co_owner":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         if {"co_owner", "consent_or_share"}.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
@@ -2380,12 +2315,13 @@ def determine_evidence_status(
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "owner_lessor_mismatch":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         if {"party_or_authority", "owner_mismatch"}.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
@@ -2394,40 +2330,36 @@ def determine_evidence_status(
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "address_mismatch":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {
-                "contract_property_identifier",
-                "official_record_identifier",
-            }.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "contract_property_identifier",
+            "official_record_identifier",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "deposit_transfer_mismatch":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {
-                "contract_amount_schedule",
-                "payment_proof",
-            }.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "contract_amount_schedule",
+            "payment_proof",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
@@ -2442,8 +2374,7 @@ def determine_evidence_status(
         official_support_items = [
             item
             for item in direct_items
-            if _normalize_text(item.get("source_type")).lower()
-            != "derived_rule"
+            if _normalize_text(item.get("source_type")).lower() != "derived_rule"
         ]
 
         # 승인된 서비스 카드가 반환 조건을 직접 정리하고,
@@ -2472,15 +2403,15 @@ def determine_evidence_status(
         official_support_items = [
             item
             for item in direct_items
-            if _normalize_text(item.get("source_type")).lower()
-            != "derived_rule"
+            if _normalize_text(item.get("source_type")).lower() != "derived_rule"
         ]
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         approved_complete = any(
             {
@@ -2491,12 +2422,16 @@ def determine_evidence_status(
             }.issubset(_profile_coverage_groups(item, profile))
             for item in approved_items
         )
-        if approved_complete and official_support_items and {
-            "certificate_scope",
-            "contract_timing",
-            "balance_timing",
-            "priority_context",
-        }.issubset(coverage):
+        if (
+            approved_complete
+            and official_support_items
+            and {
+                "certificate_scope",
+                "contract_timing",
+                "balance_timing",
+                "priority_context",
+            }.issubset(coverage)
+        ):
             return EvidenceStatus.SUFFICIENT
 
         if direct_items or search_results:
@@ -2504,12 +2439,13 @@ def determine_evidence_status(
         return EvidenceStatus.INSUFFICIENT
 
     if profile in {"account_payment", "account_change"}:
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         if profile == "account_payment":
             required = {"recipient_authority", "payment_record"}
@@ -2527,151 +2463,149 @@ def determine_evidence_status(
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "mortgage":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {"mortgage", "deposit", "property_value"}.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "mortgage",
+            "deposit",
+            "property_value",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "multiunit_priority":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {"multiunit", "senior_deposit", "value_or_rights"}.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "multiunit",
+            "senior_deposit",
+            "value_or_rights",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "broker_registry_comparison":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(
-                    item,
-                    profile,
-                )
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[
+                    _profile_coverage_groups(
+                        item,
+                        profile,
+                    )
+                    for item in direct_items
+                ]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {
-                "broker_document",
-                "registry_rights",
-                "verification_duty",
-            }.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "broker_document",
+            "registry_rights",
+            "verification_duty",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "registry_restriction":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {"registry", "restriction"}.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {"registry", "restriction"}.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "trust_registry":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {
-                "trust_structure",
-                "trust_parties",
-                "authority_or_consent",
-            }.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "trust_structure",
+            "trust_parties",
+            "authority_or_consent",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "opposability":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {
-                "delivery",
-                "registration",
-                "next_day",
-                "opposability_effect",
-            }.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "delivery",
+            "registration",
+            "next_day",
+            "opposability_effect",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "fixed_date_priority":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
-        if (
-            len(direct_items) >= 2
-            and {
-                "fixed_date",
-                "priority_right",
-                "opposability_requirements",
-            }.issubset(coverage)
-        ):
+        if len(direct_items) >= 2 and {
+            "fixed_date",
+            "priority_right",
+            "opposability_requirements",
+        }.issubset(coverage):
             return EvidenceStatus.SUFFICIENT
         if direct_items or search_results:
             return EvidenceStatus.PARTIAL
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "after_contract_procedure":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         # 계약 직후 답변 전체를 뒷받침하려면 기록 보관·잔금 전 확인·
         # 신고/보호 절차 중 최소 세 역할의 근거가 필요하다.
@@ -2682,12 +2616,13 @@ def determine_evidence_status(
         return EvidenceStatus.INSUFFICIENT
 
     if profile == "guarantee_precheck":
-        coverage = set().union(
-            *[
-                _profile_coverage_groups(item, profile)
-                for item in direct_items
-            ]
-        ) if direct_items else set()
+        coverage = (
+            set().union(
+                *[_profile_coverage_groups(item, profile) for item in direct_items]
+            )
+            if direct_items
+            else set()
+        )
 
         if (
             direct_items
@@ -2710,8 +2645,7 @@ def determine_evidence_status(
         return EvidenceStatus.PARTIAL
 
     has_weak_candidate = any(
-        _has_target_issue(item)
-        or float(item.get("similarity") or 0.0) >= 0.35
+        _has_target_issue(item) or float(item.get("similarity") or 0.0) >= 0.35
         for item in search_results
     )
 
@@ -2740,9 +2674,7 @@ def _build_reference_preview(result: dict[str, Any]) -> str:
 
     focus_keywords = focus_keywords_by_document.get(document_id, ())
     focus_positions = [
-        text.find(keyword)
-        for keyword in focus_keywords
-        if text.find(keyword) >= 0
+        text.find(keyword) for keyword in focus_keywords if text.find(keyword) >= 0
     ]
 
     if focus_positions:
@@ -2774,16 +2706,10 @@ def _build_reference_items(
                 evidence_id=index,
                 collection=_normalize_text(result.get("collection")),
                 document_id=_normalize_text(result.get("document_id")),
-                source_id=(
-                    _normalize_text(result.get("source_id")) or None
-                ),
-                source_type=(
-                    _normalize_text(result.get("source_type")) or None
-                ),
+                source_id=(_normalize_text(result.get("source_id")) or None),
+                source_type=(_normalize_text(result.get("source_type")) or None),
                 title=_normalize_text(result.get("title")) or None,
-                issue_id=(
-                    _normalize_text(metadata.get("issue_id")) or None
-                ),
+                issue_id=(_normalize_text(metadata.get("issue_id")) or None),
                 similarity=round(
                     float(result.get("similarity") or 0.0),
                     6,
@@ -2930,29 +2856,23 @@ def _generate_structured_answer(
                         query=query,
                         consultation_context=consultation_context,
                         evidence_status=evidence_status,
-                        rag_context=build_rag_context(
-                            selected_evidence
-                        ),
+                        rag_context=build_rag_context(selected_evidence),
                     ),
                 },
             ],
             text_format=GeneratedAnswerBody,
         )
     except Exception as error:
-        raise RuntimeError(
-            f"A part 구조화 답변 생성 실패: {error}"
-        ) from error
+        raise RuntimeError(f"A part 구조화 답변 생성 실패: {error}") from error
 
     parsed = response.output_parsed
 
     if parsed is None:
         raise RuntimeError(
-            "A part 구조화 답변이 비어 있습니다. "
-            "모델 응답 또는 거절 여부를 확인하세요."
+            "A part 구조화 답변이 비어 있습니다. 모델 응답 또는 거절 여부를 확인하세요."
         )
 
     return parsed
-
 
 
 def _detect_answer_policy(
@@ -2960,12 +2880,8 @@ def _detect_answer_policy(
     consultation_context: ConsultationContext,
     search_results: list[dict[str, Any]],
 ) -> str | None:
-    known_facts_text = " ".join(
-        consultation_context.known_facts
-    )
-    combined = _normalize_text(
-        f"{query} {known_facts_text}"
-    ).lower()
+    known_facts_text = " ".join(consultation_context.known_facts)
+    combined = _normalize_text(f"{query} {known_facts_text}").lower()
 
     # 구체적인 상황부터 먼저 판별한다.
     if any(
@@ -2979,24 +2895,21 @@ def _detect_answer_policy(
     ):
         return "co_owner"
 
-    if (
-        any(
-            keyword in combined
-            for keyword in [
-                "등기부등본 소유자",
-                "등기부 소유자",
-                "소유자와 계약서",
-            ]
-        )
-        and any(
-            keyword in combined
-            for keyword in [
-                "임대인 이름이 다",
-                "이름이 다른",
-                "임대인과 소유자",
-                "소유자와 임대인",
-            ]
-        )
+    if any(
+        keyword in combined
+        for keyword in [
+            "등기부등본 소유자",
+            "등기부 소유자",
+            "소유자와 계약서",
+        ]
+    ) and any(
+        keyword in combined
+        for keyword in [
+            "임대인 이름이 다",
+            "이름이 다른",
+            "임대인과 소유자",
+            "소유자와 임대인",
+        ]
     ):
         return "owner_lessor_mismatch"
 
@@ -3022,24 +2935,21 @@ def _detect_answer_policy(
     ):
         return "account_payment"
 
-    if (
-        any(
-            keyword in combined
-            for keyword in [
-                "중개대상물 확인설명서",
-                "확인설명서",
-                "중개대상물",
-            ]
-        )
-        and any(
-            keyword in combined
-            for keyword in [
-                "계약서랑 다",
-                "계약서와 다",
-                "내용이 다",
-                "불일치",
-            ]
-        )
+    if any(
+        keyword in combined
+        for keyword in [
+            "중개대상물 확인설명서",
+            "확인설명서",
+            "중개대상물",
+        ]
+    ) and any(
+        keyword in combined
+        for keyword in [
+            "계약서랑 다",
+            "계약서와 다",
+            "내용이 다",
+            "불일치",
+        ]
     ):
         return "broker_document_mismatch"
 
@@ -3097,16 +3007,10 @@ def _detect_answer_policy(
     ):
         return "owner_proxy"
 
-    if (
-        "전입신고" in combined
-        and "대항력" in combined
-    ):
+    if "전입신고" in combined and "대항력" in combined:
         return "opposability"
 
-    if (
-        "확정일자" in combined
-        and "우선변제권" in combined
-    ):
+    if "확정일자" in combined and "우선변제권" in combined:
         return "fixed_date_priority"
 
     if any(
@@ -3120,16 +3024,13 @@ def _detect_answer_policy(
     ):
         return "owner_change"
 
-    if (
-        "특약" in combined
-        and any(
-            keyword in combined
-            for keyword in [
-                "계약금 반환",
-                "반환 조건",
-                "돌려받",
-            ]
-        )
+    if "특약" in combined and any(
+        keyword in combined
+        for keyword in [
+            "계약금 반환",
+            "반환 조건",
+            "돌려받",
+        ]
     ):
         return "special_clause_return"
 
@@ -3933,7 +3834,9 @@ def _search_code_version(search_results: list[dict[str, Any]]) -> str | None:
 
 def _validate_grounded_response(response: APartRAGResponse) -> None:
     if response.search_result_count <= 0:
-        raise RAGAnswerValidationError("검색 결과가 없는 답변은 완료 상태로 반환할 수 없습니다.")
+        raise RAGAnswerValidationError(
+            "검색 결과가 없는 답변은 완료 상태로 반환할 수 없습니다."
+        )
     if not response.selected_evidence or not response.answer.references:
         raise RAGAnswerValidationError(
             "선택 근거와 references가 없는 답변은 완료 상태로 반환할 수 없습니다.",
@@ -4086,10 +3989,16 @@ def _guarded_failure_response(
         judgment = "RAG 검색 자체가 실패해 근거 기반 결론을 생성하지 않았습니다."
         action = "잠시 후 같은 질문으로 근거 검색을 다시 실행합니다."
     elif status == RAGGenerationStatus.EVIDENCE_NOT_FOUND:
-        judgment = "검증 가능한 RAG 근거를 찾지 못해 근거 기반 결론을 생성하지 않았습니다."
-        action = "질문의 핵심 사실과 문서 상태를 더 구체적으로 확인한 뒤 다시 검색합니다."
+        judgment = (
+            "검증 가능한 RAG 근거를 찾지 못해 근거 기반 결론을 생성하지 않았습니다."
+        )
+        action = (
+            "질문의 핵심 사실과 문서 상태를 더 구체적으로 확인한 뒤 다시 검색합니다."
+        )
     elif status == RAGGenerationStatus.GENERATION_FAILED:
-        judgment = "검색 근거는 확인했지만 답변 생성이 실패해 결론을 반환하지 않았습니다."
+        judgment = (
+            "검색 근거는 확인했지만 답변 생성이 실패해 결론을 반환하지 않았습니다."
+        )
         action = "동일한 선택 근거로 답변 생성을 다시 시도합니다."
     else:
         judgment = "생성된 답변의 근거 연결을 검증하지 못해 결론을 반환하지 않았습니다."
@@ -4180,13 +4089,15 @@ def format_answer_for_console(response: APartRAGResponse) -> str:
             lines.extend(f"- {item}" for item in answer.document_summary.warnings)
         lines.append("")
 
-    lines.extend([
-        f"위험 수준\n→ {answer.risk_level}",
-        "",
-        f"핵심 판단\n→ {answer.core_judgment}",
-        "",
-        "지금 해야 할 행동",
-    ])
+    lines.extend(
+        [
+            f"위험 수준\n→ {answer.risk_level}",
+            "",
+            f"핵심 판단\n→ {answer.core_judgment}",
+            "",
+            "지금 해야 할 행동",
+        ]
+    )
 
     if answer.immediate_actions:
         lines.extend(
@@ -4214,8 +4125,7 @@ def format_answer_for_console(response: APartRAGResponse) -> str:
 
     lines.extend(["", "판단 이유"])
     lines.extend(
-        f"{index}. {item}"
-        for index, item in enumerate(answer.reasons, start=1)
+        f"{index}. {item}" for index, item in enumerate(answer.reasons, start=1)
     )
 
     lines.extend(["", "추가 확인 정보·문서"])
@@ -4253,13 +4163,14 @@ def format_answer_for_console(response: APartRAGResponse) -> str:
 
     lines.extend(["", "법률 근거·참고 자료"])
     if not answer.references:
-        lines.append("→ 현재 검색 결과에서 질문에 직접 답하는 본문 근거를 찾지 못했습니다.")
+        lines.append(
+            "→ 현재 검색 결과에서 질문에 직접 답하는 본문 근거를 찾지 못했습니다."
+        )
 
     for reference in answer.references:
         lines.extend(
             [
-                f"[{reference.evidence_id}] "
-                f"{reference.title or reference.document_id}",
+                f"[{reference.evidence_id}] {reference.title or reference.document_id}",
                 f"collection: {reference.collection}",
                 f"source_type: {reference.source_type}",
                 f"issue_id: {reference.issue_id}",

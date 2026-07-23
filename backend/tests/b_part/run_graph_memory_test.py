@@ -1,4 +1,4 @@
-﻿"""
+"""
 B파트 InMemory 멀티턴 대화 테스트 스크립트.
 
 FastAPI 서버 없이 graph.ainvoke()를 직접 호출해 같은 conversation_id에서
@@ -19,7 +19,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 if str(BACKEND_DIR) not in sys.path:
@@ -27,7 +26,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.graph.parts.b_part.graph import graph  # noqa: E402
 from app.graph.parts.b_part.memory import memory_store  # noqa: E402
-
 
 CONVERSATION_ID = "b-part-memory-demo"
 FIRST_TURN = "계약이 곧 끝나는데 집주인이 아무 말도 없습니다. 자동으로 연장되나요?"
@@ -101,7 +99,10 @@ async def main() -> None:
     print("[저장된 InMemory 메시지]")
     print(
         json.dumps(
-            [message.to_dict() for message in memory_store.get_messages(CONVERSATION_ID)],
+            [
+                message.to_dict()
+                for message in memory_store.get_messages(CONVERSATION_ID)
+            ],
             ensure_ascii=False,
             indent=2,
         )
@@ -131,7 +132,10 @@ async def main() -> None:
     print("[수선의무 InMemory 메시지]")
     print(
         json.dumps(
-            [message.to_dict() for message in memory_store.get_messages(REPAIR_CONVERSATION_ID)],
+            [
+                message.to_dict()
+                for message in memory_store.get_messages(REPAIR_CONVERSATION_ID)
+            ],
             ensure_ascii=False,
             indent=2,
         )
@@ -151,7 +155,9 @@ async def main() -> None:
 
     print("\n" + "=" * 80)
     print("[부분 날짜 슬롯 필링 4턴 테스트]")
-    for index, (turn, state) in enumerate(zip(PARTIAL_DATE_TURNS, partial_date_states), start=1):
+    for index, (turn, state) in enumerate(
+        zip(PARTIAL_DATE_TURNS, partial_date_states), start=1
+    ):
         print(f"\n[{index}턴 입력]")
         print(turn)
         print(f"\n[{index}턴 결과 요약]")
@@ -161,7 +167,10 @@ async def main() -> None:
     print("[부분 날짜 InMemory 메시지]")
     print(
         json.dumps(
-            [message.to_dict() for message in memory_store.get_messages(PARTIAL_DATE_CONVERSATION_ID)],
+            [
+                message.to_dict()
+                for message in memory_store.get_messages(PARTIAL_DATE_CONVERSATION_ID)
+            ],
             ensure_ascii=False,
             indent=2,
         )

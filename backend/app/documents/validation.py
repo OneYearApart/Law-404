@@ -11,7 +11,6 @@ from typing import BinaryIO
 
 from app.documents.models import DocumentFormat
 
-
 DEFAULT_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 GENERIC_CONTENT_TYPES = {
     "",
@@ -34,7 +33,6 @@ CANONICAL_CONTENT_TYPES: dict[DocumentFormat, str] = {
 ACCEPTED_CONTENT_TYPES: dict[DocumentFormat, frozenset[str]] = {
     DocumentFormat.PDF: frozenset({"application/pdf"}),
 }
-
 
 
 class DocumentValidationError(ValueError):
@@ -78,8 +76,7 @@ def sanitize_filename(filename: str) -> str:
     basename = normalized.replace("\\", "/").split("/")[-1]
     basename = "".join(
         character
-        if character.isalnum()
-        or character in {" ", ".", "_", "-", "(", ")", "[", "]"}
+        if character.isalnum() or character in {" ", ".", "_", "-", "(", ")", "[", "]"}
         else "_"
         for character in basename
     )
@@ -101,9 +98,7 @@ def sanitize_filename(filename: str) -> str:
 def _detect_format(data: bytes) -> DocumentFormat:
     if data.startswith(b"%PDF-"):
         return DocumentFormat.PDF
-    raise UnsupportedDocumentFormatError(
-        "PDF 파일만 업로드할 수 있습니다."
-    )
+    raise UnsupportedDocumentFormatError("PDF 파일만 업로드할 수 있습니다.")
 
 
 def _format_from_extension(filename: str) -> DocumentFormat:
@@ -150,8 +145,7 @@ def validate_upload_bytes(
     normalized_content_type = normalize_content_type(content_type)
     if (
         normalized_content_type not in GENERIC_CONTENT_TYPES
-        and normalized_content_type
-        not in ACCEPTED_CONTENT_TYPES[detected_format]
+        and normalized_content_type not in ACCEPTED_CONTENT_TYPES[detected_format]
     ):
         raise DocumentTypeMismatchError(
             "선언된 MIME type과 실제 파일 형식이 일치하지 않습니다."

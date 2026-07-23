@@ -622,12 +622,9 @@ def authority_anchor_document_ids(query: str) -> list[str]:
 
     # 계약금 반환 특약 질문은 공식 표준계약서와 HUG 안내를 조합해
     # 만든 출처 추적 서비스 카드와 해당 원문을 함께 올린다.
-    if (
-        contains_any(normalized_query, ["특약", "반환 특약"])
-        and contains_any(
-            normalized_query,
-            ["계약금 반환", "반환 조건", "반환 사유", "계약금을 반환"],
-        )
+    if contains_any(normalized_query, ["특약", "반환 특약"]) and contains_any(
+        normalized_query,
+        ["계약금 반환", "반환 조건", "반환 사유", "계약금을 반환"],
     ):
         return [
             "law404_special_clause_return_rule_c0001",
@@ -735,7 +732,9 @@ def authority_anchor_document_ids(query: str) -> list[str]:
     # 공식 지급 증빙 기준을 서로 다른 공식 원문으로 조합한다.
     if (
         contains_any(normalized_query, ["계약서", "보증금"])
-        and contains_any(normalized_query, ["이체 내역", "이체내역", "송금 내역", "입금내역"])
+        and contains_any(
+            normalized_query, ["이체 내역", "이체내역", "송금 내역", "입금내역"]
+        )
         and contains_any(normalized_query, ["다르", "차액", "불일치", "합계"])
     ):
         return [
@@ -765,17 +764,14 @@ def authority_anchor_document_ids(query: str) -> list[str]:
         ]
 
     # 중개사·부동산 등 제3자 명의 계좌로 계약금을 보내라는 경우다.
-    if (
-        contains_any(
+    if contains_any(
+        normalized_query,
+        ["부동산 계좌", "중개사 계좌", "제3자 계좌"],
+    ) or (
+        contains_any(normalized_query, ["계약금", "잔금"])
+        and contains_any(
             normalized_query,
-            ["부동산 계좌", "중개사 계좌", "제3자 계좌"],
-        )
-        or (
-            contains_any(normalized_query, ["계약금", "잔금"])
-            and contains_any(
-                normalized_query,
-                ["계좌", "송금", "보내", "예금주"],
-            )
+            ["계좌", "송금", "보내", "예금주"],
         )
     ):
         return [
@@ -796,15 +792,12 @@ def authority_anchor_document_ids(query: str) -> list[str]:
             "law_001706_제265조",
         ]
 
-    if (
-        contains_any(
-            normalized_query,
-            ["등기부등본 소유자", "등기부 소유자", "소유자랑", "소유자와"],
-        )
-        and contains_any(
-            normalized_query,
-            ["계약서", "임대인", "이름이 다", "다른데", "불일치"],
-        )
+    if contains_any(
+        normalized_query,
+        ["등기부등본 소유자", "등기부 소유자", "소유자랑", "소유자와"],
+    ) and contains_any(
+        normalized_query,
+        ["계약서", "임대인", "이름이 다", "다른데", "불일치"],
     ):
         return [
             "prec_82972_01_owner_proxy__part_001",
@@ -876,10 +869,7 @@ def route_query(query: str) -> dict[str, Any]:
 
 
 def build_collection_priority(collections: list[str]) -> dict[str, int]:
-    return {
-        collection: index
-        for index, collection in enumerate(collections)
-    }
+    return {collection: index for index, collection in enumerate(collections)}
 
 
 def fetch_vector_candidates(
@@ -1096,7 +1086,10 @@ def score_result(
         if metadata_issue_id == "08_priority_payment":
             issue_bonus = 0.66
 
-        if metadata_issue_id == "10_payment_special_clause" and "account_change" in matched_route_ids:
+        if (
+            metadata_issue_id == "10_payment_special_clause"
+            and "account_change" in matched_route_ids
+        ):
             issue_bonus = 0.08
 
         score += issue_bonus
@@ -1125,10 +1118,23 @@ def score_result(
         if collection == "legal_sources":
             score -= 0.42
 
-        if contains_any(searchable, ["계약상대방", "임대인", "대리인", "소유자", "신분증", "계약 내용", "특약사항"]):
+        if contains_any(
+            searchable,
+            [
+                "계약상대방",
+                "임대인",
+                "대리인",
+                "소유자",
+                "신분증",
+                "계약 내용",
+                "특약사항",
+            ],
+        ):
             score += 0.20
 
-        if contains_any(searchable, ["계좌", "예금주", "지급계좌", "입금내역", "이체내역"]):
+        if contains_any(
+            searchable, ["계좌", "예금주", "지급계좌", "입금내역", "이체내역"]
+        ):
             score += 0.16
 
     if "special_clause_return" in matched_route_ids:
@@ -1210,14 +1216,30 @@ def score_result(
         if document_id == "hug_guarantee_goods_phtml_c0001":
             score += 1.05
 
-        if contains_any(searchable, ["보증금", "계약금", "중도금", "잔금", "이체 내역", "이체내역", "입금내역", "영수증", "금액", "계약서"]):
+        if contains_any(
+            searchable,
+            [
+                "보증금",
+                "계약금",
+                "중도금",
+                "잔금",
+                "이체 내역",
+                "이체내역",
+                "입금내역",
+                "영수증",
+                "금액",
+                "계약서",
+            ],
+        ):
             score += 0.28
 
     if "document_mismatch" in matched_route_ids:
         if collection == "document_analysis_sources":
             score += 0.24
 
-        if contains_any(route_info["query"], ["주소", "계약서 주소", "등기부등본 주소"]):
+        if contains_any(
+            route_info["query"], ["주소", "계약서 주소", "등기부등본 주소"]
+        ):
             if collection == "document_analysis_sources":
                 score += 0.34
 
@@ -1227,7 +1249,22 @@ def score_result(
             if document_id == "prec_196703_01_owner_proxy__part_003":
                 score += 1.10
 
-            if contains_any(searchable, ["주소", "도로명주소", "지번", "동", "층", "호", "임차할부분", "소재지", "등기부등본", "계약서", "주민등록"]):
+            if contains_any(
+                searchable,
+                [
+                    "주소",
+                    "도로명주소",
+                    "지번",
+                    "동",
+                    "층",
+                    "호",
+                    "임차할부분",
+                    "소재지",
+                    "등기부등본",
+                    "계약서",
+                    "주민등록",
+                ],
+            ):
                 score += 0.20
 
             if collection == "safety_guarantee_sources":
@@ -1240,7 +1277,17 @@ def score_result(
         if collection == "legal_sources":
             score += 0.08
 
-        if contains_any(searchable, ["임대차신고", "임대차계약신고", "주택 임대차신고", "신고필증", "계약체결일", "신고대상"]):
+        if contains_any(
+            searchable,
+            [
+                "임대차신고",
+                "임대차계약신고",
+                "주택 임대차신고",
+                "신고필증",
+                "계약체결일",
+                "신고대상",
+            ],
+        ):
             score += 0.42
         else:
             score -= 0.36
@@ -1302,7 +1349,9 @@ def score_result(
                 score -= 0.08
 
     if "registry_risk" in matched_route_ids:
-        if contains_any(route_info["query"], ["신탁등기", "신탁원부", "수탁자", "신탁"]):
+        if contains_any(
+            route_info["query"], ["신탁등기", "신탁원부", "수탁자", "신탁"]
+        ):
             if metadata_issue_id == "06_trust":
                 score += 0.44
 
@@ -1374,7 +1423,10 @@ def score_result(
             }:
                 score += 0.46
 
-            if collection == "legal_sources" and metadata_issue_id == "05_attachment_auction":
+            if (
+                collection == "legal_sources"
+                and metadata_issue_id == "05_attachment_auction"
+            ):
                 score += 0.20
 
             if collection == "safety_guarantee_sources" and not metadata_issue_id:
@@ -1422,7 +1474,10 @@ def score_result(
     if "owner_change" in matched_route_ids and metadata_issue_id == "09_owner_change":
         score += 0.16
 
-    if "broker_explanation" in matched_route_ids and metadata_issue_id == "02_broker_explanation":
+    if (
+        "broker_explanation" in matched_route_ids
+        and metadata_issue_id == "02_broker_explanation"
+    ):
         score += 0.10
 
     if "account_payment" in matched_route_ids:
@@ -1471,9 +1526,7 @@ def deduplicate_results(
     for result in scored_results:
         metadata = result.get("metadata") or {}
         document_key = (
-            metadata.get("parent_document_id")
-            or result.get("document_id")
-            or ""
+            metadata.get("parent_document_id") or result.get("document_id") or ""
         )
         source_id = str(result.get("source_id") or "")
 

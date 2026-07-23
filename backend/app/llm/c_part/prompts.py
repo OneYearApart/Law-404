@@ -55,7 +55,7 @@ SYSTEM_PROMPT = """당신은 주택임대차보호법 전문 상담 AI입니다.
 # 【Node 0】Topic Classifier (Supervisor 역할)
 # ════════════════════════════════════════════════════════════════════════════════
 
- 
+
 TOPIC_CLASSIFIER_PROMPT = """당신은 주택임대차 상담 챗봇의 라우터입니다.
 사용자의 질문을 네 가지 중 하나로 분류하세요.
  
@@ -538,6 +538,7 @@ GUIDE_PROMPT = """{system}
 # 【포맷팅 헬퍼】프롬프트에 값을 채워넣는 함수들
 # ════════════════════════════════════════════════════════════════════════════════
 
+
 def format_topic_classifier_prompt(question: str, chat_history=None) -> str:
     """
     Args:
@@ -547,7 +548,7 @@ def format_topic_classifier_prompt(question: str, chat_history=None) -> str:
                       넘기지 않으면 맥락 없이 질문만으로 판단합니다.
     """
     chat_context = "(없음)"
- 
+
     if chat_history:
         recent = list(chat_history)[-4:]  # 최근 2턴 정도만
         lines = []
@@ -566,12 +567,13 @@ def format_topic_classifier_prompt(question: str, chat_history=None) -> str:
                 lines.append(f"{speaker}: {text}")
         if lines:
             chat_context = "\n".join(lines)
- 
+
     return TOPIC_CLASSIFIER_PROMPT.format(
         question=question,
         chat_context=chat_context,
     )
- 
+
+
 def format_situation_prompt(
     question: str,
     statutes_context: str,

@@ -4,6 +4,7 @@ match_glossary_terms 테스트 (DB/네트워크/LLM 없는 순수 로직).
 용어 풀이는 LLM이 고르지 않고 코드가 사전 표제어를 문자열 대조한다 — 법률 용어 정의를
 모델이 지어내면 안 되기 때문(build_citation_cards와 같은 계열).
 """
+
 from app.graph.parts.d_part.nodes._context import match_glossary_terms
 
 
@@ -11,7 +12,13 @@ def _entry(term: str) -> dict:
     return {"term": term, "description": "쉬운 설명이에요."}
 
 
-GLOSSARY = [_entry("대항력"), _entry("우선변제권"), _entry("변제"), _entry("갑구"), _entry("질권")]
+GLOSSARY = [
+    _entry("대항력"),
+    _entry("우선변제권"),
+    _entry("변제"),
+    _entry("갑구"),
+    _entry("질권"),
+]
 
 
 def test_only_terms_present_in_text_are_returned():

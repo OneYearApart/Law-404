@@ -19,20 +19,28 @@ special_cases는 후속 대화가 없는 1회성 안내라, victim_check 슬롯 
 
 이 노드가 남기는 건 situation 하나뿐이다. 실행 노드는 거기서 자기 topic/special_case를 읽는다.
 """
+
 from app.graph.parts.d_part.schemas import (
-    DPartGraphState,
     SITUATION_TOPIC_TO_SPECIAL_CASE,
     SPECIAL_CASE_TO_SITUATION_TOPIC,
+    DPartGraphState,
     SituationState,
     VictimRequirementSlots,
 )
 from app.llm import d_part as llm_d_part
 
-_SLOT_FIELDS = ("moved_in_and_fixed_date", "deposit_under_limit", "multiple_victims", "no_intent_to_return")
+_SLOT_FIELDS = (
+    "moved_in_and_fixed_date",
+    "deposit_under_limit",
+    "multiple_victims",
+    "no_intent_to_return",
+)
 
 
 def _has_slot_progress(slots: VictimRequirementSlots | None) -> bool:
-    return slots is not None and any(getattr(slots, name) is not None for name in _SLOT_FIELDS)
+    return slots is not None and any(
+        getattr(slots, name) is not None for name in _SLOT_FIELDS
+    )
 
 
 def interview_in_progress(state: DPartGraphState) -> bool:
@@ -50,7 +58,8 @@ def interview_in_progress(state: DPartGraphState) -> bool:
     if state.get("victim_flow_closed"):
         return False
     return bool(
-        state.get("awaiting_relief_confirmation") or _has_slot_progress(state.get("victim_slots"))
+        state.get("awaiting_relief_confirmation")
+        or _has_slot_progress(state.get("victim_slots"))
     )
 
 
@@ -75,7 +84,9 @@ def _normalize_overlap_axes(situation: SituationState) -> None:
     """
     if situation.recognized:
         if not situation.special_case:
-            situation.special_case = SITUATION_TOPIC_TO_SPECIAL_CASE.get(situation.topic)
+            situation.special_case = SITUATION_TOPIC_TO_SPECIAL_CASE.get(
+                situation.topic
+            )
     elif not situation.topic:
         situation.topic = SPECIAL_CASE_TO_SITUATION_TOPIC.get(situation.special_case)
 

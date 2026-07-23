@@ -7,11 +7,22 @@
 4. 모든 슬롯 충족 확인 시 구제수단보유여부를 명시적으로 질문 후 판단 결과 제공 (높음/있음/추가확인)
    반복 질문에도 안 채워지면 Fallback(전문가 상담 안내)
 """
+
 from app.graph.parts.d_part.nodes._confirmation import parse_confirmation
-from app.graph.parts.d_part.schemas import DPartGraphState, SlotStatus, VictimJudgment, VictimRequirementSlots
+from app.graph.parts.d_part.schemas import (
+    DPartGraphState,
+    SlotStatus,
+    VictimJudgment,
+    VictimRequirementSlots,
+)
 from app.llm import d_part as llm_d_part
 
-_SLOT_ORDER = ("moved_in_and_fixed_date", "deposit_under_limit", "multiple_victims", "no_intent_to_return")
+_SLOT_ORDER = (
+    "moved_in_and_fixed_date",
+    "deposit_under_limit",
+    "multiple_victims",
+    "no_intent_to_return",
+)
 _AUCTION_EXEMPT_SLOTS = {"moved_in_and_fixed_date", "multiple_victims"}
 _MAX_ATTEMPTS = 3
 
@@ -49,7 +60,9 @@ async def _extract_slots(
     """
     pending_question = _SLOT_QUESTIONS[pending_slot] if pending_slot else None
     result = await llm_d_part.call_victim_check(
-        user_input, existing_slots=existing.model_dump(mode="json"), pending_question=pending_question
+        user_input,
+        existing_slots=existing.model_dump(mode="json"),
+        pending_question=pending_question,
     )
     return VictimRequirementSlots(
         moved_in_and_fixed_date=SlotStatus(result["moved_in_and_fixed_date"]),
@@ -61,7 +74,9 @@ async def _extract_slots(
     )
 
 
-def _merge_slots(existing: VictimRequirementSlots, extracted: VictimRequirementSlots) -> VictimRequirementSlots:
+def _merge_slots(
+    existing: VictimRequirementSlots, extracted: VictimRequirementSlots
+) -> VictimRequirementSlots:
     """기존 슬롯 위에 이번 턴 추출값을 얹는다. 병합은 비즈니스 판단이라 코드가 결정한다.
 
     - filled는 되돌리지 않는다 — 이후 턴의 unclear/unfilled로 덮어쓰지 않음.
@@ -110,7 +125,9 @@ def _compute_judgment(slots: VictimRequirementSlots) -> VictimJudgment:
     하나라도 UNFILLED면 추가확인) — 법적 요건 충족 여부는 결정론적으로 판단하는 게 맞다는 설계 결정.
     '있음'(PRESENT) 단계 산출은 범위 밖(2026-07-11 확정)."""
     exempt = _AUCTION_EXEMPT_SLOTS if slots.auction_completed else set()
-    required_values = [getattr(slots, name) for name in _SLOT_ORDER if name not in exempt]
+    required_values = [
+        getattr(slots, name) for name in _SLOT_ORDER if name not in exempt
+    ]
     if all(v == SlotStatus.FILLED for v in required_values):
         return VictimJudgment.HIGH
     return VictimJudgment.NEEDS_CONFIRMATION
@@ -157,10 +174,14 @@ async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
         state["awaiting_relief_confirmation"] = False
     else:
         before = slots.model_copy()
-        extracted = await _extract_slots(user_input, slots, state.get("victim_pending_slot"))
+        extracted = await _extract_slots(
+            user_input, slots, state.get("victim_pending_slot")
+        )
         slots = _merge_slots(slots, extracted)
         made_progress = slots != before
-        state["victim_check_attempts"] = 0 if made_progress else state.get("victim_check_attempts", 0) + 1
+        state["victim_check_attempts"] = (
+            0 if made_progress else state.get("victim_check_attempts", 0) + 1
+        )
 
     state["victim_slots"] = slots
 
@@ -187,7 +208,9 @@ async def check_victim_status(state: DPartGraphState) -> DPartGraphState:
 
     if slots.has_relief_measure:
         state["final_answer"] = _EXCLUSION_MESSAGE
-        state["disclaimer_required"] = True  # 지원대상 제외 판정(법률 정보) → finalize가 면책 첨부
+        state["disclaimer_required"] = (
+            True  # 지원대상 제외 판정(법률 정보) → finalize가 면책 첨부
+        )
         state["victim_judgment"] = None
         state["victim_flow_closed"] = True
     else:
