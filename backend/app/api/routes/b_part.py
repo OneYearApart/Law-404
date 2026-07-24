@@ -1,8 +1,10 @@
 """
 B파트 채팅 엔드포인트.
 StreamingResponse로 응답하며, 인증된 사용자만 이용 가능하고 대화 이력을 항상 저장합니다.
-b파트 담당자만 이 파일을 수정합니다.
+B파트 graph 실행 결과를 SSE 이벤트로 변환하는 API 계층입니다.
 """
+
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -24,6 +26,8 @@ from app.graph.parts.b_part.memory import (
     build_persistable_session_state,
     seed_memory_from_persisted_data,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat/b", tags=["b_part"])
 
@@ -142,7 +146,7 @@ async def chat_b(
                     ),
                 )
             except Exception:
-                pass
+                logger.exception("B파트 대화 이력 또는 session state 저장에 실패했습니다.")
 
         yield f"data: {StreamEvent(type=EventType.DONE).model_dump_json()}\n\n"
 

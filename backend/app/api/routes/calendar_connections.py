@@ -1,4 +1,4 @@
-"""사용자별 Google Calendar MCP connection 관리 API."""
+"""사용자별 Google Calendar MCP connection을 관리하는 API입니다."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session

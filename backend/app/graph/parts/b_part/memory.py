@@ -1,8 +1,8 @@
 """
-B파트 InMemory 대화 기억 모듈.
+B파트 대화 맥락 보강 모듈.
 
-PostgresChatMessageHistory로 전환하기 전 MVP 단계에서 session/conversation 단위
-멀티턴 대화를 테스트하기 위한 임시 저장소입니다. 서버가 재시작되면 기록은 사라집니다.
+DB에 저장된 messages/state를 요청 시점에 InMemory 저장소로 주입하고,
+짧은 후속 답변을 이전 대화와 결합해 graph가 이해할 수 있는 질문으로 보강합니다.
 """
 
 from __future__ import annotations
@@ -24,13 +24,6 @@ class BPartChatMessage:
     role: str
     content: str
     created_at: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "role": self.role,
-            "content": self.content,
-            "created_at": self.created_at,
-        }
 
 
 class BPartInMemoryChatMessageHistory:
@@ -103,7 +96,7 @@ def seed_memory_from_persisted_data(
     messages: list[Any] | None = None,
     state: dict[str, Any] | None = None,
 ) -> None:
-    """DB에 저장된 messages/state를 B파트 InMemory store에 주입합니다."""
+    """DB에 저장된 messages/state를 B파트 InMemory 저장소에 주입합니다."""
     if not session_id:
         return
 

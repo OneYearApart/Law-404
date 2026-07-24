@@ -1,4 +1,4 @@
-"""사용자별 Calendar connection 저장소."""
+"""사용자별 Calendar connection 저장소입니다."""
 
 from datetime import datetime
 
