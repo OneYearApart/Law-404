@@ -1,4 +1,4 @@
-"""Calendar connection API 요청/응답 모델."""
+"""Calendar connection API 요청/응답 모델입니다."""
 
 from datetime import datetime
 

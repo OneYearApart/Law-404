@@ -1,12 +1,9 @@
 """
-B파트 계약 중 분쟁 MVP 그래프.
+B파트 계약 중 분쟁 LangGraph 워크플로우.
 
-FastAPI 라우터가 기대하는 graph.ainvoke(request) 인터페이스를 유지하면서,
-내부 실행은 LangGraph StateGraph를 통해 수행합니다.
-
-현재 1차 전환에서는 기존 B파트 파이프라인을 StateGraph의 호환 노드로 감싸고,
-후속 작업에서 Context Resolver, Intent Planner, Rule Engine, Retriever 등을
-개별 노드로 점진 분리할 수 있게 구조를 마련합니다.
+FastAPI 라우터가 기대하는 graph.ainvoke(request) 인터페이스는 유지하고,
+내부에서는 Context, Scope, Plan, Compute, Retrieve, Answer 노드를
+LangGraph StateGraph로 실행합니다.
 """
 
 from __future__ import annotations
@@ -585,58 +582,6 @@ def is_contract_end_date_clarification(question: str) -> bool:
     )
 
 
-def build_planner_missing_questions(planner_result: dict[str, Any]) -> list[str]:
-    """Planner가 판단한 필수 누락 정보를 사용자 질문 문장으로 바꿉니다."""
-    missing_facts = planner_result.get("missing_required_facts")
-    if not isinstance(missing_facts, list):
-        return []
-
-    question_map = {
-        "contract_end_date": "계약 종료일이 언제인지 알려주세요.",
-        "contract_notice_date": "집주인 또는 세입자가 갱신 거절이나 조건 변경을 통보한 날짜가 언제인지 알려주세요.",
-        "current_rent": "현재 월세가 얼마인지 알려주세요.",
-        "requested_rent": "집주인이 요구한 월세가 얼마인지 알려주세요.",
-        "recent_rent_increase": "최근 1년 안에 보증금이나 월세를 올린 적이 있는지 알려주세요.",
-        "converted_deposit_amount": "월세로 전환하려는 보증금 금액이 얼마인지 알려주세요.",
-        "repair_request_date": "집주인에게 수리를 요청한 날짜나 수리 요청 후 경과 기간을 알려주세요.",
-        "repair_evidence": "집주인에게 수리를 요청한 문자, 카카오톡, 사진 같은 증거가 있는지 알려주세요.",
-        "defect_detail": "어떤 하자나 고장이 있는지 구체적으로 알려주세요.",
-    }
-
-    questions: list[str] = []
-    for fact in missing_facts:
-        key = str(fact).strip()
-        question = question_map.get(key)
-        if not question:
-            question = f"{key} 정보를 알려주세요."
-        if question not in questions:
-            questions.append(question)
-    return questions[:3]
-
-
-def can_continue_with_rule_results(question: str, categories: list[str]) -> bool:
-    """
-    일부 부가 정보가 부족해도 Rule Engine 계산이 가능한 질문인지 판단합니다.
-
-    예를 들어 월세 인상 질문에서 현재 월세와 요구 월세가 모두 있으면
-    계약 종료일이 없어도 5% 초과 여부는 계산할 수 있으므로 답변 흐름을 계속 진행합니다.
-    또한 누수로 인한 물건 파손처럼 하자와 손해가 함께 드러난 질문은
-    증거 여부가 없어도 기본 법률 구조를 먼저 설명할 수 있습니다.
-    """
-    if "차임증감" in categories and len(parse_money_values_from_text(question)) >= 2:
-        return True
-    has_defect = any(
-        keyword in question
-        for keyword in ["누수", "보일러", "곰팡이", "결로", "배관", "하자"]
-    )
-    has_damage = any(
-        keyword in question for keyword in ["망가", "파손", "손해", "손해배상", "피해"]
-    )
-    if has_defect and has_damage:
-        return True
-    return False
-
-
 class BPartGraphState(TypedDict, total=False):
     """B파트 LangGraph 실행 상태입니다."""
 
@@ -666,7 +611,7 @@ class BPartGraphState(TypedDict, total=False):
     final_state: dict[str, Any]
 
 
-class BPartMVPGraph:
+class BPartGraph:
     """FastAPI 라우터와 호환되는 B파트 LangGraph 어댑터입니다."""
 
     def __init__(self) -> None:
@@ -1557,4 +1502,4 @@ class BPartMVPGraph:
         return combined_results[:top_k]
 
 
-graph = BPartMVPGraph()
+graph = BPartGraph()

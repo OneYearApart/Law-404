@@ -1,4 +1,4 @@
-"""Smithery Connect API client for user-specific Google Calendar MCP connections."""
+"""사용자별 Google Calendar MCP connection을 관리하는 Smithery Connect API 클라이언트입니다."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ SMITHERY_API_BASE_URL = "https://api.smithery.ai"
 
 
 class SmitheryConfigError(RuntimeError):
-    """Raised when Smithery server credentials are not configured."""
+    """Smithery 서버 인증 정보가 설정되지 않았을 때 발생하는 예외입니다."""
 
 
 class SmitheryApiError(RuntimeError):
-    """Raised when Smithery API returns an error response."""
+    """Smithery API가 오류 응답을 반환했을 때 발생하는 예외입니다."""
 
     def __init__(
         self, message: str, *, status_code: int | None = None, payload: Any = None
@@ -102,7 +102,7 @@ async def create_or_update_google_calendar_connection(
     user_id: int,
     user_label: str | None = None,
 ) -> SmitheryConnectionResult:
-    """Create or update one Smithery Google Calendar connection for a Law-404 user."""
+    """Law-404 사용자 1명에 대한 Smithery Google Calendar connection을 생성하거나 갱신합니다."""
     namespace = get_smithery_namespace()
     url = f"{SMITHERY_API_BASE_URL}/connect/{namespace}/{connection_id}"
     payload = {
@@ -133,7 +133,7 @@ async def get_smithery_connection(
     *,
     connection_id: str,
 ) -> SmitheryConnectionResult:
-    """Fetch one Smithery connection and return its current status."""
+    """Smithery connection 하나를 조회하고 현재 상태를 반환합니다."""
     namespace = get_smithery_namespace()
     url = f"{SMITHERY_API_BASE_URL}/connect/{namespace}/{connection_id}"
 

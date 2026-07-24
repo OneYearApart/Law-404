@@ -1,9 +1,8 @@
 """
-B파트 Calendar MCP 연동 전 단계의 Adapter 모듈입니다.
+B파트 Google Calendar MCP 등록 어댑터.
 
-현재 단계에서는 실제 외부 캘린더에 일정을 등록하지 않고,
-calendar_registration payload를 검증한 뒤 Calendar MCP에 넘길 수 있는
-표준 event payload로 변환합니다.
+calendar_registration payload를 검증하고 Smithery Google Calendar MCP
+create_event 호출에 맞는 인자로 변환한 뒤 실제 등록 결과를 표준 형태로 반환합니다.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from app.core.config import settings
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_TIMEZONE = "Asia/Seoul"
 KST_OFFSET = "+09:00"
-SMITHERY_CONNECTION_NAME = "googlecalendar"
 SMITHERY_CREATE_EVENT_TOOL_NAME = "create_event"
 SMITHERY_API_BASE_URL = "https://api.smithery.ai"
 
@@ -449,16 +447,11 @@ def register_google_calendar_events(
     calendar_id: str = "primary",
 ) -> dict[str, Any]:
     """
-    Google Calendar MCP 실제 등록을 위한 Adapter 진입점입니다.
+    Smithery가 아닌 일반 Google Calendar provider 요청을 처리합니다.
 
-    현재 코드에는 실제 MCP 클라이언트가 주입되어 있지 않으므로,
-    payload 검증과 변환까지만 수행하고 실제 호출 위치를 TODO로 남깁니다.
-
-    필요한 작업:
-    1. Google Calendar MCP 연결 또는 플러그인/서버 설정
-    2. 아래 converted_events를 Google Calendar MCP create event 호출에 전달
-    3. MCP 응답에서 event id/htmlLink 등을 registered_events에 저장
-    4. 일부 실패 시 partial_success 형태로 반환
+    현재 서비스의 실제 등록 경로는 register_smithery_google_calendar_events()입니다.
+    이 함수는 provider가 google_calendar로 들어온 경우 외부 상태를 변경하지 않고,
+    변환된 create_event 인자와 not_configured 상태를 반환합니다.
     """
     dry_run_result = dry_run_calendar_registration(calendar_registration)
     if dry_run_result.get("status") != "dry_run":
@@ -476,23 +469,8 @@ def register_google_calendar_events(
         for event_args in dry_run_result.get("google_calendar_create_event_args", [])
     ]
 
-    # TODO(Google Calendar MCP):
-    # 여기에 실제 Google Calendar MCP 호출을 연결하세요.
-    #
-    # 예상 호출 흐름 예시:
-    # registered_events = []
-    # for event_args in google_create_event_args:
-    #     result = google_calendar_mcp.create_event(**event_args)
-    #     registered_events.append(
-    #         {
-    #             "title": event_args["title"],
-    #             "start_time": event_args["start_time"],
-    #             "provider_event_id": result["id"],
-    #             "html_link": result.get("htmlLink"),
-    #         }
-    #     )
-    #
-    # 실제 MCP 연결 전에는 외부 상태 변경을 막기 위해 not_configured를 반환합니다.
+    # provider가 명시적으로 google_calendar인 경우에는 현재 연결된 클라이언트가 없으므로
+    # 외부 상태 변경 없이 not_configured를 반환합니다.
     return {
         "status": "not_configured",
         "provider": "google_calendar",
